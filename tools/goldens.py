@@ -29,6 +29,8 @@ def find_sim():
 
 def main():
     sim = find_sim()
+    # scenarios write series and captures into build/ (scen_lab_metrics), which a fresh clone lacks
+    (ROOT / "build").mkdir(exist_ok=True)
     failed = 0
     scripts = sorted((ROOT / "tests").glob("scen_*.uis"))
     for s in scripts:
