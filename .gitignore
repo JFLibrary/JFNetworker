@@ -1,0 +1,6 @@
+# Cargo's output and what the test scripts write (shot, dump, saved projects, studies)
+/target/
+/build/
+__pycache__/
+# a reference kept beside the sources, not part of the repository
+/books/

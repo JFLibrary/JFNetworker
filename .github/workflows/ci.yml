@@ -1,0 +1,82 @@
+# Does JFNetworker build on Windows and Linux, with the rust-version it names and with the newest
+# stable Rust, and do the golden scenarios give the same reports on both?  The window scripts run
+# on the developer machines: `cargo jflib test` and `python tools/linux_test.py` (README.md,
+# "Bauen und testen").
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays: a new stable that breaks something shows before a release does
+    - cron: "43 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Until the next JFLib release .cargo/config.toml takes JFLib's crates from ../JFLib (the style
+  # netlab is not on crates.io yet): the commit this repository was tested against
+  JFLIB_REF: 16ec0ab40fa769e8dc29881b05eb7f047e84b12f
+
+jobs:
+  check:
+    name: check ${{ matrix.target }} (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.98: rust-version in Cargo.toml (keep both equal)
+        toolchain: ["1.98", stable]
+        target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc]
+    steps:
+      - uses: actions/checkout@v6
+      - name: JFLib beside this repository
+        run: |
+          git init -q ../JFLib
+          git -C ../JFLib fetch -q --depth 1 https://github.com/JFLibrary/JFLib "$JFLIB_REF"
+          git -C ../JFLib checkout -q FETCH_HEAD
+      - name: Rust
+        run: |
+          rustup toolchain install ${{ matrix.toolchain }} --profile minimal --target ${{ matrix.target }} --no-self-update
+          rustup default ${{ matrix.toolchain }}
+          rustc --version
+      - name: JFNetworker and jfn-sim
+        run: cargo check --locked --workspace --target ${{ matrix.target }}
+
+  goldens:
+    name: golden scenarios (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - name: JFLib beside this repository
+        run: |
+          git init -q ../JFLib
+          git -C ../JFLib fetch -q --depth 1 https://github.com/JFLibrary/JFLib "$JFLIB_REF"
+          git -C ../JFLib checkout -q FETCH_HEAD
+      - name: Rust
+        run: |
+          rustup toolchain install 1.98 --profile minimal --target ${{ matrix.target }} --no-self-update
+          rustup default 1.98
+      - name: jfn-sim
+        run: cargo build --locked -p jfn-sim --target ${{ matrix.target }}
+      - name: The golden scenarios
+        run: python tools/goldens.py --sim target/${{ matrix.target }}/debug/jfn-sim

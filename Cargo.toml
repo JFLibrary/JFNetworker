@@ -1,0 +1,154 @@
+# JFNetworker: a network simulator and a lab for distributed systems, written in Rust with JFLib
+# (https://jflib.org).  The program and its crates (crates/), the command-line runner jfn-sim (sim/).
+[package]
+name = "JFNetworker"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[[bin]]
+name = "JFNetworker"
+path = "src/main.rs"
+test = false
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+rt.workspace = true
+agent_core.workspace = true
+plat.workspace = true
+base.workspace = true
+gfx.workspace = true
+img_core.workspace = true
+fx.workspace = true
+img_svg.workspace = true
+img_all.workspace = true
+ui.workspace = true
+datetime.workspace = true
+crypto.workspace = true
+netpkt.workspace = true
+eapm.workspace = true
+script.workspace = true
+style.workspace = true
+jfn_model = { path = "crates/jfn_model" }
+jfn_sim = { path = "crates/jfn_sim" }
+jfn_run = { path = "crates/jfn_run" }
+
+[build-dependencies]
+jflib-build.workspace = true
+
+[workspace]
+resolver = "3"
+members = [".", "crates/jfn_model", "crates/jfn_sim", "crates/jfn_run", "sim"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+repository = "https://github.com/JFLibrary/JFNetworker"
+
+# JFLib's crates under the names the code uses, at exact versions like inside JFLib.  The style
+# netlab is not on crates.io yet: .cargo/config.toml takes it (and with it every JFLib crate, so
+# that there is one runtime) from a JFLib checkout beside this one until the next JFLib release.
+[workspace.dependencies]
+rt = { package = "jflib-rt", version = "=0.1.0" }
+agent_core = { package = "jflib-agent-core", version = "=0.1.0" }
+plat = { package = "jflib-plat", version = "=0.1.0" }
+base = { package = "jflib-base", version = "=0.1.0" }
+gfx = { package = "jflib-gfx", version = "=0.1.0" }
+img_core = { package = "jflib-img-core", version = "=0.1.0" }
+fx = { package = "jflib-fx", version = "=0.1.0" }
+img_svg = { package = "jflib-img-svg", version = "=0.1.0" }
+img_all = { package = "jflib-img-all", version = "=0.1.0" }
+ui = { package = "jflib-ui", version = "=0.1.0" }
+datetime = { package = "jflib-datetime", version = "=0.1.0" }
+crypto = { package = "jflib-crypto", version = "=0.1.0" }
+netpkt = { package = "jflib-netpkt", version = "=0.1.0" }
+netio = { package = "jflib-netio", version = "=0.1.0" }
+update = { package = "jflib-update", version = "=0.1.0" }
+eapm = { package = "jflib-eapm", version = "=0.1.0" }
+style = { package = "jflib-style-netlab", version = "=0.1.0" }
+jflib-build = "=0.1.0"
+# JFScript (https://github.com/JFLibrary/JFScript), used as `script`
+script = { package = "jfscript", git = "https://github.com/JFLibrary/JFScript" }
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(jfgui_assets)',    # ui::main!: the app has assets/
+    'cfg(jfgui_dev)',       # a development build
+    'cfg(jfgui_glibc)',     # Linux against glibc, not static
+    'cfg(jfgui_manifest)',  # ui::main!, rt::main!: PERMISSIONS as a file
+    'cfg(jfgui_package)',   # ui::main!: PACKAGE as a file
+    'cfg(web_threads)',     # the browser with threads
+] }
+
+# Cargo takes no profile from a dependency.  JFLib's runtime needs panic = "abort"; a development
+# build without overflow checks and debug assertions is the build JFLib is tested with.
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug = 0
+debug-assertions = false
+overflow-checks = false
+codegen-units = 16
+
+# the crates whose speed matters in development builds too: pixels, codecs and crypto stay fast
+# in the tests, and the simulator runs sweeps of millions of events
+[profile.dev.package.jfn_sim]
+opt-level = 2
+
+[profile.dev.package.jfscript]
+opt-level = 2
+
+[profile.dev.package.jflib-gfx]
+opt-level = 2
+
+[profile.dev.package.jflib-text]
+opt-level = 2
+
+[profile.dev.package.jflib-simd]
+opt-level = 2
+
+[profile.dev.package.jflib-fx]
+opt-level = 2
+
+[profile.dev.package.jflib-crypto]
+opt-level = 2
+
+[profile.dev.package.jflib-compress]
+opt-level = 2
+
+[profile.dev.package.jflib-img-core]
+opt-level = 2
+
+[profile.dev.package.jflib-img-png]
+opt-level = 2
+
+[profile.dev.package.jflib-img-jpeg]
+opt-level = 2
+
+[profile.dev.package.jflib-img-svg]
+opt-level = 2
+
+[profile.dev.package.jflib-img-all]
+opt-level = 2
+
+[profile.dev.package.jflib-text-shape]
+opt-level = 2
+
+[profile.release]
+panic = "abort"
+opt-level = 2
+codegen-units = 1
+lto = "fat"
+debug = 0
+strip = "symbols"

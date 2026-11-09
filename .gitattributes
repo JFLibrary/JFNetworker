@@ -1,0 +1,6 @@
+# app:// assets are built into the program byte for byte: no line-ending conversion on checkout
+assets/** -text
+# the courses of the Akademie: their index holds the checksums of these bytes
+academy/** -text
+tests/fixtures/academy_src/** -text
+tests/fixtures/academy_src2/** -text
