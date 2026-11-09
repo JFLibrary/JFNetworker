@@ -2727,3 +2727,8 @@ Verklemmungen/s	Deadlocks/s
 Sperren zu spät/s	Lock timeouts/s
 Log geschrieben/s	Log writes/s
 Commits je Schreiben (Tausendstel)	Commits per write (thousandths)
+# the simulator's words in names of configurations and in "limited by" (experiments/mod.rs, SIM_WORDS)
+größer	bigger
+mehr	more
+Kern	Core
+Platte	Disk

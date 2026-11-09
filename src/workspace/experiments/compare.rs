@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 use jfn_sim::experiment::{Point, Sweep};
 use ui::*;
 
-use super::{level_text, places};
+use super::{level_text, places, sim_text};
 use crate::app::constants::*;
 use crate::app::tr::{self, t, tf};
 use crate::app::Net;
@@ -207,7 +207,7 @@ fn curves_of(a: &Sweep, b: Option<&Sweep>, c: usize) -> Curves {
     let mut add = |s: &Sweep, tag: &str| {
         for k in 0..s.configs.len().min(CURVES_MAX) {
             let p = pts(s, k);
-            sat.push((format!("{}{}", s.configs[k].label, tag), buf_of(&offered(&p), &achieved(&p))));
+            sat.push((format!("{}{}", sim_text(&s.configs[k].label), tag), buf_of(&offered(&p), &achieved(&p))));
         }
     };
     add(a, "");
@@ -257,7 +257,7 @@ fn cells(s: &Sweep, c: usize, sep: u32) -> [String; 5] {
         o.knee.and_then(|k| s.levels.get(k)).map_or(String::from("–"), level_text),
         places(o.max_achieved_m, 1000, 1, sep),
         at_knee.map_or(String::from("–"), |p| places(p.cost_per_1000_u, 1_000_000, 6, sep)),
-        o.limit.clone(),
+        sim_text(&o.limit),
     ]
 }
 
@@ -369,7 +369,7 @@ fn table(n: &mut Net, ui: &mut Ui, a: &Sweep, b: Option<&Sweep>) {
     for i in first..end {
         let (l, run, r) = &rows[i as usize];
         ui.grid_row(st, i);
-        ui.grid_text(st, 0, l);
+        ui.grid_text(st, 0, &sim_text(l));
         ui.grid_text(st, 1, run);
         for (k, x) in r.iter().enumerate() {
             ui.grid_text(st, 2 + k, x);
@@ -384,7 +384,8 @@ fn charts(n: &mut Net, ui: &mut Ui, a: &Sweep, b: Option<&Sweep>) {
         return;
     }
     // the configuration of the detail charts
-    let names: Vec<&str> = a.configs.iter().map(|c| c.label.as_str()).collect();
+    let shown: Vec<String> = a.configs.iter().map(|c| sim_text(&c.label)).collect();
+    let names: Vec<&str> = shown.iter().map(|s| s.as_str()).collect();
     let mut cfg = n.exp.cmp.cfg.clamp(0, names.len() as i32 - 1);
     ui.box_begin(0, BOX_H | BOX_XCENTER, 8);
     ui.text(TS_BODY | TX_SECONDARY, t("Konfiguration der Latenzen"));

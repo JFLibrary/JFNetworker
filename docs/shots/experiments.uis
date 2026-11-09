@@ -1,0 +1,36 @@
+#!args --lang en --start-page
+# README picture of an experiment (python tools/readme_shots.py): the template "Bigger or more?" opened from
+# the start page, its experiment swept over five load levels, the comparison of scaling up against scaling
+# out.  Steps after tests/experiments_shots.uis, in English.  Ids: Starten 149536; levels 149704, warm-up
+# 149705, settling 149706, measuring 149707.
+size 1500 1000
+theme light
+click button:"Template: Bigger or more?"
+wait 2000
+key ctrl+shift+e
+click #149704
+key ctrl+a
+type "400, 800, 1600, 3200, 4800"
+click #149705
+key ctrl+a
+type "2"
+click #149706
+key ctrl+a
+type "1"
+click #149707
+key ctrl+a
+type "4"
+click #149697
+wait 100
+click tab:"Run"
+click #149536
+sync 900000
+wait 300
+click tab:"Comparison"
+wait 200
+click button:"Collapse: Devices"
+wait 100
+drag 740,372 740,120 8
+wait 200
+move 1450,995
+shot docs/images/experiments.png

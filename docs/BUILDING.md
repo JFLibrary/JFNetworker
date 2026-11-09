@@ -42,7 +42,7 @@ target/debug/jfn-sim.exe decode "ff ff ff ff ff ff 02 4a 00 00 01 01 08 06 ..."
 target/debug/jfn-sim.exe gen 500 --out build/campus.jfnet
 target/debug/jfn-sim.exe rewind tests/fixtures/lab_window.jfnet 60   # Keyframes und Zeit zum Zurückspulen
 target/debug/JFNetworker.exe tests/fixtures/two_pcs.jfnet --scenario tests/scen/two_pcs.scn
-python ../JFLib/tools/i18n_check.py ../JFNetworker crates     # jeder Text der Crates hat sein Englisch
+python tools/i18n.py                                        # jeder Text hat sein Englisch (JFLibs i18n_check aus ../JFLib)
 cargo jflib test                                            # alle Skripte in tests/ (Windows)
 python tools/linux_test.py                                  # dieselben unter Linux, von Windows über WSL
 ```

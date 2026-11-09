@@ -189,6 +189,34 @@ impl Exp {
 // ---------------------------------------------------------------- what the fields take
 
 /// numbers separated by commas or spaces
+/// The words the simulator writes into a configuration's name and into "limited by" ("größer 8
+/// Kerne", "Sperre DB db"): its reports and CSV stay German, the window shows them in its language,
+/// word for word (größer and mehr name the series of the template "Größer oder mehr?").
+const SIM_WORDS: [&str; 7] = ["größer", "mehr", "Kerne", "Kern", "Platte", "Sperre", "Kabel"];
+
+/// a name or a bottleneck of the simulator in the window's language; a translated word inside the
+/// text starts small ("bigger 8 cores", "Lock DB db")
+pub(crate) fn sim_text(s: &str) -> String {
+    let mut out = String::new();
+    for (i, w) in s.split(' ').enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        match SIM_WORDS.iter().find(|x| **x == w) {
+            Some(x) if t(x) != *x && i > 0 => {
+                let mut c = t(x).chars();
+                if let Some(first) = c.next() {
+                    out.extend(first.to_lowercase());
+                    out.push_str(c.as_str());
+                }
+            }
+            Some(x) => out.push_str(t(x)),
+            None => out.push_str(w),
+        }
+    }
+    out
+}
+
 pub(crate) fn parse_numbers(text: &str) -> Result<Vec<u64>, String> {
     let mut out = Vec::new();
     for w in text.split([',', ' ', ';']).map(str::trim).filter(|w| !w.is_empty()) {
@@ -781,7 +809,7 @@ fn done_part(n: &mut Net, ui: &mut Ui) {
     for i in first..end {
         let p = &points[i as usize];
         ui.grid_row(st, i);
-        ui.grid_text(st, 0, configs.get(p.config).map_or("", |c| c.label.as_str()));
+        ui.grid_text(st, 0, &sim_text(configs.get(p.config).map_or("", |c| c.label.as_str())));
         ui.grid_text(st, 1, &levels.get(p.level).map_or(String::new(), level_text));
         ui.grid_text(st, 2, &places(p.achieved_m, 1000, 1, sep));
         ui.grid_text(st, 3, &lat(p.p50));
@@ -792,7 +820,7 @@ fn done_part(n: &mut Net, ui: &mut Ui) {
         ui.grid_text(st, 8, &format!("{} %", places(p.cpu_max_pm, 10, 0, sep)));
         ui.grid_text(st, 9, &places(p.cost_per_1000_u, 1_000_000, 6, sep));
         ui.grid_text(st, 10, verdict(p));
-        ui.grid_text(st, 11, &p.bottleneck);
+        ui.grid_text(st, 11, &sim_text(&p.bottleneck));
     }
     let _ = ui.grid_end(st);
     ui.scroll_end();

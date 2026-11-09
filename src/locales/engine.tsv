@@ -2,7 +2,7 @@ de	en
 # JFNetworker: the texts of the model and the simulator (crates/jfn_model, crates/jfn_sim)
 # German templates as the code writes them (msg!, the tables marked "i18n"), tab, English.
 # Placeholders: "{}" in order, "{0}".."{9}" by number (a translation may reorder them).
-# Check: python ../JFLib/tools/i18n_check.py ../JFNetworker crates
+# Check: python tools/i18n.py
 
 # jfn_model: device categories, port kinds, cables (catalog.rs, cable.rs)
 Endgeräte	End devices

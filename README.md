@@ -101,6 +101,13 @@ by a self-test, so a lesson never shows something the simulator does not do.*
 *A load generator, a web server and the database `db` under load. Throughput, percentiles up to
 p99.9, error rate and the buffer pool's hit rate, per service and per second.*
 
+![The Experiments panel: the template Bigger or more? swept over five load levels; a table compares bigger servers with more hosts by cost, knee, maximum throughput and what limited them, with saturation and latency charts below](docs/images/experiments.png)
+
+*The template "Bigger or more?" as an experiment: an ever bigger server against ever more small ones,
+the same load levels for each. The table names the knee, the cost per 1000 requests there and what was
+busiest; here eight hosts end at the database's lock on a hot row. Costs and hardware are assumptions
+of the model, the shape of the curves is the point.*
+
 ## Dark theme
 
 ![The same campus in the dark theme](docs/images/editor-dark.png)
@@ -188,8 +195,8 @@ more courses come next ([roadmap](docs/ROADMAP.md)).
 - **Simplifications:** Wi-Fi associates on layer 2, signal and rate follow the distance without real
   radio physics; a hub repeats without collisions; cable and DSL modems and coax carry no data yet; vendor-specific protocols (CDP, EIGRP,
   VTP, HSRP) stay out.
-- **Language:** the window is German and English; some labels of the architecture lab still show
-  German in the English window.
+- **Language:** the window is German and English; what a project file brings along (names,
+  descriptions, notes) stays in the language it was written in.
 
 ## Documentation
 
