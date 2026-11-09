@@ -1,0 +1,22 @@
+#!args --lang en --open docs/shots/ide.jfnet
+# README picture of a host's desktop (python tools/readme_shots.py): the IDE, maximised, with a script
+# from the file manager, run in the IDE's own terminal.  Steps after tests/desk_ide.uis, in English;
+# ide.jfnet is tests/fixtures/ide.jfnet with an English hello.jfs.
+size 1280 900
+theme light
+wait 1500
+dblclick listitem:"SRV1" shift
+expect window 26624 open
+resizewin 26624 1100 760
+wait 300
+click button:"Start"
+click menuitem:"File manager"
+dblclick text:"app"
+dblclick text:"hello.jfs"
+wait 300
+key ctrl+f5
+wait 500
+# the pointer away from the editor (no hover)
+move 1270,895
+wait 100
+shot docs/images/desktop-ide.png window 26624

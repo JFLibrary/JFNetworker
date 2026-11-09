@@ -1,0 +1,15 @@
+#!args --lang en --open tests/fixtures/db_basic.jfnet
+# README picture of the architecture lab (python tools/readme_shots.py): a load generator, a web server and the
+# database db under load, the Metrics panel on the database.  Steps after tests/db_shots.uis, in English.
+size 1500 1000
+theme light
+# a minute of load, so that the charts are full
+wait 60000
+click listitem:"DB"
+wait 200
+key ctrl+shift+m
+wait 200
+click listitem:"Database db"
+wait 200
+move 1450,995
+shot docs/images/lab-metrics.png

@@ -330,7 +330,7 @@ fn both(t: &mut T, name: &str, x: &Text) {
     reads_as(t, name, &x.en, false);
 }
 
-// the naming rule of the README: our own words, no one else's names
+// the naming rule of docs/TRADEMARKS.md: our own words, no one else's names
 fn name_rule(t: &mut T, name: &str, text: &str) {
     let low = text.to_lowercase();
     for word in ["networking academy", "netacad", "cisco", "packet tracer"] {

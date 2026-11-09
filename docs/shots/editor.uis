@@ -1,0 +1,67 @@
+#!args --lang en --open docs/shots/campus.jfnet
+# README pictures of the editor (python tools/readme_shots.py): the campus with a console, light and
+# dark; R1's device window with its CLI; the simulation mode with its events; the Packet tab with
+# MLS1's routing step.  Steps after tests/shots.uis and tests/campus.uis, in English; campus.jfnet is
+# tests/fixtures/campus.jfnet with its notes in English.
+size 1600 1000
+theme light
+# the leases come within a few seconds of virtual time
+wait 6000
+click listitem:"MLS1"
+wait 600
+dblclick listitem:"PC1"
+expect tab:"PC1" selected
+type "ping -c 3 server.lab\n"
+wait 3500
+expect text:"3 packets transmitted, 3 received, 0% packet loss, time 2000ms" exists
+move 800,990
+shot docs/images/editor.png
+theme dark
+shot docs/images/editor-dark.png
+theme light
+# R1's console: typed in the Terminal tab, shown in its device window (the same console)
+wait 600
+dblclick listitem:"R1"
+expect tab:"R1" selected
+type "enable\n"
+type "show ip route\n"
+wait 600
+dblclick listitem:"R1" shift
+expect window 26624 open
+click tab:"CLI"
+wait 300
+shot docs/images/device-cli.png window 26624
+close window 26624
+# the simulation mode: PC2 pings SRV1 (a simple PDU); ARP first, then the echo
+click tab:"Simulation"
+wait 200
+key p
+click listitem:"PC2"
+wait 600
+click listitem:"SRV1"
+key esc
+key f7
+wait 1200
+key f7
+wait 1200
+key f7
+wait 1200
+click tab:"Events"
+move 800,990
+shot docs/images/simulation.png
+# a step back: the echo has reached MLS1; its routing step and checksums in the Packet tab
+key shift+f7
+wait 1200
+focus #38912
+key end
+wait 100
+click tab:"Packet"
+wait 100
+click button:"Collapse: Devices"
+wait 100
+drag 675,672 675,330 8
+wait 100
+click listitem:"Header Checksum: 0xf823 [correct]"
+wait 100
+move 800,990
+shot docs/images/packet.png

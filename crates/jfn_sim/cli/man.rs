@@ -1,5 +1,5 @@
 // man -- the shell's own words about its commands (German, our own texts: the trademark and
-// CLI rule of the README): help, man PAGE, CMD --help of the classic tools, which and type
+// CLI rule of docs/TRADEMARKS.md): help, man PAGE, CMD --help of the classic tools, which and type
 //
 //   PAGES                 every command of the shell: name, where it lives ("" for a builtin of
 //                         the shell), the call, what it does, its options

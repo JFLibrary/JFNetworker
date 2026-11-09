@@ -56,7 +56,7 @@
 // What the log did not keep goes, open transactions too, the pool is empty.  The next start takes the time of
 // reading and replaying the log since the last checkpoint ("recovery_ms"); until then statements get 503.
 //
-// Costs are assumptions of this lab (the README lists them): stmt_us, page_us, row_us, write_us and the
+// Costs are assumptions of this lab (docs/REFERENCE.md lists them): stmt_us, page_us, row_us, write_us and the
 // page size.  Without hardware on the device CPU costs nothing and the status says so; the disk and locks
 // still take their time.
 //

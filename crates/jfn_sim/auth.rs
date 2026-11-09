@@ -12,7 +12,7 @@
 //   LocalAuth                 a device's enable secret, enable password and users, and the
 //                             "service password-encryption" flag; verify_enable / verify_user
 //
-// Decisions (documented in the README): a plain password stays readable (kind 0) unless
+// Decisions (documented in docs/REFERENCE.md): a plain password stays readable (kind 0) unless
 // "service password-encryption" is set, which rewrites kinds 0 to kind 7, a reversible
 // obfuscation of our own (not a vendor's), shown as a hex string.  "enable secret" and
 // "username ... secret" are hashed with PBKDF2-SHA-256 (kind 8), a 12-byte salt from the

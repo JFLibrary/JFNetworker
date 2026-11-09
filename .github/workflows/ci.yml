@@ -1,7 +1,7 @@
 # Does JFNetworker build on Windows and Linux, with the rust-version it names and with the newest
 # stable Rust, and do the golden scenarios give the same reports on both?  The window scripts run
 # on the developer machines: `cargo jflib test` and `python tools/linux_test.py` (README.md,
-# "Bauen und testen").
+# "Tests").
 name: CI
 
 on:

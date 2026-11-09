@@ -6,7 +6,7 @@
 // the inspector, the (still empty) panels of the simulator, .jfnet projects with undo.  The
 // data model lives in crates/jfn_model, the simulator in crates/jfn_sim.
 //
-//   cargo build --workspace     (README.md, "Bauen und testen")
+//   cargo build --workspace     (README.md, "Build and run")
 //   target/debug/JFNetworker.exe                     the editor
 //   target/debug/JFNetworker.exe --open FILE.jfnet   ... with a project
 //   target/debug/JFNetworker.exe --selftest          self-checks of model and simulator (tests/model.uis)

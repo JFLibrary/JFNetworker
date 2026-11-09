@@ -18,7 +18,7 @@
 //                                 else paths (a trailing / for directories, the common prefix
 //                                 of several matches)
 //
-// The grammar (a subset of POSIX sh, documented in the README):
+// The grammar (a subset of POSIX sh, documented in docs/REFERENCE.md):
 //   list      and-or ((";" | "&") and-or)* [";" | "&"]     "&": the and-or runs in the
 //                                                           background (shrun.rs)
 //   and-or    pipeline (("&&" | "||") pipeline)*

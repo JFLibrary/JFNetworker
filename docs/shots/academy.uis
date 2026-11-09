@@ -1,0 +1,31 @@
+#!args --lang en --start-page --academy-dir academy
+# README pictures of the Akademie (python tools/readme_shots.py): the start page, a lesson of the course
+# "Networking basics" with its drawing, a fault hunt with its task.  Steps after tests/courses_shots.uis,
+# in English.  Ids: 135424 + i the cards of the course list (0 the sample, 1 the fault course, 2 the basics),
+# 136192 + k the steps of a course's outline.
+size 1440 900
+theme light
+wait 100
+move 1400,895
+shot docs/images/start-page.png
+cmd 1005
+wait 100
+focus #135426
+key enter
+wait 100
+focus #136193
+key enter
+wait 100
+move 1400,895
+shot docs/images/lesson.png
+key esc
+cmd 1005
+wait 100
+focus #135425
+key enter
+wait 100
+focus #136198
+key enter
+wait 500
+move 1400,895
+shot docs/images/fault-hunt.png
