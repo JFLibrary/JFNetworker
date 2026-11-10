@@ -235,7 +235,7 @@ mod coursetest;
 mod consolelangtest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 69] = [
+    let groups: [(&'static str, fn(&mut T)); 70] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
