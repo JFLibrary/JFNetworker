@@ -189,6 +189,11 @@ fn cable_tile(n: &mut Net, ui: &mut Ui, kind: Option<CableKind>) {
         None => String::from(t("Automatisch: das richtige Kabel für die beiden Ports")),
     };
     ui.tooltip(&tip);
+    // the context menu: the kind's explanation on the website ("Automatisch" has none)
+    if let Some(k) = kind.filter(|_| ev & EV_RCLICK != 0) {
+        crate::workspace::docs::context(n, Some(crate::workspace::docs::Target::Cable(k)));
+        ui.menu_popup(crate::app::tr::menu(&crate::app::commands::M_EXPLAIN));
+    }
     if ev & EV_ACT != 0 {
         // Enter / Space chooses, a click on the chosen tile gives it up
         tools::choose_cable(n, kind, ui.released() & (1 << BTN_LEFT) != 0);
@@ -298,6 +303,11 @@ fn tile(n: &mut Net, ui: &mut Ui, i: usize) {
         tip = tf("{} · Annahme: {}", &[&tip, &crate::app::tr::msg(&hw.summary_msg())]);
     }
     ui.tooltip(&tip);
+    // the context menu: the model's explanation on the website
+    if ev & EV_RCLICK != 0 {
+        crate::workspace::docs::context(n, Some(crate::workspace::docs::Target::Model(m.id)));
+        ui.menu_popup(crate::app::tr::menu(&crate::app::commands::M_EXPLAIN));
+    }
     if ev & EV_ACT != 0 {
         if ui.released() & (1 << BTN_LEFT) == 0 {
             tools::place_centre(n, ui, i); // Enter / Space

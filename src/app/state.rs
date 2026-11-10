@@ -82,6 +82,8 @@ pub(crate) struct Net {
     pub phys: crate::workspace::phys::Phys,
     /// the courses, the learner's progress, the page and the lab of a course (workspace/academy, AK1)
     pub academy: crate::workspace::academy::Academy,
+    /// "Erklärung öffnen": the question and what it is about (workspace/docs.rs)
+    pub docs: crate::workspace::docs::Docs,
     /// the panel Experimente: the draft, a run under way, the last result (workspace/experiments, SA3)
     pub exp: crate::workspace::experiments::Exp,
 }
@@ -118,6 +120,7 @@ impl Net {
             author: crate::workspace::author::Author::new(),
             phys: crate::workspace::phys::Phys::new(),
             academy: crate::workspace::academy::Academy::new(),
+            docs: crate::workspace::docs::Docs::new(),
             exp: crate::workspace::experiments::Exp::new(),
         }
     }

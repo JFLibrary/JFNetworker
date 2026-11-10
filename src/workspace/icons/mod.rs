@@ -63,6 +63,8 @@ pub(crate) const JN_APP_FILES: u32 = 0x10_F167;
 pub(crate) const JN_APP_MONITOR: u32 = 0x10_F168;
 pub(crate) const JN_APP_SETTINGS: u32 = 0x10_F169;
 pub(crate) const JN_APP_IDE: u32 = 0x10_F16A;
+/// "Erklärung öffnen": a globe with an arrow leaving it (workspace/docs.rs)
+pub(crate) const JN_EXPLAIN: u32 = 0x10_F16B;
 
 /// the icon of a kind of port
 pub(crate) fn port_icon(m: jfn_model::Media) -> u32 {

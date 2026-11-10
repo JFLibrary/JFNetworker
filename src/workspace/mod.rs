@@ -40,6 +40,7 @@ pub(crate) mod phys;
 pub(crate) mod ide;
 pub(crate) mod startpage;
 pub(crate) mod academy;
+pub(crate) mod docs;
 
 use alloc::string::String;
 use alloc::vec::Vec;

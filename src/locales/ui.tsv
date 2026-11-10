@@ -2732,3 +2732,8 @@ größer	bigger
 mehr	more
 Kern	Core
 Platte	Disk
+# "Erklärung öffnen": the explanation of a device or cable on the website (workspace/docs.rs)
+&Erklärung öffnen …	Open &explanation …
+Erklärung im Browser öffnen?	Open the explanation in your browser?
+Die Erklärung zu {} steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:	The explanation of {} is on JFNetworker's website. For it you leave the program and switch to your browser:
+Im Browser öffnen	Open in browser

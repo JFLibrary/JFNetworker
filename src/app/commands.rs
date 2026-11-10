@@ -55,7 +55,7 @@ use crate::workspace::canvas::{self, cables, tools, tools::Tool};
 use crate::workspace::icons::*;
 use crate::workspace::terminal;
 
-pub(crate) static CMDS: [Command; 122] = [
+pub(crate) static CMDS: [Command; 123] = [
     Command::new(CMD_NEW, "&Neu", IC_DOCUMENT, MOD_CTRL, b'N' as u32, 0),
     Command::new(CMD_OPEN, "Ö&ffnen …", IC_OPEN_FILE, MOD_CTRL, b'O' as u32, 0),
     Command::new(CMD_SAVE, "&Speichern", IC_SAVE, MOD_CTRL, b'S' as u32, 0),
@@ -108,6 +108,7 @@ pub(crate) static CMDS: [Command; 122] = [
     Command::new(CMD_CABLE0 + 8, "&WAN-Leitung", 0, 0, 0, CF_DISABLED),
     Command::new(CMD_CONSOLE, "&Konsole öffnen", JN_TERMINAL, 0, 0, CF_DISABLED),
     Command::new(CMD_DEVWIN, "&Gerätefenster …", IC_OPEN_IN_NEW_WINDOW, 0, 0, CF_DISABLED),
+    Command::new(CMD_EXPLAIN, "&Erklärung öffnen …", JN_EXPLAIN, 0, 0, CF_DISABLED),
     Command::new(CMD_TERM_CLOSE, "Konsole &schließen", IC_CHROME_CLOSE, 0, 0, CF_DISABLED),
     Command::new(CMD_TERM_RENAME, "Tab &umbenennen …", IC_EDIT, 0, 0, CF_DISABLED),
     Command::new(CMD_TERM_FLOAT, "In eigenem &Fenster", IC_OPEN_IN_NEW_WINDOW, 0, 0, CF_DISABLED),
@@ -337,10 +338,11 @@ static M_HELP: [Mi; 3] = [Mi::Cmd(CMD_SHORTCUTS), Mi::Sep, Mi::Cmd(CMD_ABOUT)];
 /// the canvas' context menu (the background, notes)
 pub(crate) static M_CANVAS: [Mi; 5] = [Mi::Cmd(CMD_RENAME), Mi::Cmd(CMD_DELETE), Mi::Sep, Mi::Cmd(CMD_SELECT_ALL), Mi::Cmd(CMD_FIT)];
 /// the context menu of a device
-pub(crate) static M_DEVICE: [Mi; 11] = [
+pub(crate) static M_DEVICE: [Mi; 12] = [
     Mi::Cmd(CMD_CONSOLE),
     Mi::Cmd(CMD_DEVWIN),
     Mi::Cmd(CMD_SCRIPTS),
+    Mi::Cmd(CMD_EXPLAIN),
     Mi::Sep,
     Mi::Cmd(CMD_RENAME),
     Mi::Cmd(CMD_POWER),
@@ -351,7 +353,9 @@ pub(crate) static M_DEVICE: [Mi; 11] = [
     Mi::Cmd(CMD_FIT),
 ];
 /// the context menu of a cable
-pub(crate) static M_CABLE: [Mi; 7] = [
+pub(crate) static M_CABLE: [Mi; 9] = [
+    Mi::Cmd(CMD_EXPLAIN),
+    Mi::Sep,
     Mi::Cmd(CMD_ROUTE_STRAIGHT),
     Mi::Cmd(CMD_ROUTE_ORTHO),
     Mi::Cmd(CMD_ROUTE_CURVE),
@@ -360,6 +364,8 @@ pub(crate) static M_CABLE: [Mi; 7] = [
     Mi::Sep,
     Mi::Cmd(CMD_DISCONNECT),
 ];
+/// the context menu of a palette tile: its explanation on the website (workspace/docs.rs)
+pub(crate) static M_EXPLAIN: [Mi; 1] = [Mi::Cmd(CMD_EXPLAIN)];
 /// the context menu of a group (G1: its frame or cluster)
 pub(crate) static M_GROUP: [Mi; 9] = [
     Mi::Cmd(CMD_GROUP_COLLAPSE),
@@ -430,6 +436,7 @@ pub(crate) fn states(n: &Net, ui: &mut Ui) {
     crate::workspace::sim::states(n, ui);
     cables::states(n, ui);
     terminal::states(n, ui);
+    crate::workspace::docs::states(n, ui);
     crate::workspace::task::states(n, ui);
     crate::workspace::devwin::scripts::states(n, ui);
     crate::workspace::metrics::states(n, ui);
@@ -600,6 +607,7 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32, arg: u32) -> bool {
             cables::set_kind(n, Some(CableKind::ALL[CABLE_KINDS0 + (id - CMD_CABLE_MORE) as usize]));
         }
         CMD_CONSOLE..=CMD_LOG_CLEAR => return terminal::command(n, ui, id),
+        CMD_EXPLAIN | CMD_EXPLAIN_GO => return crate::workspace::docs::command(n, ui, id),
         // the simulation mode (workspace/sim)
         CMD_SIM_REALTIME | CMD_SIM_MODE | CMD_SIM_PLAY | CMD_SIM_STEP | CMD_SIM_BACK | CMD_SIM_RESET => return crate::workspace::sim::command(n, ui, id, arg),
         _ if (CMD_SIM_TEMPO0..200).contains(&id) => return crate::workspace::sim::command(n, ui, id, arg),

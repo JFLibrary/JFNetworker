@@ -156,6 +156,7 @@ fn dialogs(n: &mut Net, ui: &mut Ui) {
     crate::workspace::settings::dialog(n, ui);
     crate::workspace::startpage::info_dialog(n, ui);
     crate::workspace::academy::dialog(n, ui);
+    crate::workspace::docs::dialog(n, ui);
     crate::workspace::settings::shortcuts(n, ui);
     crate::doc::autosave::frame(n, ui);
     sim::pdu::dialog(n, ui);

@@ -840,6 +840,9 @@ pub(crate) const ID_AI_DIAG_ADD: u32 = 0x0002_4051;
 /// the panel Experimente comes forward; its file dialog chose a file
 pub(crate) const CMD_EXPERIMENTS: u32 = 1040;
 pub(crate) const CMD_EXP_FILE_DONE: u32 = 1041;
+/// "Erklärung öffnen" (workspace/docs.rs): the question, then the browser
+pub(crate) const CMD_EXPLAIN: u32 = 1031;
+pub(crate) const CMD_EXPLAIN_GO: u32 = 1032;
 /// the panel Experimente (bottom, hidden until asked for)
 pub(crate) const P_EXPERIMENTS: u32 = 17;
 /// a run's progress reaches the window
@@ -918,3 +921,5 @@ pub(crate) const ID_MET_BARS: u32 = 0x0002_5020;
 pub(crate) const ID_MET_CABLES: u32 = 0x0002_5021;
 pub(crate) const ID_EX_CMP_GRID: u32 = 0x0002_5040;
 pub(crate) const ID_EX_POINTS: u32 = 0x0002_5100;
+/// the question before an explanation opens in the browser (workspace/docs.rs)
+pub(crate) const ID_DOCS_DLG: u32 = 0x0002_6800;

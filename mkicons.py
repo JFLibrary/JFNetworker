@@ -102,6 +102,9 @@ ICONS = [
     # Einstellungen: three sliders
     (["JN_APP_SETTINGS"], "M4 7H7.2M10.8 7H20" + circle(9, 7, 1.8) + "M4 12H13.2M16.8 12H20" + circle(15, 12, 1.8)
      + "M4 17H5.2M8.8 17H20" + circle(7, 17, 1.8), W),
+    # Erklärung öffnen: a globe (the website) with an arrow leaving to the upper right
+    (["JN_EXPLAIN"], circle(10, 14, 6.8) + line(3.2, 14, 16.8, 14) + "M10 7.2C7.4 9.4 7.4 18.6 10 20.8C12.6 18.6 12.6 9.4 10 7.2"
+     + line(14.2, 9.8, 20.5, 3.5) + poly([(15.8, 3.5), (20.5, 3.5), (20.5, 8.2)]), W),
     # IDE: angle brackets and a slash in a window
     (["JN_APP_IDE"], rrect(3, 4.5, 18, 15, 1.5) + poly([(9.5, 9), (7, 12), (9.5, 15)]) + poly([(14.5, 9), (17, 12), (14.5, 15)])
      + line(13, 8.5, 11, 15.5), W),

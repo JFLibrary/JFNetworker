@@ -432,6 +432,7 @@ fn event(n: &mut Net, ui: &mut Ui, ev: DEv) {
             ui.repass();
         }
         DEv::Context(hit, _) => {
+            crate::workspace::docs::context(n, None);
             let menu: &'static [Mi] = match hit {
                 DHit::Edge { .. } | DHit::Waypoint(..) | DHit::Mid(..) => &M_CABLE,
                 DHit::Node(k) if groups::is_group(n, k) => &crate::app::commands::M_GROUP,
