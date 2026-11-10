@@ -1397,6 +1397,20 @@ pub fn preset_service(model: &str) -> Option<(&'static str, &'static str)> {
     })
 }
 
+/// the startup configuration a tile of the palette brings when it is placed in the window: a home
+/// router translates what leaves through wan to its address and lets in only the answers, as one does
+/// out of the box (written as the simulator's running configuration writes these lines).  A file that
+/// is loaded keeps its own
+pub fn preset_startup(model: &str) -> Option<&'static str> {
+    match model {
+        "home-router" => Some(HOME_ROUTER_STARTUP),
+        _ => None,
+    }
+}
+
+/// what a new home router boots with (preset_startup)
+pub const HOME_ROUTER_STARTUP: &str = "iptables -t nat -A POSTROUTING -o wan -j MASQUERADE\niptables -P FORWARD DROP\niptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\niptables -A FORWARD -i br0 -o wan -j ACCEPT\n";
+
 /// the config of a tile's service when it is more than empty: JSON text
 pub fn preset_config(model: &str) -> Option<&'static str> {
     match model {

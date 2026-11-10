@@ -7,6 +7,8 @@
 //   Nat { sides, pools, rules, timeouts, stats, .. }   the configuration and the translations
 //                                    of a device (IpStack::nat)
 //   Rule::List { acl, to, overload } / Rule::Static { proto, local, lport, global, gport }
+//   Rule::Masquerade { iface, src }   iptables' MASQUERADE on a Linux device (cli/iptables.rs)
+//   masq_sides(&mut IpStack)         the sides that rule gives the interfaces
 //   Engine::nat_in(..)               a packet that arrives on an outside interface (l3.rs):
 //                                    its destination translated back, then forwarded
 //   Engine::nat_out(..)              a packet on its way out (l3.rs, after routing): the source
@@ -55,6 +57,16 @@
 // arrive before it wait up to 30 s and follow it then, in order.  Not done here: hairpinning
 // (an inside host reaching another one by its global address), "ip nat outside source",
 // route maps and the application helpers (FTP and the like).
+//
+// MASQUERADE ("iptables -t nat -A POSTROUTING [-s NET] -o IF -j MASQUERADE" on a Linux device) is
+// the same engine: its interfaces are outside, every other interface of the device inside
+// (masq_sides, again whenever an interface comes or goes, so the indices stay right), and the rule
+// is a dynamic one with overload on the address IF has at the time.  It translates what leaves
+// through IF (from NET, when given), and only the first packet of a connection begins a
+// translation, as the original's nat table sees only those: an answer of an inside host to a
+// connection from outside (an echo reply, a TCP segment without SYN) leaves as it is.  The rest --
+// mappings, ports, timeouts, ICMP errors, fragments -- is the behaviour above.  Without such a rule
+// nothing changes for anybody; IOS-like devices never have one.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -65,7 +77,7 @@ use jfn_model::msg;
 use netpkt::icmp::{self, Icmp, UNREACH_ADMIN};
 use netpkt::ipv4::{self, Ipv4View, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
 use netpkt::nat::{self as rw, Flow, Side as RwSide};
-use netpkt::tcp::{FIN, RST, SYN};
+use netpkt::tcp::{ACK, FIN, RST, SYN};
 use netpkt::{Ipv4, Prefix4};
 
 use crate::action::ActErr;
@@ -129,6 +141,9 @@ pub enum Rule {
     /// "ip nat inside source static [tcp|udp] LOCAL [PORT] GLOBAL|interface I [PORT]": proto 0
     /// translates the address with every protocol and port
     Static { proto: u8, local: Ipv4, lport: u16, global: Global, gport: u16, extendable: bool },
+    /// iptables' "-A POSTROUTING [-s SRC] -o IFACE -j MASQUERADE" (Linux devices): what leaves through
+    /// the interface gets its address, with ports
+    Masquerade { iface: String, src: Option<Prefix4> },
 }
 
 /// which timeout ("ip nat translation ...")
@@ -281,6 +296,8 @@ pub struct Nat {
     pub rules: Vec<(u32, Rule)>,
     pub timeouts: Timeouts,
     pub stats: NatStats,
+    /// packets and bytes of the connections each MASQUERADE rule began (by rule id: "iptables -L -v")
+    pub masq_hits: BTreeMap<u32, (u64, u64)>,
     pub(crate) maps: BTreeMap<u64, Mapping>,
     map_local: BTreeMap<(u8, Ipv4, u16), u64>,
     map_global: BTreeMap<(u8, Ipv4, u16), u64>,
@@ -311,6 +328,16 @@ fn icmp_request(f: &Flow) -> bool {
     f.icmp.is_some_and(|(t, _)| rw::reply_of(t).is_some())
 }
 
+/// the first packet of a connection: what the original's nat table sees (TCP: a SYN alone; ICMP: no
+/// query's answer)
+fn begins(f: &Flow) -> bool {
+    match f.proto {
+        PROTO_TCP => f.flags & SYN != 0 && f.flags & (ACK | RST) == 0,
+        PROTO_ICMP => !f.icmp.is_some_and(|(t, _)| matches!(t, 0 | 14 | 16 | 18)),
+        _ => true,
+    }
+}
+
 fn is_icmp_error(f: &Flow) -> bool {
     f.proto == PROTO_ICMP && f.icmp.is_some_and(|(t, _)| matches!(t, icmp::T_UNREACH | icmp::T_TIME_EXCEEDED | icmp::T_PARAM_PROBLEM | icmp::T_REDIRECT | 4))
 }
@@ -333,6 +360,7 @@ impl Nat {
         self.sess_out.clear();
         self.frags.clear();
         self.armed = None;
+        self.masq_hits.clear();
     }
     /// an interface went away
     pub fn unbind(&mut self, iface: u16) {
@@ -359,6 +387,7 @@ impl Nat {
         self.rules.retain(|(_, x)| match (x, r) {
             (Rule::Static { proto: a, local: b, lport: c, .. }, Rule::Static { proto: d, local: e, lport: f, .. }) => !(a == d && b == e && c == f),
             (Rule::List { acl: a, .. }, Rule::List { acl: b, .. }) => a != b,
+            (Rule::Masquerade { iface: a, src: s }, Rule::Masquerade { iface: b, src: t }) => !(a == b && s == t),
             _ => true,
         });
         self.rules.len() != n
@@ -366,8 +395,14 @@ impl Nat {
     /// forgets every dynamic translation and session ("clear ip nat translation *")
     pub fn clear(&mut self) {
         let stats = self.stats;
+        let hits = core::mem::take(&mut self.masq_hits);
         self.reset();
         self.stats = stats;
+        self.masq_hits = hits;
+    }
+    /// the device has a MASQUERADE rule
+    pub fn masquerades(&self) -> bool {
+        self.rules.iter().any(|(_, r)| matches!(r, Rule::Masquerade { .. }))
     }
     /// when a session ends without traffic (None: never)
     pub fn session_end(&self, s: &Session) -> Option<Ns> {
@@ -808,9 +843,9 @@ impl Engine {
             return alloc::vec![(pkt, None, cause)];
         }
         if f.later || f.mf {
-            return self.nat_frag_out(ni, inif, &f, pkt, cause);
+            return self.nat_frag_out(ni, inif, out, &f, pkt, cause);
         }
-        match self.nat_translate_out(ni, inif, &f, &pkt, cause) {
+        match self.nat_translate_out(ni, inif, out, &f, &pkt, cause) {
             Some(Some(to)) => {
                 let mut p = pkt.clone();
                 rw::rewrite(&mut p, RwSide::Src, to.0, to.1);
@@ -821,11 +856,11 @@ impl Engine {
         }
     }
 
-    /// the source a packet from inside leaves with: Some(Some(to)) translated (noted),
-    /// Some(None) unchanged, None refused (noted, the sender told)
-    fn nat_translate_out(&mut self, ni: usize, inif: u16, f: &Flow, pkt: &[u8], cause: Option<HopId>) -> Option<Option<To>> {
+    /// the source a packet from inside leaves with through interface `out`: Some(Some(to))
+    /// translated (noted), Some(None) unchanged, None refused (noted, the sender told)
+    fn nat_translate_out(&mut self, ni: usize, inif: u16, out: u16, f: &Flow, pkt: &[u8], cause: Option<HopId>) -> Option<Option<To>> {
         let dev = self.dev_of(ni);
-        match self.nat_lookup_out(ni, f, cause) {
+        match self.nat_lookup_out(ni, f, out, pkt.len(), cause) {
             Out::To(to) => {
                 self.note(dev, cause, Note::NatTranslate { proto: f.proto, inbound: false, from: (f.src, to.1.map(|_| f.sport).unwrap_or(0)), to: (to.0, to.1.unwrap_or(0)) });
                 Some(Some(to))
@@ -847,8 +882,9 @@ impl Engine {
         }
     }
 
-    /// the global endpoint of a packet from inside (a session made or refreshed)
-    fn nat_lookup_out(&mut self, ni: usize, f: &Flow, cause: Option<HopId>) -> Out {
+    /// the global endpoint of a packet from inside that leaves through `out` and has `len` bytes (a
+    /// session made or refreshed)
+    fn nat_lookup_out(&mut self, ni: usize, f: &Flow, out: u16, len: usize, cause: Option<HopId>) -> Out {
         let now = self.now;
         let Some(n) = self.nat_part(ni) else {
             return Out::NoRule;
@@ -897,13 +933,29 @@ impl Engine {
             }
             return Out::To((g, None));
         }
-        // the dynamic rules in their order: the first whose list permits the packet
+        // the dynamic rules in their order: the first whose list permits the packet (MASQUERADE: the
+        // first of the interface it leaves through, for a packet that begins a connection)
         for i in 0..nrules {
-            let Some((rid, Rule::List { acl, to, overload })) = self.rules(ni).get(i).cloned() else {
-                continue;
+            let (rid, to, overload, masq) = match self.rules(ni).get(i).cloned() {
+                Some((rid, Rule::List { acl, to, overload })) => {
+                    if self.acl_match(ni, &acl, f) != Some(true) {
+                        continue;
+                    }
+                    (rid, to, overload, false)
+                }
+                Some((rid, Rule::Masquerade { iface, src })) => {
+                    let leaves = self.stack(ni).and_then(|st| st.ifaces.get(out as usize)).is_some_and(|x| x.name == iface);
+                    if !leaves || src.is_some_and(|n| !n.contains(f.src)) || !begins(f) {
+                        continue;
+                    }
+                    (rid, Target::Iface(iface), true, true)
+                }
+                _ => continue,
             };
-            if self.acl_match(ni, &acl, f) != Some(true) {
-                continue;
+            if masq && let Some(n) = self.nat_mut(ni) {
+                let h = n.masq_hits.entry(rid).or_insert((0, 0));
+                h.0 += 1;
+                h.1 += len as u64;
             }
             let what = match &to {
                 Target::Pool(p) => format!("pool {}", p),
@@ -1101,12 +1153,12 @@ impl Engine {
         }
     }
 
-    /// a fragment from inside to outside (in ip_output); what leaves now
-    fn nat_frag_out(&mut self, ni: usize, inif: u16, f: &Flow, pkt: Vec<u8>, cause: Option<HopId>) -> Vec<(Vec<u8>, Option<Vec<u8>>, Option<HopId>)> {
+    /// a fragment from inside to outside (in ip_output, through `out`); what leaves now
+    fn nat_frag_out(&mut self, ni: usize, inif: u16, out: u16, f: &Flow, pkt: Vec<u8>, cause: Option<HopId>) -> Vec<(Vec<u8>, Option<Vec<u8>>, Option<HopId>)> {
         let now = self.now;
         let key = (true, f.src, f.dst, f.proto, f.id);
         if !f.later {
-            let r = self.nat_translate_out(ni, inif, f, &pkt, cause);
+            let r = self.nat_translate_out(ni, inif, out, f, &pkt, cause);
             let to = match r {
                 Some(Some(t)) => FragTo::To(t.0),
                 Some(None) => FragTo::Unchanged,
@@ -1371,8 +1423,18 @@ impl Engine {
 
     // ---------------------------------------------------------------- actions
 
+    /// after an interface came or went: MASQUERADE gives the new set of interfaces their sides
+    pub(crate) fn masq_sync(&mut self, dev: u32) {
+        if let Some(st) = self.node_index(dev).and_then(|ni| self.stack_mut(ni))
+            && st.nat.masquerades()
+        {
+            masq_sides(st);
+        }
+    }
+
     /// the NAT actions (action.rs)
     pub(crate) fn nat_apply(&mut self, ni: usize, dev: u32, a: NatAct) -> Result<(), ActErr> {
+        let linux = matches!(self.nodes.get(ni), Some(Some(n)) if n.model.cli == jfn_model::catalog::CliStyle::Linux);
         let st = self.stack_mut(ni).ok_or(ActErr::NoIp(dev))?;
         match a {
             NatAct::Iface { iface, side } => {
@@ -1413,6 +1475,28 @@ impl Engine {
                     Ok(())
                 }
             },
+            NatAct::Rule { rule: rule @ Rule::Masquerade { .. }, add } => {
+                if !linux {
+                    return Err(ActErr::Refused(msg!("MASQUERADE gibt es nur auf Linux-Geräten.")));
+                }
+                if add {
+                    let _ = st.nat.add_rule(rule);
+                } else {
+                    let ids: Vec<u32> = st.nat.rules.iter().filter(|(_, r)| *r == rule).map(|(id, _)| *id).collect();
+                    if !st.nat.remove_rule(&rule) {
+                        return Err(ActErr::Refused(msg!("Keine solche NAT-Regel.")));
+                    }
+                    for id in ids {
+                        st.nat.masq_hits.remove(&id);
+                    }
+                    // the last one gone: the translations go with it
+                    if !st.nat.masquerades() {
+                        st.nat.clear();
+                    }
+                }
+                masq_sides(st);
+                Ok(())
+            }
             NatAct::Rule { rule, add } => {
                 if add {
                     st.nat.add_rule(rule).map_err(|_| ActErr::Refused(msg!("Diese Adresse hat schon eine statische Übersetzung.")))
@@ -1421,6 +1505,10 @@ impl Engine {
                 } else {
                     Err(ActErr::Refused(msg!("Keine solche NAT-Regel.")))
                 }
+            }
+            NatAct::ZeroMasq => {
+                st.nat.masq_hits.clear();
+                Ok(())
             }
             NatAct::Timeout { kind, secs } => {
                 st.nat.timeouts.set(kind, secs.unwrap_or(kind.default_secs()));
@@ -1451,6 +1539,23 @@ pub enum NatAct {
     Timeout { kind: Tmo, secs: Option<u32> },
     /// forgets the dynamic translations, or (stats) the counters
     Clear { stats: bool },
+    /// the counters of the MASQUERADE rules back to 0 ("iptables -t nat -Z")
+    ZeroMasq,
+}
+
+/// the sides of the interfaces under MASQUERADE: the interfaces its rules name are outside, every
+/// other one inside; no side at all without such a rule (a Linux device has no other way to them)
+pub(crate) fn masq_sides(st: &mut crate::ip::IpStack) {
+    let outs: Vec<String> = st.nat.rules.iter().filter_map(|(_, r)| if let Rule::Masquerade { iface, .. } = r { Some(iface.clone()) } else { None }).collect();
+    st.nat.sides.clear();
+    if outs.is_empty() {
+        return;
+    }
+    for (i, f) in st.ifaces.iter().enumerate() {
+        if !f.hidden {
+            st.nat.sides.insert(i as u16, if outs.contains(&f.name) { Side::Outside } else { Side::Inside });
+        }
+    }
 }
 
 /// what a packet of a flow says about its TCP connection

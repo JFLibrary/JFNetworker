@@ -50,7 +50,7 @@
 | Sitzungen und Telnet-Server | [`crates/jfn_sim/cli/ses.rs`](crates/jfn_sim/cli/ses.rs), [`telnetd.rs`](crates/jfn_sim/telnetd.rs), [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs), [`src/doc/console.rs`](src/doc/console.rs), [`src/workspace/terminal.rs`](src/workspace/terminal.rs), [`src/sessiontest.rs`](src/sessiontest.rs) | mehrere Befehlszeilen je Gerät (Konsole, lokale Terminals, Telnet), der Telnet-Server der vty-Leitungen und `telnetd`, `show users`, `who`, die Sitzungen im Terminal-Panel |
 | 802.1X und WPA-Enterprise | [`crates/jfn_sim/dot1x.rs`](crates/jfn_sim/dot1x.rs), [`supp.rs`](crates/jfn_sim/supp.rs), [`dot1xtrace.rs`](crates/jfn_sim/dot1xtrace.rs), [`cli/dot1x.rs`](crates/jfn_sim/cli/dot1x.rs), [`lib/eapm`](https://github.com/JFLibrary/JFLib/blob/main/lib/eapm/lib.rs), [`lib/netpkt/eap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/eap.rs), [`lib/crypto/eappwd.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/crypto/eappwd.rs) |
 | IMAP | [`crates/jfn_sim/imapd.rs`](crates/jfn_sim/imapd.rs), [`mailbox.rs`](crates/jfn_sim/mailbox.rs), [`mailc.rs`](crates/jfn_sim/mailc.rs), [`lib/netpkt/imap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/imap.rs) |
-| Zonen und Sitzungen | [`crates/jfn_sim/fw.rs`](crates/jfn_sim/fw.rs), [`fwtrace.rs`](crates/jfn_sim/fwtrace.rs), [`cli/fw.rs`](crates/jfn_sim/cli/fw.rs), [`cli/ufw.rs`](crates/jfn_sim/cli/ufw.rs), [`src/workspace/devwin/fwzones.rs`](src/workspace/devwin/fwzones.rs), [`src/firewalltest.rs`](src/firewalltest.rs) |
+| Zonen und Sitzungen | [`crates/jfn_sim/fw.rs`](crates/jfn_sim/fw.rs), [`fwtrace.rs`](crates/jfn_sim/fwtrace.rs), [`cli/fw.rs`](crates/jfn_sim/cli/fw.rs), [`cli/ufw.rs`](crates/jfn_sim/cli/ufw.rs), [`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs), [`src/workspace/devwin/fwzones.rs`](src/workspace/devwin/fwzones.rs), [`src/firewalltest.rs`](src/firewalltest.rs), [`src/homenattest.rs`](src/homenattest.rs) |
 | Firewall-Reiter | [`src/workspace/devwin/firewall.rs`](src/workspace/devwin/firewall.rs), [`crates/jfn_sim/acl.rs`](crates/jfn_sim/acl.rs) (`Acls::probe`), [`src/doc/console.rs`](src/doc/console.rs) (`run_lines_running`), [`src/fwguitest.rs`](src/fwguitest.rs) | Regeln, NAT und Test im Gerätefenster als Formulare über den Befehlen, sein Selbsttest (siehe [NAT und Zugriffslisten](#nat-und-zugriffslisten)) |
 | Akademie | [`crates/jfn_model/academy.rs`](crates/jfn_model/academy.rs), [`crates/jfn_model/quiz.rs`](crates/jfn_model/quiz.rs), [`crates/jfn_run/lib.rs`](crates/jfn_run/lib.rs) (`check_course`), [`src/workspace/academy/`](src/workspace/academy/mod.rs) (`store.rs`, `pages.rs`, `quiz.rs`), [`academy/beispiel`](academy/beispiel), [`src/academytest.rs`](src/academytest.rs), [`src/quiztest.rs`](src/quiztest.rs) | Quiz und Tests als Dateien, ihre Bewertung und ihre Seite; Kurse als Dateien, was an einem Kurs nicht stimmt, der Fortschritt (ohne I/O); `jfn-sim course`; die Seiten Liste, Gliederung und Lektion, die Leiste über der Zeichenfläche, was gelesen und geschrieben wird; der Beispielkurs; ihr Selbsttest (Gruppe `academy`; siehe [Akademie](#akademie)) |
 | Startseite | [`src/workspace/startpage.rs`](src/workspace/startpage.rs), [`assets/templates`](assets/templates), [`lib/ui/action_card.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/ui/action_card.rs), [`src/startpagetest.rs`](src/startpagetest.rs) | die Seite statt Werkzeugleiste, Dock und Statusleiste mit Neu, Zuletzt und Lernen, der Dialog Projektinfo, die fünf Vorlagen, die Karte aus der Bibliothek (getestet in `apps/cardtest`), ihr Selbsttest (Gruppe `startpage`) |
@@ -87,7 +87,7 @@ Message Queue, Lastgenerator, Container-Host. Netzwerkgeräte tragen IOS-Interfa
 | JF-R2 | Filial-Router | 2× 1G, 2× Seriell, Konsole |
 | JF-R4 | Edge-Router | 4× 1G, 2× 10G SFP+, 2× Seriell, Konsole |
 | JF-R8 | Core-Router | 1× 1G, 8× 10G SFP+, 2× 100G QSFP28, Konsole |
-| Heimrouter | Router mit WLAN und NAT, Linux-Befehlszeile | 1G WAN, 4× 1G LAN, Funk |
+| Heimrouter | Router mit WLAN und NAT, Linux-Befehlszeile; aus der Palette mit NAT auf `wan` und einem Filter, der nur Antworten hereinlässt (`iptables`, siehe [NAT und Zugriffslisten](#nat-und-zugriffslisten)) | 1G WAN, 4× 1G LAN, Funk |
 | Hub | Schicht 1, ohne Befehlszeile | 8× 100M (`port0` bis `port7`) |
 | Repeater | Schicht 1 wie der Hub, ohne Befehlszeile | 2× 1G (`port0`, `port1`) |
 | Bridge | Schicht 2, lernt Adressen, ohne Befehlszeile | 2× 1G (`port0`, `port1`) |
@@ -866,7 +866,9 @@ prüfen Zeiträume (siehe [Szenarien](#szenarien-scn)).
 
 - **Dienste ohne JSON** (Gerätefenster, Reiter Dienste; [`devwin/svcform.rs`](src/workspace/devwin/svcform.rs)):
   „Dienst hinzufügen …“ legt einen Webserver, Lastgenerator, Load Balancer, KV-Knoten, Cache, eine Queue oder einen
-  Worker an, „Einstellungen …“ zeigt ihre Formulare: Beschriftungen mit Einheit und einer Zeile Hilfe, das Seltene
+  Worker an, auf einem Linux-Gerät auch einen DHCP-Server (seine Shell hat keinen anderen Weg zu einem): Er beginnt mit
+  einem Pool für das Netz seines LAN (`br0`, sonst das erste Interface mit Adresse; .100 bis .199, das Gerät als
+  Router), und seine Einstellungen öffnen sich als JSON. „Einstellungen …“ zeigt die Formulare der anderen: Beschriftungen mit Einheit und einer Zeile Hilfe, das Seltene
   eingeklappt. Ein Backend oder Ziel wird unter den Geräten des Projekts gewählt (daraus wird die Adresse, die der Dienst
   braucht, mit dem Port seines Dienstes) oder eingetippt. Ein Formular ändert nur, was sich darin geändert hat; jeder andere
   Eintrag der Konfiguration bleibt an seiner Stelle, ein leeres Feld nimmt den Eintrag heraus. „Als JSON bearbeiten“ zeigt,
@@ -2005,10 +2007,21 @@ startet das Gerät mit der alten Konfiguration neu, also beginnen danach alle Z�
 bei 0. Was in der Konsole getippt und noch nicht gesichert war, sichert der nächste Schritt des Reiters
 mit: Sonst könnte er diese Regeln nicht verschieben oder löschen.
 
+**Auf Linux-Geräten** übersetzt `iptables -t nat -A POSTROUTING [-s NETZ] -o IF -j MASQUERADE`
+([`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs)) mit derselben Maschine: IF ist außen, jedes andere
+Interface des Geräts innen (auch eines, das später mit `ip link add` dazukommt), und die Regel ist eine
+dynamische mit Ports auf der Adresse, die IF gerade hat. Wie beim Vorbild beginnt nur das erste Paket einer
+Verbindung eine Übersetzung: Die Antwort eines inneren Hosts auf eine Verbindung von außen (Echo Reply, TCP
+ohne SYN) geht unverändert hinaus. `-D`, `-F` und `-L`/`-S` wie beim Vorbild (`-v` zählt die Verbindungen, die
+die Regel begonnen hat); ohne Regel bleibt nichts übrig, auch keine Übersetzung. Die Zeilen stehen in der
+Konfiguration des Geräts, `iptables-save` gibt die Tabellen im Format des Vorbilds aus. Ein Heimrouter aus der
+Palette bootet mit MASQUERADE auf `wan` und dem Filter unten ([Firewall](#firewall-zonen-und-sitzungen)); einer aus
+einer Datei, auch aus der Vorlage „Heimnetz“, bootet mit dem, was dort steht. Andere Ziele der Tabelle nat (SNAT,
+DNAT, Portweiterleitung über PREROUTING) gibt es nicht.
+
 Noch offen: Hairpinning (ein innerer Host erreicht einen anderen über dessen globale Adresse;
 RFC 4787 verlangt es, das klassische Vorbild kann es nicht), `ip nat outside source`,
-Route-Maps, Helfer für Protokolle mit Adressen im Inhalt (FTP …), NAT und Filter auf Linux-Geräten
-(iptables, der Heimrouter).
+Route-Maps, Helfer für Protokolle mit Adressen im Inhalt (FTP …), DNAT auf Linux-Geräten.
 
 Geprüft wird das in der Selbsttest-Gruppe `nat` ([`src/nattest.rs`](src/nattest.rs)) und im
 Golden-Szenario `nat_pat.scn` auf `fixtures/nat_pat.jfnet`: ein Büro hinter R1 mit PAT auf
@@ -2113,13 +2126,33 @@ oben, und die Antworten kommen zurück. Ping, ICMP-Fehler und die Antworten an e
 der Host weiterleitet, sieht sie nicht an. Die Zeilen stehen in der Konfiguration des Geräts, die Regeln gelten für
 IPv4 und IPv6, `from` nur für IPv4. Kein Log, keine Anwendungsprofile.
 
+Was ein Linux-Gerät **weiterleitet**, filtert die Kette FORWARD von `iptables`
+([`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs)): `-P FORWARD ACCEPT|DROP`, `-A|-I|-D|-C FORWARD` mit
+`-i IF`, `-o IF` (`IF+` für alle, die so beginnen), `-p tcp|udp|icmp|all`, `--dport`, `-s`, `-d`,
+`-m conntrack --ctstate` oder `-m state --state` (NEW, ESTABLISHED, RELATED, INVALID) und `-j ACCEPT|DROP|REJECT
+[--reject-with …]`, `-D FORWARD N`, `-F`, `-Z`, `-L [-n] [-v] [-x] [--line-numbers]` und `-S` im Layout des Vorbilds.
+Die Kette sieht ein Paket, wo `fw_out` es sieht: nach dem Routing, vor der Übersetzung der Quelle und nach der
+Übersetzung zurück, also mit den inneren Adressen. Jedes Paket trifft die Regeln der Reihe nach, sonst entscheidet
+die Vorgabe; die Zustände kommen aus der Sitzungstabelle oben (geteilt mit `ufw`): ESTABLISHED gehört zu einer
+Sitzung, auf dem Rückweg oder nachdem etwas zurückkam, RELATED ist ein ICMP-Fehler zu einer, NEW kann eine beginnen.
+Was eine Regel oder die Vorgabe durchlässt und eine Sitzung beginnen kann, beginnt eine (Paar `iptables`, die
+Wörter der Regel als Klasse); erst eine Regel für ESTABLISHED lässt die Antworten herein. REJECT schickt „port
+unreachable“ (oder was `--reject-with` sagt). Regeln und Vorgabe zählen Pakete und Bytes, Entscheidungen erscheinen
+als dieselben Ereignisse wie die der Zonen. Ein Heimrouter aus der Palette bootet mit `-P FORWARD DROP`, ESTABLISHED
+und RELATED durch und `-i br0 -o wan -j ACCEPT`: Das LAN kommt hinaus, von außen kommen nur Antworten. Mit der
+Vorgabe ACCEPT und ohne Regel ruht die Kette. Was das Gerät selbst sendet oder empfängt (INPUT, OUTPUT), bleibt
+Sache von `ufw`; IPv6 filtert sie nicht, eigene Ketten, `!` und weitere Module gibt es nicht.
+
 **Was sie nicht kann.** Die Firewall schaut nicht in die Daten: `match protocol http` heißt TCP-Port 80, nichts
 weiter. Keine Anwendungserkennung, kein IPS, keine Benutzer oder URLs, keine Hilfe für FTPs Datenverbindung,
 keine Prüfung von Sequenznummern, keine Objektgruppen.
 
 Geprüft wird das in der Selbsttest-Gruppe `firewall` ([`src/firewalltest.rs`](src/firewalltest.rs)), im
 Golden-Szenario `firewall_zones.scn` auf `fixtures/firewall_zones.jfnet` (INNEN, DMZ, AUSSEN mit PAT und einer
-Portweiterleitung) und in den Fensterskripten `firewall_zones.uis` und `firewall_zones_shots.uis`.
+Portweiterleitung) und in den Fensterskripten `firewall_zones.uis` und `firewall_zones_shots.uis`; `iptables` in
+der Gruppe `homenat` ([`src/homenattest.rs`](src/homenattest.rs)): ein Heimnetz hinter einem Heimrouter und ein
+Provider ohne Weg zurück, MASQUERADE, die Kette FORWARD, die Konfiguration hin und zurück, die Vorgaben aus der
+Palette, ein DHCP-Server aus „Dienst hinzufügen“.
 
 ### IPv6
 

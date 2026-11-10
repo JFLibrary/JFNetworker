@@ -28,6 +28,8 @@
 //   which, type, help, man (coreutils.rs, man.rs); jobs, fg, wait, kill, ps, sleep, jfs FILE
 //   (shrun.rs: processes)
 //   systemctl, journalctl (cli/units.rs: the units of the host, its log)
+//   ufw (cli/ufw.rs: the firewall of the host itself); iptables, iptables-save (cli/iptables.rs: the
+//   FORWARD chain and MASQUERADE for what the device forwards)
 //   who, w, tty, exit [N] / logout in a further session (telnetd.rs, cli/ses.rs: the sessions)
 //   ssh, scp, ssh-keygen (cli/ssh.rs, sshd.rs)
 //
@@ -170,6 +172,9 @@ impl Engine {
             "cat" => self.sh_cat(ni, &args),
             "iw" => self.sh_iw(ni, &args),
             "ufw" => self.sh_ufw(ni, &args),
+            // the FORWARD chain and MASQUERADE (cli/iptables.rs)
+            "iptables" => self.sh_iptables(ni, &args),
+            "iptables-save" => self.sh_iptables_save(ni, &args),
             // with "> FILE" into a file (files.rs)
             "echo" => self.sh_echo(ni, &args),
             "ls" => self.sh_ls(ni, &args),
@@ -271,6 +276,7 @@ impl Engine {
             "systemctl", "journalctl",
             "who", "w", "tty", "ssh", "scp", "ssh-keygen",
             "wpa_cli", "wpa_supplicant",
+            "iptables", "iptables-save",
         ];
         // the verbs and units of systemctl (cli/units.rs)
         if let Some(r) = self.systemctl_complete(ni, line) {
@@ -1070,6 +1076,8 @@ impl Engine {
                 s.push_str(&format!("ip neigh add {} lladdr {} dev {}\n", ip, m, st.ifaces[*i as usize].name));
             }
         }
+        // MASQUERADE and the FORWARD chain (cli/iptables.rs)
+        s.push_str(&super::iptables::config(st));
         // the name servers set by hand (netsvc.rs: resolv_write)
         s.push_str(&self.resolv_config(ni));
         // IPv6 (linux6.rs)

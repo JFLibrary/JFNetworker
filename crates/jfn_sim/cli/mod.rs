@@ -149,6 +149,7 @@ pub mod ssh;
 pub mod dot1x;
 pub mod fw;
 pub mod ufw;
+pub mod iptables;
 
 /// debugging switched on ("debug ip icmp", "debug arp")
 pub const D_ICMP: u32 = 1;

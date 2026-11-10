@@ -2732,6 +2732,9 @@ größer	bigger
 mehr	more
 Kern	Core
 Platte	Disk
+# a DHCP server from "Dienst hinzufügen" (workspace/devwin/svcform.rs)
+Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer.	Hands out addresses to the devices of the network. It starts with a pool for the network of the LAN; its settings are JSON: pools with network, range, routers, DNS and lease time.
+{} startet dafür neu. Danach folgen die Einstellungen als JSON.	{} restarts for this. Its settings as JSON come next.
 # "Erklärung öffnen": the explanation of a device or cable on the website (workspace/docs.rs)
 &Erklärung öffnen …	Open &explanation …
 Erklärung im Browser öffnen?	Open the explanation in your browser?

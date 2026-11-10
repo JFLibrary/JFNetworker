@@ -87,6 +87,8 @@
 // hardwaretest.rs: CPU and RAM of devices (group hardware: jfn_sim::res against the closed forms of
 // queueing theory, what the services pay, memory, resizes, determinism, scenario steps).
 // firewalltest.rs: the zone firewall (group firewall: zones, sessions, NAT and lists with them).
+// homenattest.rs: iptables on Linux devices (group homenat: MASQUERADE, the FORWARD chain, the home
+// router's defaults from the palette, a DHCP server from "Dienst hinzufügen").
 // fwguitest.rs: the Firewall tab (group fwgui: what its forms type, rows back from the engine, moves,
 // the Test part against packets sent for real, the steps of console::run_lines_running).
 // academytest.rs: the Akademie (group academy: jfn_model::academy, the progress in its file, step order
@@ -212,6 +214,8 @@ mod dbtest;
 mod fwguitest;
 #[path = "firewalltest.rs"]
 mod firewalltest;
+#[path = "homenattest.rs"]
+mod homenattest;
 #[path = "academytest.rs"]
 mod academytest;
 #[path = "quiztest.rs"]
@@ -226,7 +230,7 @@ mod expguitest;
 mod coursetest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 68] = [
+    let groups: [(&'static str, fn(&mut T)); 69] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
@@ -289,6 +293,7 @@ pub fn run() -> i32 {
         ("fwgui", fwguitest::run),
         ("academy", academytest::run),
         ("firewall", firewalltest::run),
+        ("homenat", homenattest::run),
         ("quiz", quiztest::run),
         ("sweep", sweeptest::run),
         ("install", installtest::run),
