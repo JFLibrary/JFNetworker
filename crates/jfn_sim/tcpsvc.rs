@@ -161,7 +161,7 @@ impl Service for TcpEcho {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("Port {}: {} Verbindungen, {} Bytes zurückgeschickt", self.port, self.connections, self.bytes_out)
+        msg!("Port {}: {}, {} Bytes zurückgeschickt", self.port, jfn_model::msg::count(self.connections as u64, msg!("{} Verbindung", self.connections), msg!("{} Verbindungen", self.connections)), self.bytes_out)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())
@@ -275,7 +275,7 @@ impl Service for TcpDiscard {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("Port {}: {} Verbindungen, {} Bytes verworfen", self.port, self.connections, self.bytes)
+        msg!("Port {}: {}, {} Bytes verworfen", self.port, jfn_model::msg::count(self.connections as u64, msg!("{} Verbindung", self.connections), msg!("{} Verbindungen", self.connections)), self.bytes)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

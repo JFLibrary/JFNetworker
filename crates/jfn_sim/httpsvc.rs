@@ -11,7 +11,7 @@
 //                  "type": "text/plain", "size": 0, "chunk": 0, "time_ms": 0, "jitter_ms": 0,
 //                  "error_rate": 0, "error_status": 500, "headers": {"Cache-Control": "no-store"},
 //                  "backend": "kv", "cpu_ms": 0, "serial_us": 0}], "kv": {"nodes": ["10.0.2.21"], "port": 7000,
-//                  "rf": 2, ...}, "db": {"addr": "10.0.2.30", "port": 7100, "timeout_ms": 5000, "conns": 32}, "cpu_ms": 0.02, "serial_us": 0, "usl": {"sigma": 0, "kappa": 0}, "mem_mb": 32,
+//                  "rf": 2, ...}, "db": {"addr": "10.0.2.30", "port": 7100, "timeout_ms": 5000, "connect_timeout_ms": 3000, "conns": 32}, "cpu_ms": 0.02, "serial_us": 0, "usl": {"sigma": 0, "kappa": 0}, "mem_mb": 32,
 //                  "conn_kb": 64, "data_mb": 0}
 //                  With "tls" (tlssim.rs: {"names": [...], "issuer": "lab" | "self", "org": "..", "days":
 //                  365, "age_days": 0, "starts_in_days": 0}) it speaks TLS; its port is then 443 unless
@@ -125,6 +125,9 @@ const K_OWN: u32 = 0;
 const K_HTTP: u32 = 1;
 /// the backends of a web server's routes (kv.rs KvClient)
 const K_UP: u32 = 2;
+/// the connect timeout of the database and the URL backends: TCP sends a lost SYN again after 1 s
+/// (and 3 s), so a SYN an ARP on the way dropped does not fail the request
+const UP_CONNECT: Ns = 3 * SEC;
 /// seconds the per-second counters keep (15 minutes: load averages)
 const KEEP_SECS: usize = 900;
 
@@ -982,7 +985,10 @@ impl HttpServer {
         }
         let mut h = Headers::new();
         h.add("Content-Type", if d.fail.is_some() { "text/plain" } else { "application/json" });
-        let body = if d.fail.is_some() { format!("Backend nicht erreichbar: {}\n", d.fail.as_ref().map(|f| f.text()).unwrap_or_default()).into_bytes() } else { d.body };
+        let body = match &d.fail {
+            Some(f) => f.gateway_body(d.status).into_bytes(),
+            None => d.body,
+        };
         self.answer(os, w.req, Reply { status: d.status, headers: h, body, chunk: 0, close: false });
         while (self.workers == 0 || self.busy() < self.workers)
             && let Some(next) = self.queue.pop_front()
@@ -1016,7 +1022,10 @@ impl HttpServer {
         if let Some(n) = d.node {
             h.add("X-Kv-Node", &format!("{}", n));
         }
-        let body = if d.fail.is_some() { format!("Backend nicht erreichbar: {}\n", d.fail.as_ref().map(|f| f.text()).unwrap_or_default()).into_bytes() } else { d.body };
+        let body = match &d.fail {
+            Some(f) => f.gateway_body(d.status).into_bytes(),
+            None => d.body,
+        };
         self.answer(os, w.req, Reply { status: d.status, headers: h, body, chunk: 0, close: false });
         while (self.workers == 0 || self.busy() < self.workers)
             && let Some(next) = self.queue.pop_front()
@@ -1225,9 +1234,9 @@ impl Service for HttpServer {
             return msg!("Port {} ist nicht offen", self.serve.cfg.port);
         }
         if self.tls.is_some() {
-            return msg!("Port {} (TLS): {} Anfragen, {} Antworten, {} in Arbeit, {} wartend", self.serve.cfg.port, s.requests, s.responses, self.busy(), self.queued());
+            return msg!("Port {} (TLS): {}, {}, {} in Arbeit, {} wartend", self.serve.cfg.port, jfn_model::msg::count(s.requests as u64, msg!("{} Anfrage", s.requests), msg!("{} Anfragen", s.requests)), jfn_model::msg::count(s.responses as u64, msg!("{} Antwort", s.responses), msg!("{} Antworten", s.responses)), self.busy(), self.queued());
         }
-        msg!("Port {}: {} Anfragen, {} Antworten, {} in Arbeit, {} wartend", self.serve.cfg.port, s.requests, s.responses, self.busy(), self.queued())
+        msg!("Port {}: {}, {}, {} in Arbeit, {} wartend", self.serve.cfg.port, jfn_model::msg::count(s.requests as u64, msg!("{} Anfrage", s.requests), msg!("{} Anfragen", s.requests)), jfn_model::msg::count(s.responses as u64, msg!("{} Antwort", s.responses), msg!("{} Antworten", s.responses)), self.busy(), self.queued())
     }
     fn footprint(&self) -> usize {
         1024 + self.serve.tls_bytes()
@@ -2255,7 +2264,9 @@ pub fn from_def_msg(kind: &str, c: &Value) -> Result<Box<dyn Service>, Msg> {
                 return Err(msg!("Eine Route fragt den KV-Speicher, aber \u{201e}kv\u{201c} fehlt."));
             }
             if s.upstream.is_none() && s.routes.iter().any(|r| matches!(r.backend, RouteBackend::Url(_))) {
-                s.upstream = Some(crate::kv::KvClient::new(K_UP));
+                let mut up = crate::kv::KvClient::new(K_UP);
+                up.connect_timeout = UP_CONNECT;
+                s.upstream = Some(up);
             }
             if let Some(d) = c.get("db") {
                 let addr = d.get("addr").and_then(|v| v.as_str()).unwrap_or("");
@@ -2270,6 +2281,10 @@ pub fn from_def_msg(kind: &str, c: &Value) -> Result<Box<dyn Service>, Msg> {
                 s.db_cfg = Some(d.clone());
                 let up = s.upstream.get_or_insert_with(|| crate::kv::KvClient::new(K_UP));
                 up.timeout = up.timeout.max(d.get("timeout_ms").and_then(|v| decimal(v, MS)).unwrap_or(5000 * MS).max(MS));
+                // (a KV client keeps its short one: its nodes stand in for each other)
+                if s.kv_cfg.is_none() {
+                    up.connect_timeout = d.get("connect_timeout_ms").and_then(|v| decimal(v, MS)).unwrap_or(UP_CONNECT).max(MS);
+                }
                 up.set_conns(d.get("conns").and_then(|v| v.as_u64()).unwrap_or(32).clamp(1, 100_000) as usize);
             } else if s.routes.iter().any(|r| matches!(r.backend, RouteBackend::Db(_))) {
                 return Err(msg!("Eine Route fragt die Datenbank, aber \u{201e}db\u{201c} fehlt."));

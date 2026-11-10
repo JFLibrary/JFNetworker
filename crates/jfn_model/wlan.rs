@@ -323,7 +323,7 @@ pub fn check_net(n: &WlanNet) -> Option<Msg> {
         return Some(msg!("Kanal {} gibt es im Band {} nicht.", n.channel, crate::msg::phrase(n.band.title())));
     }
     if n.band == Band::G6 && !n.security.wpa3() {
-        return Some(msg!("Im 6-GHz-Band gibt es nur WPA3-Personal."));
+        return Some(msg!("Im 6-GHz-Band gibt es nur WPA3, Personal oder Enterprise."));
     }
     if n.security.personal() && !passphrase_ok(&n.passphrase) {
         return Some(msg!("Die Passphrase von \u{201e}{}\u{201c} braucht 8 bis 63 Zeichen (ASCII).", n.ssid));

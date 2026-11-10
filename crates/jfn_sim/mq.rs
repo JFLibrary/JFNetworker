@@ -538,7 +538,7 @@ impl Service for Queue {
         self.status_msg().text()
     }
     fn status_msg(&self) -> jfn_model::msg::Msg {
-        msg!("Port {}: {} Topics, {} wartend, {} unterwegs, {} bestätigt", self.port, self.topics.len(), self.depth(), self.inflight(), self.sum(|t| t.acked))
+        msg!("Port {}: {}, {} wartend, {} unterwegs, {} bestätigt", self.port, jfn_model::msg::count(self.topics.len() as u64, msg!("{} Topic", self.topics.len()), msg!("{} Topics", self.topics.len())), self.depth(), self.inflight(), self.sum(|t| t.acked))
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

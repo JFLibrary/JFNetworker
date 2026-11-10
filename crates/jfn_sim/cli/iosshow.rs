@@ -553,6 +553,15 @@ impl Engine {
                     crate::phys::PhysFault::Grade { grade, std } => s.push_str(&format!("  A {} cable does not carry {}: no link\n", grade.name(), std)),
                 }
             }
+            // "Auto-MDI-X aus" of the project: the wrong copper cable holds the link down
+            if kind.is_none_or(|k| matches!(k, IfKind::Port(_)))
+                && self.strict_mdix
+                && let Some(l) = pv.and_then(|p| p.link).and_then(|li| self.links.get(li)).and_then(|l| l.as_ref())
+                && l.wrong_cable
+            {
+                let want = if l.cable == jfn_model::CableKind::CopperCross { "straight-through" } else { "crossover" };
+                s.push_str(&format!("  Wrong copper cable for these ports, no auto-MDI-X: a {} cable is needed, no link\n", want));
+            }
             if x.is_some() && !serial && !matches!(kind, Some(IfKind::Loopback(_))) {
                 s.push_str("  ARP type: ARPA, ARP Timeout 04:00:00\n");
             }

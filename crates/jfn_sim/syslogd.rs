@@ -91,7 +91,10 @@ impl Service for SyslogServer {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("{} Meldungen", self.by_sev.iter().sum::<u64>())
+        {
+            let n = self.by_sev.iter().sum::<u64>();
+            jfn_model::msg::count(n as u64, msg!("{} Meldung", n), msg!("{} Meldungen", n))
+        }
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

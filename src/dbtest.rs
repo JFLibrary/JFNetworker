@@ -412,7 +412,7 @@ impl Service for Bank {
 }
 
 pub(crate) fn run(t: &mut T) {
-    let parts: [(&str, fn(&mut T)); 36] = [("parser", parser), ("config_refusals", config_refusals), ("layout", layout), ("derived_rows", derived_rows), ("pool_unit", pool_unit), ("cpu_bound", cpu_bound), ("io_bound", io_bound), ("index_or_scan", index_or_scan), ("hit_end_to_end", hit_end_to_end), ("hot_row", hot_row), ("group_commit", group_commit), ("counter", counter), ("transfers", transfers), ("isolation", isolation), ("deadlock", deadlock), ("timeouts", timeouts), ("versions", versions), ("limits", limits), ("statements", statements), ("live_index", live_index), ("crash_full", crash_full), ("crash_relaxed", crash_relaxed), ("cold_start", cold_start), ("oom", oom), ("bound", bound), ("determinism", determinism), ("sweep_threads", sweep_threads), ("routes", routes), ("script", script), ("shell", shell), ("form", form), ("preset", preset), ("too_big", too_big), ("live_change", live_change), ("scan_cheap", scan_cheap), ("costs_of_a_clone", costs_of_a_clone)];
+    let parts: [(&str, fn(&mut T)); 37] = [("parser", parser), ("config_refusals", config_refusals), ("layout", layout), ("derived_rows", derived_rows), ("pool_unit", pool_unit), ("cpu_bound", cpu_bound), ("io_bound", io_bound), ("index_or_scan", index_or_scan), ("hit_end_to_end", hit_end_to_end), ("hot_row", hot_row), ("group_commit", group_commit), ("counter", counter), ("transfers", transfers), ("isolation", isolation), ("deadlock", deadlock), ("timeouts", timeouts), ("versions", versions), ("limits", limits), ("statements", statements), ("live_index", live_index), ("crash_full", crash_full), ("crash_relaxed", crash_relaxed), ("cold_start", cold_start), ("oom", oom), ("bound", bound), ("determinism", determinism), ("sweep_threads", sweep_threads), ("routes", routes), ("behind_router", behind_router), ("script", script), ("shell", shell), ("form", form), ("preset", preset), ("too_big", too_big), ("live_change", live_change), ("scan_cheap", scan_cheap), ("costs_of_a_clone", costs_of_a_clone)];
     for (name, f) in parts {
         section(name);
         let from = plat::time_us();
@@ -1343,6 +1343,54 @@ fn routes(t: &mut T) {
     let old = def("http-server", "web", r#"{"routes": [{"path": "/", "body": "x"}]}"#);
     let mut a = Engine::new(1);
     let _ = (&mut a, old);
+}
+
+// the database behind an IOS-like router: the router drops the first SYN while it asks ARP for the
+// database, TCP sends it again after 1 s, and the web server's request still gets its answer; a
+// database that is gone gets 502 with an English line
+fn behind_router(t: &mut T) {
+    let mut p = Project::new("db-router", 23);
+    let g = p.add_device("traffic-gen", 0, 0).unwrap_or(0);
+    let s = p.add_device("jf-s24p", 100, 0).unwrap_or(0);
+    let w = p.add_device("server-1u", 200, 0).unwrap_or(0);
+    let r = p.add_device("jf-r4", 300, 0).unwrap_or(0);
+    let d = p.add_device("server-1u", 400, 0).unwrap_or(0);
+    let _ = p.connect(&pr(g, "eth0"), &pr(s, "GigabitEthernet1/0/1"), None);
+    let _ = p.connect(&pr(w, "eth0"), &pr(s, "GigabitEthernet1/0/2"), None);
+    let _ = p.connect(&pr(r, "GigabitEthernet0/0/0"), &pr(s, "GigabitEthernet1/0/3"), None);
+    let _ = p.connect(&pr(d, "eth0"), &pr(r, "GigabitEthernet0/0/1"), None);
+    let web = r#"{"port": 80, "db": {"addr": "10.0.2.3", "port": 7100}, "routes": [{"path": "/n", "backend": "db", "sql": "SELECT COUNT(*) FROM t", "param": "none"}]}"#;
+    let cfgs = [
+        (g, String::from("ip addr add 10.0.1.1/24 dev eth0\n")),
+        (w, String::from("ip addr add 10.0.1.2/24 dev eth0\nip route add default via 10.0.1.254\n")),
+        (r, String::from("hostname R1\n!\ninterface GigabitEthernet0/0/0\n ip address 10.0.1.254 255.255.255.0\n no shutdown\n!\ninterface GigabitEthernet0/0/1\n ip address 10.0.2.254 255.255.255.0\n no shutdown\n!\nend\n")),
+        (d, String::from("ip addr add 10.0.2.3/24 dev eth0\nip route add default via 10.0.2.254\n")),
+    ];
+    for (id, c) in cfgs {
+        if let Some(x) = p.device_mut(id) {
+            x.startup_config = c;
+        }
+    }
+    if let Some(x) = p.device_mut(w) {
+        x.services = alloc::vec![def("http-server", "web", web)];
+    }
+    if let Some(x) = p.device_mut(d) {
+        x.services = alloc::vec![def("db", "db", r#"{"tables": [{"name": "t", "rows": 100, "row_bytes": 100, "columns": ["n"]}]}"#)];
+    }
+    let get = |ms: u64, path: &str| Step { at: ms * MS, ses: 0, sql: String::new(), get: Some((String::from(path), 80)) };
+    let steps = alloc::vec![get(0, "/n")];
+    let mut e = engine(&p);
+    let _ = e.add_service(g, "drv", Box::new(Driver::new("10.0.1.2", steps.clone())), true);
+    run_for(&mut e, 4 * SEC);
+    let got = got_of(&e, g, steps.len());
+    t.check(&format!("a SYN lost to ARP is sent again: {} {}", status_of(&got, 0), body_of(&got, 0)), status_of(&got, 0) == 200 && has(&got, 0, "\"count\":100"));
+    // the database switched off: 502 and an English line
+    let _ = e.apply(Action::Power { dev: d, on: false });
+    let steps = alloc::vec![get(0, "/n")];
+    let _ = e.add_service(g, "drv2", Box::new(Driver::new("10.0.1.2", steps.clone())), true);
+    run_for(&mut e, 12 * SEC);
+    let got: Vec<Option<Got>> = e.service::<Driver>(g, "drv2").map(|x| alloc::vec![x.got.get(&0).cloned()]).unwrap_or_default();
+    t.check(&format!("gone: {} {}", status_of(&got, 0), body_of(&got, 0)), matches!(status_of(&got, 0), 502 | 504) && (body_of(&got, 0).contains("Bad Gateway") || body_of(&got, 0).contains("Gateway Timeout")));
 }
 
 fn script(t: &mut T) {

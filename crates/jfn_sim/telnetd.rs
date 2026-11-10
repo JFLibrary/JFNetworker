@@ -379,7 +379,7 @@ impl Service for TelnetServer {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("Port {}: {} Sitzungen angenommen, {} abgewiesen", self.port, self.accepted, self.refused)
+        msg!("Port {}: {} angenommen, {} abgewiesen", self.port, jfn_model::msg::count(self.accepted as u64, msg!("{} Sitzung", self.accepted), msg!("{} Sitzungen", self.accepted)), self.refused)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

@@ -18,6 +18,9 @@
 //   dur(ns)                    a span of time: "1,250 s", "3,200 ms", "450 µs", "12 ns" in
 //                              German (as fmt_ns of the trace), "1.250 s" in English
 //   list(items)                items joined by "{}, {}" (a separator a language may change)
+//   count(n, one, many)        a number with its noun: `one` for 1, else `many`, both written
+//                              with msg! where they are used ("{} Anfrage" / "{} Anfragen"), so
+//                              each has its row and a language counts in its own way
 //
 // Placeholders: "{}" takes the next argument, "{0}" .. "{9}" a given one, so a translation may
 // reorder them ("{}" counts only the "{}" before it, as in format!); "{{" and "}}" are braces.
@@ -212,6 +215,11 @@ fn render<S: AsRef<str>>(tpl: &str, args: &[S], tr: Option<Tr<'_>>) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// a number with its noun: `one` when n is 1, else `many` ("1 Anfrage", "3 Anfragen")
+pub fn count(n: u64, one: Msg, many: Msg) -> Msg {
+    if n == 1 { one } else { many }
 }
 
 // ---------------------------------------------------------------- what msg! needs

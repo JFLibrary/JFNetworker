@@ -1056,6 +1056,7 @@ Höheneinheit	Rack unit
 Die Höheneinheit ist eine Zahl ab 1.	The rack unit is a number from 1.
 Im Plan zeigen	Show in the plan
 Optiken	Optics
+SR reicht über Multimode-Faser einige hundert Meter, LR über Singlemode-Faser bis 10 km.	SR reaches a few hundred metres over multimode fibre, LR up to 10 km over single-mode fibre.
 Länge	Length
 {} m (automatisch)	{} m (automatic)
 {} m (von Hand; automatisch {} m)	{} m (by hand; automatic {} m)

@@ -300,7 +300,7 @@ impl Cache {
                     }
                     Err(f) => {
                         self.backend_errors += 1;
-                        Reply::text(if f.is_timeout() { 504 } else { 502 }, &format!("Backend nicht erreichbar: {}\n", f.text()))
+                        Reply::text(if f.is_timeout() { 504 } else { 502 }, &f.gateway_body(if f.is_timeout() { 504 } else { 502 }))
                     }
                 };
                 self.respond(os, &w, rep, None);
@@ -325,7 +325,7 @@ impl Cache {
                     Err(f) => {
                         self.backend_errors += 1;
                         for w in core::iter::once(&first).chain(rest.iter()) {
-                            let rep = Reply::text(if f.is_timeout() { 504 } else { 502 }, &format!("Backend nicht erreichbar: {}\n", f.text()));
+                            let rep = Reply::text(if f.is_timeout() { 504 } else { 502 }, &f.gateway_body(if f.is_timeout() { 504 } else { 502 }));
                             self.respond(os, w, rep, Some(false));
                         }
                     }
@@ -515,7 +515,7 @@ impl Service for Cache {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("Port {} vor {}: {} Einträge, {} Treffer, {} Fehlschläge ({},{} % Treffer)", self.port, self.backend.text(), self.store.len(), self.hits, self.misses, self.hit_pm() / 10, self.hit_pm() % 10)
+        msg!("Port {} vor {}: {}, {} Treffer, {} Fehlschläge ({},{} % Treffer)", self.port, self.backend.text(), jfn_model::msg::count(self.store.len() as u64, msg!("{} Eintrag", self.store.len()), msg!("{} Einträge", self.store.len())), self.hits, self.misses, self.hit_pm() / 10, self.hit_pm() % 10)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

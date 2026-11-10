@@ -814,7 +814,7 @@ impl Service for Dhcpd {
             return msg!("Relay: {} Helper-Adressen", self.helpers.len());
         }
         let leases = self.bindings.values().filter(|b| b.state == BindState::Bound).count();
-        msg!("{} Pools, {} Leases", self.pools.len(), leases)
+        msg!("{}, {}", jfn_model::msg::count(self.pools.len() as u64, msg!("{} Pool", self.pools.len()), msg!("{} Pools", self.pools.len())), jfn_model::msg::count(leases as u64, msg!("{} Lease", leases), msg!("{} Leases", leases)))
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

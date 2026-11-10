@@ -135,9 +135,9 @@ fn pair_fits(a: &PortSpec, b: &PortSpec, kind: Option<CableKind>) -> bool {
     }
 }
 
-// how good a pair is: radio to an access point, data links, other radios, console cables last;
-// then the speed, then the lowest port numbers (jfn_model's suggest_ports); a chosen kind counts
-// for the pairs it fits
+// how good a pair is: radio to an access point and the line of a modem, data links, other radios,
+// console cables last; then the speed, then the lowest port numbers (jfn_model's suggest_ports); a
+// chosen kind counts for the pairs it fits
 fn rank(a: &PortSpec, b: &PortSpec, ap: bool, kind: Option<CableKind>) -> Option<(u8, u32, i32)> {
     if !pair_fits(a, b, kind) {
         return None;
@@ -145,6 +145,7 @@ fn rank(a: &PortSpec, b: &PortSpec, ap: bool, kind: Option<CableKind>) -> Option
     let k = kind.or(cable::cable_kind(a, b).ok())?;
     let class = match k {
         CableKind::Wireless if ap => 3,
+        CableKind::Wan | CableKind::Coax | CableKind::Phone => 3,
         CableKind::Wireless => 1,
         CableKind::Console => 0,
         _ => 2,

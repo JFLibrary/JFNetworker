@@ -203,8 +203,9 @@ pub const F_HOST: u32 = 1;
 pub const F_BRIDGE: u32 = 2;
 /// forwards IP between interfaces (router, L3 switch)
 pub const F_ROUTER: u32 = 4;
-/// a firewall model; nothing reads it yet: it routes with access lists and NAT, zones and stateful
-/// filtering come with milestone F2
+/// a firewall model: it routes with access lists and NAT and has zones with stateful sessions
+/// (jfn_sim's fw.rs takes zone commands only on such a model, its device window shows the Firewall
+/// tab, its neighbours see the capability)
 pub const F_FIREWALL: u32 = 8;
 /// bridges its radios with its wired port (access point)
 pub const F_AP: u32 = 16;
@@ -1121,12 +1122,13 @@ impl Optic {
             Optic::Lr => "LR",
         }
     }
-    /// the German name (the app translates it)
+    /// the German name, short enough for a choice in the Properties panel (the app translates it;
+    /// the reaches stand in a line below the choices there)
     pub fn title(self) -> &'static str {
         // i18n
         match self {
-            Optic::Sr => "SR, Multimode (kurze Strecken)",
-            Optic::Lr => "LR, Singlemode (bis 10 km)",
+            Optic::Sr => "SR, Multimode",
+            Optic::Lr => "LR, Singlemode",
         }
     }
 }

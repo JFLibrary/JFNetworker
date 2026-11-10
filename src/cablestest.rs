@@ -138,6 +138,16 @@ fn models(t: &mut T) {
     t.eq("their cables", [lc, ld, lt].map(|l| p.link(l).map(|x| (x.cable, x.cable_fixed))), [Some((CableKind::Coax, false)), Some((CableKind::Phone, false)), Some((CableKind::Coax, true))]);
     t.eq("the DSL line's speed", p.link(ld).map(|x| x.kbps), Some(100_000));
     t.check("a PC has no coax", matches!(p.connect(&pr(pc, "eth0"), &pr(net, "wan3"), Some(CableKind::Coax)), Err(ProjErr::Cable(_))));
+    // a quick connection takes a modem's line to the cloud, not its LAN port to the cloud's copper
+    let ont = p.add_device("modem-ont", 0, 120).unwrap_or(0);
+    let dsl2 = p.add_device("dsl-modem", 0, 180).unwrap_or(0);
+    t.eq("quick: the ONT's line", p.suggest_ports(net, ont), Some((s("wan3"), s("wan0"))));
+    t.eq("quick: the other way round", p.suggest_ports(ont, net), Some((s("wan0"), s("wan3"))));
+    t.eq("quick: DSL at 100M before copper at 1G", p.suggest_ports(dsl2, net), Some((s("dsl0"), s("wan3"))));
+    t.eq("the window's choice too", connect::best(&p, ont, None, net, None, None).and_then(|(x, y)| Some((p.model_of(ont)?.ports().get(x as usize)?.name.clone(), p.model_of(net)?.ports().get(y as usize)?.name.clone()))), Some((s("wan0"), s("wan3"))));
+    t.eq("a PC still takes copper", p.suggest_ports(pc, net), Some((s("eth0"), s("eth0"))));
+    let _ = p.remove_device(ont);
+    let _ = p.remove_device(dsl2);
     t.check("no issue", p.check().iter().all(|x| !x.error));
     let mut e = engine(&p);
     e.run_until(SEC, BUDGET);
@@ -369,6 +379,7 @@ fn engine_part(t: &mut T) {
     t.check("auto-MDI-X: the wrong cable works", e.link_idx_up(l) && led(&e) == Some([Led::Up, Led::Up]));
     t.check("off: it does not", e.apply(Action::StrictMdix { on: true }).is_ok() && !e.link_idx_up(l) && led(&e) == Some([Led::Down, Led::Down]));
     t.check("its problem", e.problems().iter().any(|x| x.kind == ProblemKind::WrongCable && x.link == Some(l)));
+    t.check("show interfaces says why", cli(&mut e, sw, "show interfaces Gi1/0/1").contains("  Wrong copper cable for these ports, no auto-MDI-X: a straight-through cable is needed, no link"));
     t.check("on again: it works", e.apply(Action::StrictMdix { on: false }).is_ok() && e.link_idx_up(l) && e.problems().iter().all(|x| x.kind != ProblemKind::WrongCable));
     // the scenario twice
     let text = include_str!("../tests/scen/cable_grades.scn");

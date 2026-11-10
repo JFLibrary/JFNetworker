@@ -233,7 +233,23 @@ abgebrochen	aborted
 # jfn_sim: status lines of services (Service::status_msg)
 {}: {} von {} ({})	{}: {} from {} ({})
 Relay: {} Helper-Adressen	Relay: {} helper addresses
-{} Pools, {} Leases	{} pools, {} leases
+# a number and its noun, one and many (jfn_model::msg::count): the services' status lines
+{} Pool	{} pool
+{} Pools	{} pools
+{} Lease	{} lease
+{} Leases	{} leases
+{} Anfrage	{} request
+{} Anfragen	{} requests
+{} Antwort	{} answer
+{} Verbindung	{} connection
+{} Verbindungen	{} connections
+{} Sitzung	{} session
+{} Sitzungen	{} sessions
+{} Meldung	{} message
+{} Topic	{} topic
+{} Topics	{} topics
+{} Eintrag	{} entry
+{} Einträge	{} entries
 keine	none
 Zonen: {}; leitet weiter	Zones: {}; forwarding
 Zonen: {}	Zones: {}
@@ -241,13 +257,13 @@ synchronisiert mit {}	synchronized with {}
 eigene Uhr, Stratum {}	own clock, stratum {}
 nicht synchronisiert	not synchronized
 {} Meldungen	{} messages
-Port {}: {} Verbindungen, {} Bytes zurückgeschickt	Port {}: {} connections, {} bytes sent back
-Port {}: {} Verbindungen, {} Bytes verworfen	Port {}: {} connections, {} bytes discarded
+Port {}: {}, {} Bytes zurückgeschickt	Port {}: {}, {} bytes sent back
+Port {}: {}, {} Bytes verworfen	Port {}: {}, {} bytes discarded
 {}:{}: {} von {} Bytes gesendet, {} empfangen; {}	{}:{}: {} of {} bytes sent, {} received; {}
 verbunden mit {}:{}: {} von {} Bytes gesendet, {} empfangen	connected to {}:{}: {} of {} bytes sent, {} received
 verbindet mit {}:{} ...	connecting to {}:{} ...
 Port {} ist nicht offen	Port {} is not open
-Port {}: {} Anfragen, {} Antworten, {} in Arbeit, {} wartend	Port {}: {} requests, {} responses, {} in progress, {} waiting
+Port {}: {}, {}, {} in Arbeit, {} wartend	Port {}: {}, {}, {} in progress, {} waiting
 {}: {} von {} gesendet	{}: {} of {} sent
 {}: {} Antworten, zuletzt {}	{}: {} responses, last {}
 {} Nutzer	{} users
@@ -530,12 +546,12 @@ Der Dienst „{}“ ist kein Skript.	The service “{}” is not a script.
 Den Dienst „{}“ gibt es schon.	The service “{}” exists already.
 
 # jfn_sim: the lab's status lines (lb.rs, kv.rs, cache.rs, mq.rs: status_msg), the disk (disk.rs: Disk::msg), the lines of faults (fault.rs: FaultMark::msg)
-HTTP Port {}, {}: {} von {} Backends verfügbar, {} Anfragen, {} Fehler	HTTP port {}, {}: {} of {} backends available, {} requests, {} errors
-TCP Port {}, {}: {} von {} Backends verfügbar, {} Verbindungen, {} Fehler	TCP port {}, {}: {} of {} backends available, {} connections, {} errors
+HTTP Port {}, {}: {} von {} Backends verfügbar, {}, {} Fehler	HTTP port {}, {}: {} of {} backends available, {}, {} errors
+TCP Port {}, {}: {} von {} Backends verfügbar, {}, {} Fehler	TCP port {}, {}: {} of {} backends available, {}, {} errors
 {}: {} Schlüssel, {} von {} Knoten erreichbar, RF {}, {} W{}/R{}	{}: {} keys, {} of {} nodes reachable, RF {}, {} W{}/R{}
 nur Koordinator	coordinator only
-Port {} vor {}: {} Einträge, {} Treffer, {} Fehlschläge ({},{} % Treffer)	Port {} in front of {}: {} entries, {} hits, {} misses ({}.{} % hits)
-Port {}: {} Topics, {} wartend, {} unterwegs, {} bestätigt	Port {}: {} topics, {} waiting, {} out, {} acknowledged
+Port {} vor {}: {}, {} Treffer, {} Fehlschläge ({},{} % Treffer)	Port {} in front of {}: {}, {} hits, {} misses ({}.{} % hits)
+Port {}: {}, {} wartend, {} unterwegs, {} bestätigt	Port {}: {}, {} waiting, {} out, {} acknowledged
 {} {}: {} von {} beschäftigt, {} erledigt, {} gescheitert	{} {}: {} of {} busy, {} done, {} failed
 {} von {}, {}	{} of {}, {}
 {} von {}, {} (verlangsamt)	{} of {}, {} (slowed down)
@@ -941,7 +957,7 @@ WPA2-Personal	WPA2-Personal
 WPA3-Personal	WPA3-Personal
 Eine SSID hat 1 bis 32 Bytes.	An SSID has 1 to 32 bytes.
 Kanal {} gibt es im Band {} nicht.	There is no channel {} in the {} band.
-Im 6-GHz-Band gibt es nur WPA3-Personal.	The 6 GHz band takes WPA3-Personal only.
+Im 6-GHz-Band gibt es nur WPA3, Personal oder Enterprise.	The 6 GHz band takes WPA3 only, Personal or Enterprise.
 Die Passphrase von „{}“ braucht 8 bis 63 Zeichen (ASCII).	The passphrase of “{}” needs 8 to 63 characters (ASCII).
 Kein Access Point bietet das WLAN „{}“ an, das {} sucht.	No access point offers the WLAN “{}” that {} looks for.
 Das WLAN „{}“ ist für {} außer Reichweite.	The WLAN “{}” is out of range for {}.
@@ -1106,8 +1122,8 @@ FTP: {} fertig, {} Bytes.	FTP: {} done, {} bytes.
 FTP: {} passt nicht: Kontingent oder Speicher erschöpft.	FTP: {} does not fit: quota or space used up.
 
 # P1: the physical view -- optics, forms, places, their refusals, cables too long (catalog.rs, phys.rs of jfn_model and jfn_sim, goal.rs)
-SR, Multimode (kurze Strecken)	SR, multimode (short reach)
-LR, Singlemode (bis 10 km)	LR, single-mode (up to 10 km)
+SR, Multimode	SR, multimode
+LR, Singlemode	LR, single-mode
 Rack-Gerät	Rack device
 Tischgerät	Desktop device
 Mobilgerät	Mobile device
@@ -1330,7 +1346,7 @@ Telnet: {} Port {} nicht erreicht ({}).	Telnet: {} port {} not reached ({}).
 „{}“ ist keine Adresse oder kein Präfix.	“{}” is not an address or a prefix.
 Ein Client braucht ein „secret“.	A client needs a “secret”.
 Ports {} / {}, {} Clients, {} Benutzer: {} angenommen, {} abgelehnt	Ports {} / {}, {} clients, {} users: {} accepted, {} rejected
-{} Anfragen, {} angenommen, {} abgelehnt, {} Zeitüberschreitungen	{} requests, {} accepted, {} rejected, {} timeouts
+{}, {} angenommen, {} abgelehnt, {} Zeitüberschreitungen	{}, {} accepted, {} rejected, {} timeouts
 angehalten in Zeile {}, Spalte {}	paused in line {}, column {}
 angehalten in {}, Zeile {}, Spalte {}	paused in {}, line {}, column {}
 beendet nach einem Fehler in {}, Zeile {}, Spalte {}: {}	ended after an error in {}, line {}, column {}: {}
@@ -1343,7 +1359,7 @@ Die Sitzung {} gibt es nicht.	There is no session {}.
 Das Gerät {} nimmt keine weitere Sitzung an.	Device {} takes no further session.
 „port“ ist eine Portnummer von 1 bis 65535.	“port” is a port number from 1 to 65535.
 „password“ ist ein Text.	“password” is a text.
-Port {}: {} Sitzungen angenommen, {} abgewiesen	Port {}: {} sessions accepted, {} refused
+Port {}: {} angenommen, {} abgewiesen	Port {}: {} accepted, {} refused
 IOS-artige Geräte nehmen Telnet auf ihren vty-Leitungen an (line vty).	IOS-like devices take Telnet on their vty lines (line vty).
 # IDE1: script services from files (jfn_sim scriptsvc.rs), their problems
 beendet nach einem Fehler: {}	ended after an error: {}
@@ -1425,7 +1441,7 @@ zurückgerollt	rolled back
 Webbrowser: Weiterleitung {} nach {}.	Web browser: redirect {} to {}.
 Nach {} Weiterleitungen kam noch eine: es bleibt dabei.	After {} redirects came another one: it stops here.
 Das Gerät oder der Dienst hat angehalten.	The device or the service stopped.
-{} Anfragen, {} Antworten, {} gescheitert	{} requests, {} answers, {} failed
+{}, {}, {} gescheitert	{}, {}, {} failed
 # X1f: SSH (sshd.rs, sshtrace.rs, svcact.rs)
 „password_auth“ ist true oder false.	“password_auth” is true or false.
 „key_auth“ ist true oder false.	“key_auth” is true or false.
@@ -1473,7 +1489,7 @@ WPA2-Enterprise	WPA2-Enterprise
 WPA3-Enterprise	WPA3-Enterprise
 „{}“ braucht die Adresse seines RADIUS-Servers.	“{}” needs the address of its RADIUS server.
 „{}“ braucht den gemeinsamen Schlüssel seines RADIUS-Servers.	“{}” needs the key it shares with its RADIUS server.
-{} Sitzungen, {} angenommen, {} abgelehnt	{} sessions, {} accepted, {} refused
+{}, {} angenommen, {} abgelehnt	{}, {} accepted, {} refused
 {} {}: 802.1X verlangt, aber „dot1x system-auth-control“ fehlt: der Port bleibt offen.	{} {}: asks for 802.1X, but “dot1x system-auth-control” is missing: the port stays open.
 {} {}: 802.1X verlangt, aber kein RADIUS-Server eingetragen: der Port bleibt geschlossen.	{} {}: asks for 802.1X, but no RADIUS server is configured: the port stays closed.
 802.1X: EAP {} an {} gesendet.	802.1X: EAP {} sent to {}.
@@ -1525,7 +1541,7 @@ IMAP: {} abgelehnt.	IMAP: {} refused.
 E-Mail: {} von {} geholt, {} Nachrichten.	E-Mail: {} fetched from {}, {} messages.
 TLS: Alert {} gesendet	TLS: sent alert {}
 TLS: Alert {} vom Server	TLS: alert {} from the server
-Port {} (TLS): {} Anfragen, {} Antworten, {} in Arbeit, {} wartend	Port {} (TLS): {} requests, {} responses, {} in progress, {} waiting
+Port {} (TLS): {}, {}, {} in Arbeit, {} wartend	Port {} (TLS): {}, {}, {} in progress, {} waiting
 „tls“ muss ein Objekt sein.	“tls” must be an object.
 Den Aussteller „{}“ gibt es nicht: lab oder self.	There is no issuer “{}”: lab or self.
 „{}“ ist kein Name für ein Zertifikat.	“{}” is no name for a certificate.

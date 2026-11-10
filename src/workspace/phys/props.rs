@@ -244,6 +244,8 @@ pub(crate) fn device(n: &mut Net, ui: &mut Ui, id: u32) {
         return;
     }
     ui.text(TS_BODY_STRONG, t("Optiken"));
+    ui.next_size(-1, 0);
+    ui.text(TS_CAPTION | TX_SECONDARY | TX_WRAP, t("SR reicht über Multimode-Faser einige hundert Meter, LR über Singlemode-Faser bis 10 km."));
     let titles = [t(Optic::Sr.title()), t(Optic::Lr.title())];
     for (i, p) in cages.iter().enumerate().take(64) {
         field_begin(ui, &jfn_model::ifname::short(&p.name));

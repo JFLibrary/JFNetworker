@@ -72,6 +72,16 @@ Message Queue, Lastgenerator, Container-Host. Netzwerkgeräte tragen IOS-Interfa
 (`GigabitEthernet1/0/1`, Abkürzungen wie `gi1/0/1` gehen überall), Hosts Linux-Namen (`eth0`,
 `wlan0`).
 
+Die Modems (Modem/ONT, Kabelmodem, DSL-Modem) sind Brücken zwischen ihrer Leitung (`wan0`, `coax0`,
+`dsl0`) und `lan0`: die Ethernet-Frames reisen in der Leitung mit (`Media::is_bridged`), ohne GPON,
+DOCSIS, DSL oder PPPoE. Die Internet-Wolke ist ein durchsichtiges Netz der Schicht 2 zwischen
+allen zwölf Ports, eine lernende Bridge ohne Befehlszeile, Spanning Tree oder eigene VLANs
+(`F_CLOUD`, `Node::new`): zwei Router an der Wolke erreichen sich im selben Netz, Adressen, DHCP
+oder Routing hat sie nicht. Eine Schnellverbindung nimmt zwischen Modem und Wolke die Leitung, nicht
+den LAN-Port (`suggest_ports`: die Leitungen der Modems kommen vor Kupfer). Das IP-Telefon reicht
+EAPOL zwischen `pc0` und `eth0` durch (anders als eine Bridge nach 802.1D), so meldet sich der PC
+dahinter mit 802.1X am Switch an (`DNote::PassedOn`).
+
 | Modell | Art | Ports |
 |---|---|---|
 | JF-S8 | Tisch-Switch, unmanaged: keine Befehlszeile, keine Adresse | 8× 1G (`port0` bis `port7`) |
@@ -355,7 +365,8 @@ Interfaces (`Vlan10`, unter Linux `br0`), gerouteten Switch-Ports und Loopbacks:
 
 ### Spanning Tree
 
-Die IOS-artigen Switches (JF-S24P, JF-S24L3, JF-S48X) sprechen Spanning Tree nach IEEE: STP
+Alle IOS-artigen Switches (JF-S8P, JF-S24, JF-S24P, JF-S24M, JF-S48P und die L3-Switches JF-S24L3, JF-S48X,
+JF-S48Y, JF-S32C) sprechen Spanning Tree nach IEEE: STP
 nach 802.1D (der Algorithmus von 802.1D-1998, [`stp98.rs`](crates/jfn_sim/stp98.rs)) oder RSTP
 nach 802.1w, heute 802.1D-2004 Abschnitt 17 ([`rstp.rs`](crates/jfn_sim/rstp.rs)); wie die
 Bridge ihn nutzt, steht in [`stp.rs`](crates/jfn_sim/stp.rs). **Ohne Konfiguration ist er
@@ -3757,7 +3768,8 @@ für EAPOL die Kategorie „802.1X“ in einem gedämpften Rostrot.
   sofort. Im Desktop schreibt das Feld „Anmeldung am Netz (802.1X)“ der **IP-Konfiguration** diese
   Datei (Methode, Identität, Passwort, am Kabel und fürs WLAN) und zeigt den Zustand. Alle
   Endgeräte haben die Shell und damit den Supplicant; das IP-Telefon hat nur Brückenports und
-  meldet sich nicht an.
+  meldet sich nicht an, reicht aber das EAPOL seines PCs zum Switch und zurück (der Port öffnet
+  dann für beide, Host-Modi gibt es nicht).
 - **WPA-Enterprise** ([`wlan.rs`](crates/jfn_sim/wlan.rs)): Sicherheit `wpa2-enterprise` (AKM 1) und
   `wpa3-enterprise` (AKM 5, mit AES-128-CMAC und KDF-SHA256, auch auf 6 GHz); ein Netz nennt
   `radius`, `radius_key`, `radius_port`, im Inspektor RADIUS-Server und Schlüssel. Eine Station hat
@@ -3952,7 +3964,7 @@ Eine Spalte kurz: `"name"` (eine Zahl je Schlüssel), `"name:text"`, `"name:int:
 | 503 `too_many_connections`, `recovering` | Überlast oder noch in der Wiederherstellung |
 | 507 `disk_full` | die Platte ist voll |
 
-`GET /_db/health` sagt Zustand, Rolle und Log-Positionen, `GET /_db/stats` alle Zahlen und die Tabellen. Die Shell hat `dbctl [status|tables|locks|explain ANWEISUNG] [-s DIENST]`. Eine Route eines Webservers fragt mit `"backend": "db"`, dazu auf Serverebene `"db": {"addr": "10.0.0.30", "port": 7100, "timeout_ms": 5000, "conns": 32}`:
+`GET /_db/health` sagt Zustand, Rolle und Log-Positionen, `GET /_db/stats` alle Zahlen und die Tabellen. Die Shell hat `dbctl [status|tables|locks|explain ANWEISUNG] [-s DIENST]`. Eine Route eines Webservers fragt mit `"backend": "db"`, dazu auf Serverebene `"db": {"addr": "10.0.0.30", "port": 7100, "timeout_ms": 5000, "connect_timeout_ms": 3000, "conns": 32}` (der Verbindungsaufbau wartet 3 s: TCP schickt ein verlorenes SYN nach 1 s noch einmal, etwa wenn ein Router unterwegs erst nach ARP fragt; ein Backend, das nicht antwortet, ergibt 502 oder 504 mit einer englischen Zeile wie `502 Bad Gateway: no connection to the backend`):
 
 ```json
 {"path": "/pay", "method": "POST", "backend": "db", "param": "draw", "retries": 3,

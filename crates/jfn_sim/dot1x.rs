@@ -1074,7 +1074,7 @@ impl Service for Dot1xAuth {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("{} Sitzungen, {} angenommen, {} abgelehnt", self.ses.len(), self.successes, self.refusals)
+        msg!("{}, {} angenommen, {} abgelehnt", jfn_model::msg::count(self.ses.len() as u64, msg!("{} Sitzung", self.ses.len()), msg!("{} Sitzungen", self.ses.len())), self.successes, self.refusals)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

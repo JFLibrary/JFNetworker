@@ -462,7 +462,7 @@ impl Service for WebClient {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("{} Anfragen, {} Antworten, {} gescheitert", self.requests, self.responses, self.failed)
+        msg!("{}, {}, {} gescheitert", jfn_model::msg::count(self.requests as u64, msg!("{} Anfrage", self.requests), msg!("{} Anfragen", self.requests)), jfn_model::msg::count(self.responses as u64, msg!("{} Antwort", self.responses), msg!("{} Antworten", self.responses)), self.failed)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())
