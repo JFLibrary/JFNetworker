@@ -91,6 +91,13 @@ fn nested(t: &mut T) {
     t.eq("list", list(alloc::vec![phrase("a"), phrase("b"), Msg::plain("c")]).text(), s("a, b, c"));
     t.eq("list of one", list(alloc::vec![phrase("a")]).text(), s("a"));
     t.check("empty list", list(Vec::new()).is_empty());
+    // a number with its noun: one or many, in both languages (the services' status lines)
+    let en = english();
+    let pools = |n: u64| jfn_model::msg::count(n, jfn_model::msg!("{} Pool", n), jfn_model::msg!("{} Pools", n));
+    let reqs = |n: u64| jfn_model::msg::count(n, jfn_model::msg!("{} Anfrage", n), jfn_model::msg!("{} Anfragen", n));
+    let line = |a: u64, b: u64| jfn_model::msg!("{}, {}", pools(a), reqs(b));
+    t.eq("count: one", (line(1, 1).text(), line(1, 1).text_with(&en)), (s("1 Pool, 1 Anfrage"), s("1 pool, 1 request")));
+    t.eq("count: many", (line(2, 0).text(), line(2, 0).text_with(&en)), (s("2 Pools, 0 Anfragen"), s("2 pools, 0 requests")));
 }
 
 // msg::dur writes what fmt_ns writes, English takes the decimal point

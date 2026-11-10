@@ -13,13 +13,18 @@
 //   workerctl [status] [-s NAME]             a worker: its slots
 //
 // Without -s a command takes the first service of its kind on the device.  The texts are
-// German like the rest of the lab; times are virtual ("seit 6,512 s").
+// messages (jfn_model::msg) in the console's language (Engine::console_lang): German like the
+// rest of the lab by default ("seit 6,512 s"), English with the rows of engine.tsv ("6.512 s");
+// a table's head is one message with its cells split at '|' (head).  The database's own
+// answers stay German in both: the SQL errors of dbctl explain, as its clients get them.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use base::hashring::hash64;
+use jfn_model::msg;
+use jfn_model::msg::{dur, phrase, Msg};
 
 use crate::cache::Cache;
 use crate::db::Db;
@@ -29,7 +34,6 @@ use crate::kv::KvNode;
 use crate::lb::{Admin, CheckKind, Lb, LbMode};
 use crate::mq::{Queue, SlotState, Worker};
 use crate::os::Service;
-use crate::trace::fmt_ns;
 
 /// columns: every one as wide as its widest cell (+ 2), the last one not padded
 pub(crate) fn table(rows: &[Vec<String>]) -> String {
@@ -61,34 +65,101 @@ pub(crate) fn row(cells: &[&str]) -> Vec<String> {
     cells.iter().map(|c| String::from(*c)).collect()
 }
 
-fn opt_ns(v: Option<Ns>) -> String {
+fn opt_ns(v: Option<Ns>) -> Msg {
     match v {
-        Some(x) => fmt_ns(x as i64),
-        None => String::from("-"),
+        Some(x) => dur(x as i64),
+        None => Msg::plain("-"),
     }
 }
 
 /// "80,0 %" from per mille
-fn pm(v: u64) -> String {
-    format!("{},{} %", v / 10, v % 10)
+fn pm(v: u64) -> Msg {
+    msg!("{},{} %", v / 10, v % 10)
 }
 
 /// "33,4 %" from parts per million
-fn ppm(v: u32) -> String {
-    format!("{},{} %", v / 10_000, v % 10_000 / 1000)
+fn ppm(v: u32) -> Msg {
+    msg!("{},{} %", v / 10_000, v % 10_000 / 1000)
 }
 
-const LB_HELP: &str = "lbctl [status] [-s DIENST]   zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend\n";
-const KV_HELP: &str = "kvctl [status] [-s DIENST]   zeigt den KV-Knoten: Mitglieder, wie er sie sieht, und seine Zahlen\nkvctl ring                   die Tokens des Rings und ihre Knoten\nkvctl where SCHLÜSSEL        die Replikate eines Schlüssels und was jedes davon hält\nkvctl get SCHLÜSSEL          der Eintrag dieses Knotens\nkvctl keys                   die Schlüssel dieses Knotens\n";
-const DB_HELP: &str = "dbctl [status] [-s DIENST]   zeigt die Datenbank: Zustand, Puffer, Log und Zahlen\ndbctl tables                 ihre Tabellen: Zeilen, geänderte Zeilen, Seiten, Indizes\ndbctl locks                  die Zeilensperren, wer sie hält und wie viele warten\ndbctl explain ANWEISUNG      wie eine Anweisung liefe: Index oder alle Seiten, Zeilen, Seiten, warum\n";
-const CACHE_HELP: &str = "cachectl [status|keys] [-s DIENST]   zeigt den Cache: Treffer, Fehlschläge, Einträge\n";
-const MQ_HELP: &str = "mqctl [status] [-s DIENST]   zeigt die Queue mit ihren Topics\n";
-const WORKER_HELP: &str = "workerctl [status] [-s DIENST]   zeigt den Worker und seine Plätze\n";
+/// a port, "(nicht offen)" when nothing listens on it
+fn port_msg(port: u16, listening: bool) -> Msg {
+    if listening { Msg::plain(format!("{}", port)) } else { msg!("{} (nicht offen)", port) }
+}
+
+fn lb_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![(phrase("lbctl [status] [-s DIENST]"), phrase("zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend"))]
+}
+
+fn kv_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![
+        (phrase("kvctl [status] [-s DIENST]"), phrase("zeigt den KV-Knoten: Mitglieder, wie er sie sieht, und seine Zahlen")),
+        (Msg::plain("kvctl ring"), phrase("die Tokens des Rings und ihre Knoten")),
+        (phrase("kvctl where SCHLÜSSEL"), phrase("die Replikate eines Schlüssels und was jedes davon hält")),
+        (phrase("kvctl get SCHLÜSSEL"), phrase("der Eintrag dieses Knotens")),
+        (Msg::plain("kvctl keys"), phrase("die Schlüssel dieses Knotens")),
+    ]
+}
+
+fn db_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![
+        (phrase("dbctl [status] [-s DIENST]"), phrase("zeigt die Datenbank: Zustand, Puffer, Log und Zahlen")),
+        (Msg::plain("dbctl tables"), phrase("ihre Tabellen: Zeilen, geänderte Zeilen, Seiten, Indizes")),
+        (Msg::plain("dbctl locks"), phrase("die Zeilensperren, wer sie hält und wie viele warten")),
+        (phrase("dbctl explain ANWEISUNG"), phrase("wie eine Anweisung liefe: Index oder alle Seiten, Zeilen, Seiten, warum")),
+    ]
+}
+
+fn cache_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![(phrase("cachectl [status|keys] [-s DIENST]"), phrase("zeigt den Cache: Treffer, Fehlschläge, Einträge"))]
+}
+
+fn mq_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![(phrase("mqctl [status] [-s DIENST]"), phrase("zeigt die Queue mit ihren Topics"))]
+}
+
+fn worker_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![(phrase("workerctl [status] [-s DIENST]"), phrase("zeigt den Worker und seine Plätze"))]
+}
 
 impl Engine {
     fn lab_err(&mut self, ni: usize, text: &str) -> Result<(), String> {
         self.err_out(ni, text);
         Err(String::from(text.lines().next().unwrap_or("")))
+    }
+
+    /// a refusal of a lab command as a line in the console's language
+    fn lab_no(&mut self, ni: usize, m: Msg) -> Result<(), String> {
+        let t = format!("{}\n", self.tx(&m));
+        self.lab_err(ni, &t)
+    }
+
+    /// words a lab command does not know, then its usage
+    fn lab_unknown(&mut self, ni: usize, tool: &str, rest: &[String], help: &[(Msg, Msg)]) -> Result<(), String> {
+        let t = format!("{}\n{}", self.tx(&msg!("{}: {} kenne ich nicht", tool, rest.join(" "))), self.help_text(help));
+        self.lab_err(ni, &t)
+    }
+
+    /// a command's usage: a line per form and what it does, the second column three spaces
+    /// after the widest form
+    pub(crate) fn help_text(&self, rows: &[(Msg, Msg)]) -> String {
+        let rows: Vec<(String, String)> = rows.iter().map(|(a, b)| (self.tx(a), self.tx(b))).collect();
+        let w = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0) + 3;
+        let mut s = String::new();
+        for (a, b) in rows {
+            s.push_str(&a);
+            for _ in a.chars().count()..w {
+                s.push(' ');
+            }
+            s.push_str(&b);
+            s.push('\n');
+        }
+        s
+    }
+
+    /// a table's head in the console's language: one message, its cells split at '|'
+    pub(crate) fn head(&self, m: Msg) -> Vec<String> {
+        self.tx(&m).split('|').map(String::from).collect()
     }
 
     /// "-s NAME" and the other words of a command; Err: the words were not understood
@@ -123,14 +194,15 @@ impl Engine {
 
     pub(crate) fn sh_lbctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, LB_HELP);
+            let h = self.help_text(&lb_help());
+            self.out(ni, &h);
             return Ok(());
         };
         if rest.iter().any(|w| w != "status") {
-            return self.lab_err(ni, &format!("lbctl: {} kenne ich nicht\n{}", rest.join(" "), LB_HELP));
+            return self.lab_unknown(ni, "lbctl", &rest, &lb_help());
         }
         let Some(name) = self.lab_pick::<Lb>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "lbctl: auf diesem Gerät läuft kein Loadbalancer\n");
+            return self.lab_no(ni, msg!("lbctl: auf diesem Gerät läuft kein Loadbalancer"));
         };
         let dev = self.dev_of(ni);
         let Some(v) = self.lb_view(dev, &name) else {
@@ -138,24 +210,36 @@ impl Engine {
         };
         let lb = self.service::<Lb>(dev, &name);
         let health = match lb.map(|l| l.health.clone()) {
-            Some(h) if h.kind != CheckKind::None => format!("Health Checks {} alle {} (Timeout {}, verfügbar nach {}, ausgefallen nach {} Prüfungen)", if h.kind == CheckKind::Http { format!("http GET {}", h.path) } else { String::from("tcp") }, fmt_ns(h.interval as i64), fmt_ns(h.timeout as i64), h.rise, h.fall),
-            _ => String::from("ohne Health Checks"),
+            Some(h) if h.kind != CheckKind::None => {
+                let how = if h.kind == CheckKind::Http { format!("http GET {}", h.path) } else { String::from("tcp") };
+                msg!("Health Checks {} alle {} (Timeout {}, verfügbar nach {}, ausgefallen nach {} Prüfungen)", how, dur(h.interval as i64), dur(h.timeout as i64), h.rise, h.fall)
+            }
+            _ => phrase("ohne Health Checks"),
         };
-        let mut s = format!("Loadbalancer {}: {} auf Port {}{}, Verfahren {}, {}\n", name, if v.mode == LbMode::Http { "HTTP" } else { "TCP" }, v.port, if v.listening { "" } else { " (nicht offen)" }, v.algo.name(), health);
-        let what = if v.mode == LbMode::Http { "Anfragen" } else { "Verbindungen" };
-        s.push_str(&format!("{} {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}\n", what, v.requests, v.responses, v.active, v.errors, v.no_backend, v.retried));
-        s.push_str(&format!("{} p50 {}, p95 {}, p99 {}\n\n", if v.mode == LbMode::Http { "Antwortzeit" } else { "Verbindungsaufbau" }, opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99)));
-        let mut rows = alloc::vec![row(&["Backend", "Adresse", "Gewicht", "Zustand", "seit", "offen", "gesamt", "Fehler", "p99"])];
+        let http = v.mode == LbMode::Http;
+        let head = msg!("Loadbalancer {}: {} auf Port {}, Verfahren {}, {}", name, if http { "HTTP" } else { "TCP" }, port_msg(v.port, v.listening), v.algo.name(), health);
+        let counts = if http {
+            msg!("Anfragen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}", v.requests, v.responses, v.active, v.errors, v.no_backend, v.retried)
+        } else {
+            msg!("Verbindungen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}", v.requests, v.responses, v.active, v.errors, v.no_backend, v.retried)
+        };
+        let lat = if http {
+            msg!("Antwortzeit p50 {}, p95 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99))
+        } else {
+            msg!("Verbindungsaufbau p50 {}, p95 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99))
+        };
+        let mut s = format!("{}\n{}\n{}\n\n", self.tx(&head), self.tx(&counts), self.tx(&lat));
+        let mut rows = alloc::vec![self.head(phrase("Backend|Adresse|Gewicht|Zustand|seit|offen|gesamt|Fehler|p99"))];
         for b in &v.backends {
             let state = match b.admin {
-                Admin::Active if b.up => "verfügbar",
-                Admin::Active => "ausgefallen",
-                Admin::Draining { .. } => "leert sich",
-                Admin::Disabled => "abgeschaltet",
-                Admin::Removed => "entfernt",
+                Admin::Active if b.up => phrase("verfügbar"),
+                Admin::Active => phrase("ausgefallen"),
+                Admin::Draining { .. } => phrase("leert sich"),
+                Admin::Disabled => phrase("abgeschaltet"),
+                Admin::Removed => phrase("entfernt"),
             };
             let at = if b.addr.is_v4() { format!("{}:{}", b.addr, b.port) } else { format!("[{}]:{}", b.addr, b.port) };
-            rows.push(alloc::vec![b.name.clone(), at, format!("{}", b.weight), String::from(state), fmt_ns(b.since as i64), format!("{}", b.active), format!("{}", b.total), format!("{}", b.errors), opt_ns(b.p99)]);
+            rows.push(alloc::vec![b.name.clone(), at, format!("{}", b.weight), self.tx(&state), self.tx(&dur(b.since as i64)), format!("{}", b.active), format!("{}", b.total), format!("{}", b.errors), self.tx(&opt_ns(b.p99))]);
         }
         s.push_str(&table(&rows));
         self.out(ni, &s);
@@ -166,31 +250,35 @@ impl Engine {
 
     pub(crate) fn sh_kvctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, KV_HELP);
+            let h = self.help_text(&kv_help());
+            self.out(ni, &h);
             return Ok(());
         };
         let Some(name) = self.lab_pick::<KvNode>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "kvctl: auf diesem Gerät läuft kein KV-Knoten\n");
+            return self.lab_no(ni, msg!("kvctl: auf diesem Gerät läuft kein KV-Knoten"));
         };
         let dev = self.dev_of(ni);
         let words: Vec<&str> = rest.iter().map(String::as_str).collect();
         let text = match words.as_slice() {
             [] | ["status"] => self.kv_status(dev, &name),
             ["ring"] => {
-                let mut rows = alloc::vec![row(&["Token", "Knoten"])];
+                let mut rows = alloc::vec![self.head(phrase("Token|Knoten"))];
                 for (t, m) in self.kv_ring(dev, &name) {
                     rows.push(alloc::vec![format!("0x{:016x}", t), format!("{}", m)]);
                 }
                 table(&rows)
             }
             ["where", key] => self.kv_where_text(dev, &name, key),
-            ["get", key] => match self.service::<KvNode>(dev, &name).and_then(|k| k.entry(key)) {
-                Some(e) if e.deleted => format!("{}: gelöscht (Version {})\n", key, e.ver.text()),
-                Some(e) => format!("{} = {} (Version {})\n", key, String::from_utf8_lossy(&e.value), e.ver.text()),
-                None => format!("{}: nicht auf diesem Knoten\n", key),
-            },
+            ["get", key] => {
+                let m = match self.service::<KvNode>(dev, &name).and_then(|k| k.entry(key)) {
+                    Some(e) if e.deleted => msg!("{}: gelöscht (Version {})", key, e.ver.text()),
+                    Some(e) => msg!("{} = {} (Version {})", key, String::from_utf8_lossy(&e.value), e.ver.text()),
+                    None => msg!("{}: nicht auf diesem Knoten", key),
+                };
+                format!("{}\n", self.tx(&m))
+            }
             ["keys"] => {
-                let mut rows = alloc::vec![row(&["Schlüssel", "Version", "Bytes"])];
+                let mut rows = alloc::vec![self.head(phrase("Schlüssel|Version|Bytes"))];
                 let mut more = 0usize;
                 if let Some(k) = self.service::<KvNode>(dev, &name) {
                     for (i, (key, e)) in k.stored().enumerate() {
@@ -198,16 +286,18 @@ impl Engine {
                             more += 1;
                             continue;
                         }
-                        rows.push(alloc::vec![key.clone(), format!("{}{}", e.ver.text(), if e.deleted { " gelöscht" } else { "" }), format!("{}", e.value.len())]);
+                        let ver = if e.deleted { self.tx(&msg!("{} gelöscht", e.ver.text())) } else { e.ver.text() };
+                        rows.push(alloc::vec![key.clone(), ver, format!("{}", e.value.len())]);
                     }
                 }
                 let mut t = table(&rows);
                 if more > 0 {
-                    t.push_str(&format!("... und {} weitere\n", more));
+                    t.push_str(&self.tx(&msg!("... und {} weitere", more)));
+                    t.push('\n');
                 }
                 t
             }
-            _ => return self.lab_err(ni, &format!("kvctl: {} kenne ich nicht\n{}", rest.join(" "), KV_HELP)),
+            _ => return self.lab_unknown(ni, "kvctl", &rest, &kv_help()),
         };
         self.out(ni, &text);
         Ok(())
@@ -218,48 +308,60 @@ impl Engine {
             return String::new();
         };
         let me = match v.me {
-            Some(a) => format!("{}", a),
-            None => String::from("nur Koordinator"),
+            Some(a) => Msg::plain(format!("{}", a)),
+            None => phrase("nur Koordinator"),
         };
-        let mut s = format!("KV-Knoten {}: {}, Port {}, Heartbeats UDP {} alle {} (ausgefallen nach {})\n", name, me, v.port, k.hb_port, fmt_ns(k.beat as i64), fmt_ns(k.down_after as i64));
+        let mut s = self.tx(&msg!("KV-Knoten {}: {}, Port {}, Heartbeats UDP {} alle {} (ausgefallen nach {})", name, me, v.port, k.hb_port, dur(k.beat as i64), dur(k.down_after as i64)));
+        s.push('\n');
         let strong = (v.w + v.r) as usize > v.rf;
-        s.push_str(&format!("Ring: {} Knoten mit je {} vnodes, RF {}, Konsistenz {} (W {}, R {}{}), Read Repair {}\n\n", v.members.len(), v.vnodes, v.rf, v.consistency.name(), v.w, v.r, if strong { ", W + R > RF" } else { ", W + R \u{2264} RF" }, if v.read_repair { "an" } else { "aus" }));
-        let mut rows = alloc::vec![row(&["Knoten", "Zustand", "seit", "Ring-Anteil"])];
+        let rr = if v.read_repair { phrase("an") } else { phrase("aus") };
+        s.push_str(&self.tx(&msg!("Ring: {} Knoten mit je {} vnodes, RF {}, Konsistenz {} (W {}, R {}{}), Read Repair {}", v.members.len(), v.vnodes, v.rf, v.consistency.name(), v.w, v.r, if strong { ", W + R > RF" } else { ", W + R \u{2264} RF" }, rr)));
+        s.push_str("\n\n");
+        let mut rows = alloc::vec![self.head(phrase("Knoten|Zustand|seit|Ring-Anteil"))];
         for m in &v.members {
-            let share = v.shares.iter().find(|x| x.0 == m.addr).map(|x| ppm(x.1)).unwrap_or_default();
+            let share = v.shares.iter().find(|x| x.0 == m.addr).map(|x| self.tx(&ppm(x.1))).unwrap_or_default();
             let (state, since) = if Some(m.addr) == v.me {
-                ("dieser Knoten", String::from("-"))
+                (phrase("dieser Knoten"), String::from("-"))
             } else if m.up {
-                ("erreichbar", fmt_ns(m.since as i64))
+                (phrase("erreichbar"), self.tx(&dur(m.since as i64)))
             } else {
-                ("ausgefallen", fmt_ns(m.since as i64))
+                (phrase("ausgefallen"), self.tx(&dur(m.since as i64)))
             };
-            rows.push(alloc::vec![format!("{}", m.addr), String::from(state), since, share]);
+            rows.push(alloc::vec![format!("{}", m.addr), self.tx(&state), since, share]);
         }
         s.push_str(&table(&rows));
-        let disk = self.node_index(dev).and_then(|ni| self.os(ni)).map(|o| o.disk.text()).unwrap_or_default();
+        let disk = self.node_index(dev).and_then(|ni| self.os(ni)).map(|o| o.disk.msg()).unwrap_or_default();
         let st = v.stats;
-        s.push_str(&format!("\nSchlüssel {} ({}), Disk {}\n", v.keys, size_text(v.bytes), disk));
-        s.push_str(&format!("Anfragen {}: gelesen {}, geschrieben {}, nicht gefunden {}, nicht verfügbar {}, Disk voll {}\n", st.requests, st.reads, st.writes, st.not_found, st.unavailable, st.full));
-        s.push_str(&format!("Weitergereicht {}, selbst geführt {}; Replikate geschrieben {}, gelesen {}\n", st.forwards, st.led, st.replica_writes, st.replica_reads));
-        s.push_str(&format!("Veraltete Antworten {}, Read Repair gesendet {}, erhalten {}; Ausfälle erkannt {}\n", st.stale_reads, st.read_repairs, st.repaired, st.member_downs));
-        s.push_str(&format!("Antwortzeit p50 {}, p95 {}, p99 {}\n", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99)));
+        let lines = [
+            msg!("Schlüssel {} ({}), Disk {}", v.keys, size_text(v.bytes), disk),
+            msg!("Anfragen {}: gelesen {}, geschrieben {}, nicht gefunden {}, nicht verfügbar {}, Disk voll {}", st.requests, st.reads, st.writes, st.not_found, st.unavailable, st.full),
+            msg!("Weitergereicht {}, selbst geführt {}; Replikate geschrieben {}, gelesen {}", st.forwards, st.led, st.replica_writes, st.replica_reads),
+            msg!("Veraltete Antworten {}, Read Repair gesendet {}, erhalten {}; Ausfälle erkannt {}", st.stale_reads, st.read_repairs, st.repaired, st.member_downs),
+            msg!("Antwortzeit p50 {}, p95 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99)),
+        ];
+        s.push('\n');
+        for l in lines {
+            s.push_str(&self.tx(&l));
+            s.push('\n');
+        }
         s
     }
 
     fn kv_where_text(&self, dev: u32, name: &str, key: &str) -> String {
         let reps = self.kv_where(dev, name, key);
         let rf = self.service::<KvNode>(dev, name).map(|k| k.rf).unwrap_or(0);
-        let mut s = format!("Schlüssel {}: Hash 0x{:016x}, Replikate (RF {}):\n", key, hash64(key.as_bytes()), rf);
+        let mut s = self.tx(&msg!("Schlüssel {}: Hash {}, Replikate (RF {}):", key, format!("0x{:016x}", hash64(key.as_bytes())), rf));
+        s.push('\n');
         let mut rows = Vec::new();
         for r in reps {
             let held = match &r.entry {
-                Some(e) if e.deleted => format!("gelöscht, Version {}", e.ver.text()),
-                Some(e) => format!("Version {}, {} Bytes", e.ver.text(), e.value.len()),
-                None if r.dev.is_none() => String::from("kein KV-Knoten unter der Adresse"),
-                None => String::from("nichts gespeichert"),
+                Some(e) if e.deleted => msg!("gelöscht, Version {}", e.ver.text()),
+                Some(e) => msg!("Version {}, {} Bytes", e.ver.text(), e.value.len()),
+                None if r.dev.is_none() => phrase("kein KV-Knoten unter der Adresse"),
+                None => phrase("nichts gespeichert"),
             };
-            rows.push(alloc::vec![format!("  {}", r.addr), String::from(if r.leader { "Leader" } else { "Follower" }), String::from(if r.up { "erreichbar" } else { "ausgefallen" }), held]);
+            let up = if r.up { phrase("erreichbar") } else { phrase("ausgefallen") };
+            rows.push(alloc::vec![format!("  {}", r.addr), String::from(if r.leader { "Leader" } else { "Follower" }), self.tx(&up), self.tx(&held)]);
         }
         s.push_str(&table(&rows));
         s
@@ -269,18 +371,19 @@ impl Engine {
 
     pub(crate) fn sh_dbctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, DB_HELP);
+            let h = self.help_text(&db_help());
+            self.out(ni, &h);
             return Ok(());
         };
         let Some(name) = self.lab_pick::<Db>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "dbctl: auf diesem Gerät läuft keine Datenbank\n");
+            return self.lab_no(ni, msg!("dbctl: auf diesem Gerät läuft keine Datenbank"));
         };
         let dev = self.dev_of(ni);
         let words: Vec<&str> = rest.iter().map(String::as_str).collect();
         let text = match words.as_slice() {
             [] | ["status"] => self.db_status(dev, &name),
             ["tables"] => {
-                let mut rows = alloc::vec![row(&["Tabelle", "Schlüssel", "Zeilen", "geändert", "Seiten", "im Puffer", "Baumtiefe", "Indizes", "Spalten"])];
+                let mut rows = alloc::vec![self.head(phrase("Tabelle|Schlüssel|Zeilen|geändert|Seiten|im Puffer|Baumtiefe|Indizes|Spalten"))];
                 if let Some(d) = self.service::<Db>(dev, &name) {
                     for t in d.tables() {
                         rows.push(alloc::vec![t.name.clone(), t.key.clone(), format!("{}", t.rows), format!("{}", t.touched), format!("{}", t.heap_pages), format!("{}", t.held_pages), format!("{}", t.depth), if t.indexes.is_empty() { String::from("-") } else { t.indexes.join(", ") }, t.columns.join(", ")]);
@@ -291,21 +394,21 @@ impl Engine {
             ["locks"] => {
                 let list = self.service::<Db>(dev, &name).map_or(Vec::new(), |d| d.lock_list());
                 if list.is_empty() {
-                    String::from("keine Zeilensperren\n")
+                    format!("{}\n", self.tx(&phrase("keine Zeilensperren")))
                 } else {
-                    let mut rows = alloc::vec![row(&["Tabelle", "Zeile", "Transaktion", "wartend"])];
+                    let mut rows = alloc::vec![self.head(phrase("Tabelle|Zeile|Transaktion|wartend"))];
                     for l in list {
                         rows.push(alloc::vec![l.table.clone(), format!("{}", l.key), format!("{}", l.holder), format!("{}", l.waiting)]);
                     }
                     table(&rows)
                 }
             }
-            ["explain", sql @ ..] if !sql.is_empty() => match self.service::<Db>(dev, &name).map(|d| d.explain(&sql.join(" "))) {
+            ["explain", sql @ ..] if !sql.is_empty() => match self.service::<Db>(dev, &name).map(|d| d.explain_in(&sql.join(" "), self.console_lang)) {
                 Some(Ok(t)) => format!("{}\n", t),
                 Some(Err(e)) => return self.lab_err(ni, &format!("dbctl: {}\n", e.line())),
                 None => String::new(),
             },
-            _ => return self.lab_err(ni, &format!("dbctl: {} kenne ich nicht\n{}", rest.join(" "), DB_HELP)),
+            _ => return self.lab_unknown(ni, "dbctl", &rest, &db_help()),
         };
         self.out(ni, &text);
         Ok(())
@@ -316,23 +419,32 @@ impl Engine {
             return String::new();
         };
         let st = v.stats;
-        let mut s = format!("Datenbank {}: Port {}{}, {} von höchstens {} Verbindungen, {} Transaktionen offen, {} Anweisungen in Arbeit\n", name, v.port, if v.listening { "" } else { " (nicht offen)" }, v.conns, v.max_conns, v.txns, v.running);
+        let mut lines = alloc::vec![msg!("Datenbank {}: Port {}, {} von höchstens {} Verbindungen, {} Transaktionen offen, {} Anweisungen in Arbeit", name, port_msg(v.port, v.listening), v.conns, v.max_conns, v.txns, v.running)];
         if !v.metered {
-            s.push_str("Dieses Gerät simuliert keine Hardware: die CPU kostet nichts, Platte und Sperren kosten weiter Zeit.\n");
+            lines.push(phrase("Dieses Gerät simuliert keine Hardware: die CPU kostet nichts, Platte und Sperren kosten weiter Zeit."));
         }
         if v.recovering {
-            s.push_str("Liest das Log seit dem letzten Prüfpunkt: nimmt noch keine Anweisungen an.\n");
+            lines.push(phrase("Liest das Log seit dem letzten Prüfpunkt: nimmt noch keine Anweisungen an."));
         }
         if let Some((need, cap)) = v.no_disk {
-            s.push_str(&format!("Die Tabellen brauchen {}, die Platte hat {}.\n", size_text(need), size_text(cap)));
+            lines.push(msg!("Die Tabellen brauchen {}, die Platte hat {}.", size_text(need), size_text(cap)));
         }
-        s.push_str(&format!("Puffer: {} von {}, Treffer {}{}\n", size_text(v.pool_used), size_text(v.pool_bytes), pm(v.hit_pm), if v.pool_rate > 1 { format!(", zählt jede {}. Seite", v.pool_rate) } else { String::new() }));
-        s.push_str(&format!("Log: Stand {}, auf der Platte {}, Prüfpunkt {}; Schreiben {}, Durability {}, Isolation {}\n", v.lsn, v.flushed, v.ckpt, st.wal_flushes, if v.durable { "full" } else { "relaxed" }, v.iso.name()));
-        s.push_str(&format!("Anweisungen {}: gelesen {}, eingefügt {}, geändert {}, gelöscht {}; Commits {}, Rollbacks {}\n", st.statements, st.selects, st.inserts, st.updates, st.deletes, st.commits, st.rollbacks));
-        s.push_str(&format!("Fehler {}: Syntax {}, Konflikte {}, Verklemmungen {}, Sperren zu spät {}, still abgebrochen {}, abgewiesen {}\n", st.errors, st.syntax_errors, st.conflicts, st.deadlocks, st.lock_timeouts, st.idle_aborts, st.refused));
-        s.push_str(&format!("Sperren gewartet {}; Zeilen angesehen {}, Seiten gelesen {}; geänderte Zeilen {}, vergessen {}\n", st.lock_waits, st.rows_examined, st.pages_read, v.touched, st.forgotten));
-        s.push_str(&format!("Nach Abstürzen: {} Mal, zuletzt {} ms, verlorene Commits {}\n", st.recoveries, st.recovery_ms, st.lost_commits));
-        s.push_str(&format!("Antwortzeit p50 {}, p95 {}, p99 {}\n", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99)));
+        lines.push(if v.pool_rate > 1 {
+            msg!("Puffer: {} von {}, Treffer {}, zählt jede {}. Seite", size_text(v.pool_used), size_text(v.pool_bytes), pm(v.hit_pm), v.pool_rate)
+        } else {
+            msg!("Puffer: {} von {}, Treffer {}", size_text(v.pool_used), size_text(v.pool_bytes), pm(v.hit_pm))
+        });
+        lines.push(msg!("Log: Stand {}, auf der Platte {}, Prüfpunkt {}; Schreiben {}, Durability {}, Isolation {}", v.lsn, v.flushed, v.ckpt, st.wal_flushes, if v.durable { "full" } else { "relaxed" }, v.iso.name()));
+        lines.push(msg!("Anweisungen {}: gelesen {}, eingefügt {}, geändert {}, gelöscht {}; Commits {}, Rollbacks {}", st.statements, st.selects, st.inserts, st.updates, st.deletes, st.commits, st.rollbacks));
+        lines.push(msg!("Fehler {}: Syntax {}, Konflikte {}, Verklemmungen {}, Sperren zu spät {}, still abgebrochen {}, abgewiesen {}", st.errors, st.syntax_errors, st.conflicts, st.deadlocks, st.lock_timeouts, st.idle_aborts, st.refused));
+        lines.push(msg!("Sperren gewartet {}; Zeilen angesehen {}, Seiten gelesen {}; geänderte Zeilen {}, vergessen {}", st.lock_waits, st.rows_examined, st.pages_read, v.touched, st.forgotten));
+        lines.push(msg!("Nach Abstürzen: {} Mal, zuletzt {} ms, verlorene Commits {}", st.recoveries, st.recovery_ms, st.lost_commits));
+        lines.push(msg!("Antwortzeit p50 {}, p95 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99)));
+        let mut s = String::new();
+        for l in lines {
+            s.push_str(&self.tx(&l));
+            s.push('\n');
+        }
         s
     }
 
@@ -340,11 +452,12 @@ impl Engine {
 
     pub(crate) fn sh_cachectl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, CACHE_HELP);
+            let h = self.help_text(&cache_help());
+            self.out(ni, &h);
             return Ok(());
         };
         let Some(name) = self.lab_pick::<Cache>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "cachectl: auf diesem Gerät läuft kein Cache\n");
+            return self.lab_no(ni, msg!("cachectl: auf diesem Gerät läuft kein Cache"));
         };
         let dev = self.dev_of(ni);
         let now = self.now;
@@ -354,24 +467,31 @@ impl Engine {
                 let Some(v) = self.cache_view(dev, &name) else {
                     return Ok(());
                 };
-                let mut s = format!("Cache {}: Port {} vor {}, Lebensdauer {}, höchstens {} Einträge und {}\n", name, v.port, v.backend, fmt_ns(v.ttl as i64), v.max_entries, size_text(v.max_bytes));
-                s.push_str(&format!("Einträge {} ({}), Anfragen {}: Treffer {}, Fehlschläge {} ({} Treffer)\n", v.entries, size_text(v.bytes), v.requests, v.hits, v.misses, pm(v.hit_pm)));
-                s.push_str(&format!("Zusammengelegt {}, abgelaufen {}, verdrängt {}, ungültig gemacht {}\n", v.collapsed, v.expired, v.evictions, v.invalidations));
-                s.push_str(&format!("Backend: {} Anfragen, {} Fehler; Antwortzeit p50 {} (Treffer {}, Fehlschlag {}), p99 {}\n", v.backend_requests, v.backend_errors, opt_ns(v.p50), opt_ns(v.hit_p50), opt_ns(v.miss_p50), opt_ns(v.p99)));
+                let lines = [
+                    msg!("Cache {}: Port {} vor {}, Lebensdauer {}, höchstens {} Einträge und {}", name, v.port, v.backend, dur(v.ttl as i64), v.max_entries, size_text(v.max_bytes)),
+                    msg!("Einträge {} ({}), Anfragen {}: Treffer {}, Fehlschläge {} ({} Treffer)", v.entries, size_text(v.bytes), v.requests, v.hits, v.misses, pm(v.hit_pm)),
+                    msg!("Zusammengelegt {}, abgelaufen {}, verdrängt {}, ungültig gemacht {}", v.collapsed, v.expired, v.evictions, v.invalidations),
+                    msg!("Backend: {} Anfragen, {} Fehler; Antwortzeit p50 {} (Treffer {}, Fehlschlag {}), p99 {}", v.backend_requests, v.backend_errors, opt_ns(v.p50), opt_ns(v.hit_p50), opt_ns(v.miss_p50), opt_ns(v.p99)),
+                ];
+                let mut s = String::new();
+                for l in lines {
+                    s.push_str(&self.tx(&l));
+                    s.push('\n');
+                }
                 s
             }
             ["keys"] => {
-                let mut rows = alloc::vec![row(&["Ziel", "Status", "Bytes", "Alter", "frisch bis"])];
+                let mut rows = alloc::vec![self.head(phrase("Ziel|Status|Bytes|Alter|frisch bis"))];
                 if let Some(c) = self.service::<Cache>(dev, &name) {
                     for k in c.keys().into_iter().rev().take(100) {
                         if let Some(e) = c.peek(&k) {
-                            rows.push(alloc::vec![k.clone(), format!("{}", e.status), format!("{}", e.body.len()), fmt_ns(now.saturating_sub(e.stored) as i64), fmt_ns(e.expires as i64)]);
+                            rows.push(alloc::vec![k.clone(), format!("{}", e.status), format!("{}", e.body.len()), self.tx(&dur(now.saturating_sub(e.stored) as i64)), self.tx(&dur(e.expires as i64))]);
                         }
                     }
                 }
                 table(&rows)
             }
-            _ => return self.lab_err(ni, &format!("cachectl: {} kenne ich nicht\n{}", rest.join(" "), CACHE_HELP)),
+            _ => return self.lab_unknown(ni, "cachectl", &rest, &cache_help()),
         };
         self.out(ni, &text);
         Ok(())
@@ -381,24 +501,27 @@ impl Engine {
 
     pub(crate) fn sh_mqctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, MQ_HELP);
+            let h = self.help_text(&mq_help());
+            self.out(ni, &h);
             return Ok(());
         };
         if rest.iter().any(|w| w != "status") {
-            return self.lab_err(ni, &format!("mqctl: {} kenne ich nicht\n{}", rest.join(" "), MQ_HELP));
+            return self.lab_unknown(ni, "mqctl", &rest, &mq_help());
         }
         let Some(name) = self.lab_pick::<Queue>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "mqctl: auf diesem Gerät läuft keine Queue\n");
+            return self.lab_no(ni, msg!("mqctl: auf diesem Gerät läuft keine Queue"));
         };
         let dev = self.dev_of(ni);
         let Some(v) = self.mq_view(dev, &name) else {
             return Ok(());
         };
-        let mut s = format!("Queue {}: Port {}, Sichtbarkeit {}, höchstens {} Zustellungen, {}\n", name, v.port, fmt_ns(v.visibility as i64), v.max_deliveries, if v.durable { "auf der Disk" } else { "nur im Speicher" });
-        s.push_str(&format!("Angenommen bis bestätigt: p50 {}, p99 {}\n\n", opt_ns(v.p50), opt_ns(v.p99)));
-        let mut rows = alloc::vec![row(&["Topic", "wartend", "unterwegs", "angenommen", "ausgeliefert", "erneut", "bestätigt", "zurück", "aussortiert", "älteste"])];
+        let kept = if v.durable { phrase("auf der Disk") } else { phrase("nur im Speicher") };
+        let head = msg!("Queue {}: Port {}, Sichtbarkeit {}, höchstens {} Zustellungen, {}", name, v.port, dur(v.visibility as i64), v.max_deliveries, kept);
+        let lat = msg!("Angenommen bis bestätigt: p50 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p99));
+        let mut s = format!("{}\n{}\n\n", self.tx(&head), self.tx(&lat));
+        let mut rows = alloc::vec![self.head(phrase("Topic|wartend|unterwegs|angenommen|ausgeliefert|erneut|bestätigt|zurück|aussortiert|älteste"))];
         for t in &v.topics {
-            rows.push(alloc::vec![t.name.clone(), format!("{}", t.ready), format!("{}", t.inflight), format!("{}", t.published), format!("{}", t.delivered), format!("{}", t.redelivered), format!("{}", t.acked), format!("{}", t.nacked), format!("{}", t.dead), opt_ns(t.oldest)]);
+            rows.push(alloc::vec![t.name.clone(), format!("{}", t.ready), format!("{}", t.inflight), format!("{}", t.published), format!("{}", t.delivered), format!("{}", t.redelivered), format!("{}", t.acked), format!("{}", t.nacked), format!("{}", t.dead), self.tx(&opt_ns(t.oldest))]);
         }
         s.push_str(&table(&rows));
         self.out(ni, &s);
@@ -407,30 +530,32 @@ impl Engine {
 
     pub(crate) fn sh_workerctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
-            self.out(ni, WORKER_HELP);
+            let h = self.help_text(&worker_help());
+            self.out(ni, &h);
             return Ok(());
         };
         if rest.iter().any(|w| w != "status") {
-            return self.lab_err(ni, &format!("workerctl: {} kenne ich nicht\n{}", rest.join(" "), WORKER_HELP));
+            return self.lab_unknown(ni, "workerctl", &rest, &worker_help());
         }
         let Some(name) = self.lab_pick::<Worker>(ni, svc.as_deref()) else {
-            return self.lab_err(ni, "workerctl: auf diesem Gerät läuft kein Worker\n");
+            return self.lab_no(ni, msg!("workerctl: auf diesem Gerät läuft kein Worker"));
         };
         let dev = self.dev_of(ni);
         let (Some(v), Some(w)) = (self.worker_view(dev, &name), self.service::<Worker>(dev, &name)) else {
             return Ok(());
         };
-        let mut s = format!("Worker {}: {} Topic {}, {} Plätze, {} je Nachricht, Fehlerquote {}\n", name, v.queue, v.topic, v.concurrency, fmt_ns(w.time as i64), crate::fault::ppm_text(w.error_ppm));
-        s.push_str(&format!("Genommen {}, erledigt {}, zurückgegeben {}, Abfragen {} (leer {}), Fehler {}; Arbeit p50 {}, p99 {}\n\n", v.taken, v.done, v.failed, v.polls, v.empty, v.errors, opt_ns(v.p50), opt_ns(v.p99)));
-        let mut rows = alloc::vec![row(&["Platz", "Zustand"])];
+        let head = msg!("Worker {}: {} Topic {}, {} Plätze, {} je Nachricht, Fehlerquote {}", name, v.queue, v.topic, v.concurrency, dur(w.time as i64), crate::fault::ppm_msg(w.error_ppm));
+        let counts = msg!("Genommen {}, erledigt {}, zurückgegeben {}, Abfragen {} (leer {}), Fehler {}; Arbeit p50 {}, p99 {}", v.taken, v.done, v.failed, v.polls, v.empty, v.errors, opt_ns(v.p50), opt_ns(v.p99));
+        let mut s = format!("{}\n{}\n\n", self.tx(&head), self.tx(&counts));
+        let mut rows = alloc::vec![self.head(phrase("Platz|Zustand"))];
         for (i, st) in v.slots.iter().enumerate() {
             let t = match st {
-                SlotState::Idle => String::from("pausiert"),
-                SlotState::Asking => String::from("wartet auf eine Nachricht"),
-                SlotState::Working { id, until } => format!("arbeitet an Nachricht {} bis {}", id, fmt_ns(*until as i64)),
-                SlotState::Acking { id } => format!("meldet Nachricht {} zurück", id),
+                SlotState::Idle => phrase("pausiert"),
+                SlotState::Asking => phrase("wartet auf eine Nachricht"),
+                SlotState::Working { id, until } => msg!("arbeitet an Nachricht {} bis {}", id, dur(*until as i64)),
+                SlotState::Acking { id } => msg!("meldet Nachricht {} zurück", id),
             };
-            rows.push(alloc::vec![format!("{}", i + 1), t]);
+            rows.push(alloc::vec![format!("{}", i + 1), self.tx(&t)]);
         }
         s.push_str(&table(&rows));
         self.out(ni, &s);

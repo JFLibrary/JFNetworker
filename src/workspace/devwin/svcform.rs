@@ -18,8 +18,15 @@
 //                                         JSON bearbeiten" hands over what is typed; read-only in a
 //                                         view of the past
 //   free_name(device, kind)               a name for a new service
+//   add_kinds(device)                     the kinds the dialog offers: the lab's, and on a Linux device
+//                                         the DHCP server too (its shell has no other way to one)
+//   new_def(device, kind, name, &engine) -> Result<ServiceDef, String>   what "Hinzufügen" adds: the
+//                                         name checked, the config new_config makes
+//   new_config(kind, &engine, dev)        a new service's settings: empty, a DHCP server's pool for
+//                                         the network of the device's LAN (br0, else its first
+//                                         interface with an address)
 //   add_button / add_dialog               "Dienst hinzufügen": a kind and a name, one undo step, then
-//                                         the form
+//                                         the form (the JSON for a kind without one)
 //
 // A service that lacks what it cannot do without (jfn_sim::svcform::missing: backends, a target) is
 // taken as it is: it does not start and sends nothing, its card and the problems list say so.
@@ -34,6 +41,8 @@ use jfn_model::experiment::{fixed, set_path};
 use jfn_model::project::{Device, ServiceDef};
 use jfn_sim::httpsvc::rate_ppm;
 use jfn_sim::svcform::{defaults, missing, port_of};
+use jfn_sim::{Engine, IfKind};
+use netpkt::{Ipv4, Prefix4};
 use ui::*;
 
 use super::svcedit;
@@ -1169,7 +1178,7 @@ struct AddKind {
 }
 
 // i18n: help
-const KINDS: [AddKind; 8] = [
+const KINDS: [AddKind; 9] = [
     AddKind { kind: "http-server", help: "Antwortet auf HTTP-Anfragen, mit Rechenzeit, Wartezeit und Fehlerrate." },
     AddKind { kind: "http-load", help: "Erzeugt Last: Nutzer, die warten, oder eine feste Rate." },
     AddKind { kind: "lb", help: "Verteilt Anfragen oder Verbindungen auf mehrere Backends." },
@@ -1178,7 +1187,54 @@ const KINDS: [AddKind; 8] = [
     AddKind { kind: "mq", help: "Hält Nachrichten, bis ein Worker sie abgeholt und bestätigt hat." },
     AddKind { kind: "worker", help: "Holt Nachrichten aus einer Queue und arbeitet sie ab." },
     AddKind { kind: "db", help: "Eine Datenbank mit Tabellen, Puffer, Sperren, Versionen und Log; sie nimmt SQL-artige Anweisungen über HTTP an." },
+    AddKind { kind: "dhcp-server", help: "Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer." },
 ];
+
+/// the kinds of the dialog for a device: a DHCP server only on a Linux device (an IOS-like one has
+/// "ip dhcp pool")
+fn kinds_of(d: &Device) -> Vec<&'static AddKind> {
+    let linux = jfn_model::catalog::model(&d.model).is_some_and(|m| m.cli == jfn_model::catalog::CliStyle::Linux);
+    KINDS.iter().filter(|k| k.kind != "dhcp-server" || linux).collect()
+}
+
+/// the kinds the dialog offers for a device, in its order
+pub(crate) fn add_kinds(d: &Device) -> Vec<&'static str> {
+    kinds_of(d).iter().map(|k| k.kind).collect()
+}
+
+/// the settings a new service of `kind` on device `dev` starts with: a DHCP server hands out the
+/// network of the device's LAN (br0, else its first interface with an address; without one the usual
+/// 192.168.1.0/24 as an example), from .100 to .199 in a /24 or larger, else every address, with the
+/// device as the router; the other kinds start empty
+pub(crate) fn new_config(kind: &str, e: &Engine, dev: u32) -> Value {
+    if kind != "dhcp-server" {
+        return empty_object();
+    }
+    let ifs = e.ifaces(dev);
+    let lan = |f: &jfn_sim::view::IfView| !matches!(f.kind, IfKind::Loopback(_)) && f.name != "lo";
+    let own = ifs.iter().find(|f| f.name == "br0").and_then(|f| f.addrs.first().copied()).or_else(|| ifs.iter().filter(|f| lan(f)).find_map(|f| f.addrs.first().copied()));
+    let own = own.unwrap_or(Prefix4 { addr: Ipv4::parse("192.168.1.1").unwrap_or(Ipv4::UNSPECIFIED), len: 24 });
+    let net = own.trunc();
+    let (lo, hi) = if net.len <= 24 {
+        (Ipv4::from_u32(net.addr.to_u32() + 100), Ipv4::from_u32(net.addr.to_u32() + 199))
+    } else {
+        (net.first_host(), net.last_host())
+    };
+    let text = format!("{{\"pools\": [{{\"name\": \"LAN\", \"network\": \"{}\", \"range\": [\"{}\", \"{}\"], \"routers\": [\"{}\"], \"lease\": 3600}}]}}", net, lo, hi, own.addr);
+    agent_core::json::parse(text.as_bytes()).unwrap_or_else(|_| empty_object())
+}
+
+/// the service "Hinzufügen" adds: Err with why not (the dialog's words)
+pub(crate) fn new_def(d: &Device, kind: &str, name: &str, e: &Engine) -> Result<ServiceDef, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(String::from(t("Der Dienst braucht einen Namen.")));
+    }
+    if d.services.iter().any(|s| s.name.eq_ignore_ascii_case(name)) {
+        return Err(tf("{} hat schon einen Dienst „{}“.", &[&d.name, name]));
+    }
+    Ok(ServiceDef { kind: String::from(kind), name: String::from(name), disabled: false, config: new_config(kind, e, d.id) })
+}
 
 /// the usual name of a service of a kind
 fn usual_name(kind: &str) -> &str {
@@ -1230,7 +1286,7 @@ pub(crate) fn add_button(n: &mut Net, ui: &mut Ui, k: usize, dev: u32) {
         a.kind = 0;
         a.typed = false;
         a.err.clear();
-        a.name = free_name(&d, KINDS[0].kind);
+        a.name = free_name(&d, kinds_of(&d)[0].kind);
         a.open.set(1);
         ui.repass();
     }
@@ -1247,19 +1303,20 @@ pub(crate) fn add_dialog(n: &mut Net, ui: &mut Ui, dev: u32) {
     if ui.dialog_begin(ID_SA_DLG, t("Dienst hinzufügen"), &open) {
         ui.next_size(440, 0);
         ui.box_begin(0, BOX_V, 8);
-        let names: Vec<&str> = KINDS.iter().map(|k| super::services::kind_name(k.kind)).collect();
+        let kinds = kinds_of(&d);
+        let names: Vec<&str> = kinds.iter().map(|k| super::services::kind_name(k.kind)).collect();
         let a = &mut n.devwin.svc.add;
         ui.text(TS_BODY | TX_SECONDARY, t("Art"));
         ui.next_size(-1, 0);
         let mut sel = a.kind;
         if ui.combobox(ID_SA_KIND, &mut sel, &names) & EV_ACT != 0 {
-            a.kind = sel.clamp(0, KINDS.len() as i32 - 1);
+            a.kind = sel.clamp(0, kinds.len() as i32 - 1);
             if !a.typed {
-                a.name = free_name(&d, KINDS[a.kind as usize].kind);
+                a.name = free_name(&d, kinds[a.kind as usize].kind);
             }
             ui.repass();
         }
-        let kind = &KINDS[a.kind.clamp(0, KINDS.len() as i32 - 1) as usize];
+        let kind = kinds[a.kind.clamp(0, kinds.len() as i32 - 1) as usize];
         ui.next_size(-1, 0);
         ui.text(TS_CAPTION | TX_SECONDARY | TX_WRAP, t(kind.help));
         ui.text(TS_BODY | TX_SECONDARY, t("Name"));
@@ -1268,7 +1325,8 @@ pub(crate) fn add_dialog(n: &mut Net, ui: &mut Ui, dev: u32) {
             a.typed = true;
         }
         ui.next_size(-1, 0);
-        ui.text(TS_CAPTION | TX_SECONDARY | TX_WRAP, &tf("{} startet dafür neu. Danach folgt das Formular.", &[&d.name]));
+        let next = if form_of(kind.kind).is_some() { tf("{} startet dafür neu. Danach folgt das Formular.", &[&d.name]) } else { tf("{} startet dafür neu. Danach folgen die Einstellungen als JSON.", &[&d.name]) };
+        ui.text(TS_CAPTION | TX_SECONDARY | TX_WRAP, &next);
         if !a.err.is_empty() {
             let e = a.err.clone();
             crate::workspace::error_text(ui, &e, 0);
@@ -1282,26 +1340,26 @@ pub(crate) fn add_dialog(n: &mut Net, ui: &mut Ui, dev: u32) {
     ui.dialog_end();
 }
 
-// Hinzufügen: one undo step; the card has its form open
+// Hinzufügen: one undo step; the card has its form open, or its JSON for a kind without a form
 fn add(n: &mut Net, ui: &mut Ui, d: &Device, kind: &str) {
-    let a = &mut n.devwin.svc.add;
-    let name = String::from(a.name.trim());
-    if name.is_empty() {
-        a.err = String::from(t("Der Dienst braucht einen Namen."));
-        a.open.set(1);
-        return;
-    }
-    if d.services.iter().any(|s| s.name.eq_ignore_ascii_case(&name)) {
-        a.err = tf("{} hat schon einen Dienst „{}“.", &[&d.name, &name]);
-        a.open.set(1);
-        return;
-    }
-    let def = ServiceDef { kind: String::from(kind), name: name.clone(), disabled: false, config: empty_object() };
-    let label = format!("Dienst {} auf {} hinzufügen", name, d.name);
+    let def = match new_def(d, kind, &n.devwin.svc.add.name, n.doc.sim.state()) {
+        Ok(def) => def,
+        Err(e) => {
+            let a = &mut n.devwin.svc.add;
+            a.err = e;
+            a.open.set(1);
+            return;
+        }
+    };
+    let label = format!("Dienst {} auf {} hinzufügen", def.name, d.name);
     let new = def.clone();
     if let Some(e) = edits::device_edit(&n.doc.proj, d.id, &label, move |x| x.services.push(new)) {
         n.doc.apply(e);
     }
-    n.devwin.svc.open_form(d.id, &def);
+    if form_of(kind).is_some() {
+        n.devwin.svc.open_form(d.id, &def);
+    } else {
+        svcedit::open_json(n, ui, d.id, &def);
+    }
     ui.repass();
 }

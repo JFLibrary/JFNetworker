@@ -4,6 +4,9 @@
 //
 //   run_scenario(&Project, &Scenario, name) -> Outcome { report, ok, expects, failed, pcap,
 //   series }
+//   run_scenario_in(.., lang)              the same with the console's own tools in `lang`
+//                                         (Engine::console_lang; jfn-sim run --lang en); the
+//                                         report's own words stay German
 //   start_actions(&Project, &Engine) -> (actions, refusals)   the faults a project's lab starts with
 //                                         (AK2, Lab::start_faults), with their names resolved
 //
@@ -51,7 +54,7 @@ use jfn_model::catalog::{self, Hw};
 use jfn_model::ifname;
 use jfn_model::project::Project;
 use jfn_model::scenario::{Expect, FaultSpec, HealSpec, HwSpec, LbStep, Scenario, StepKind};
-use netpkt::pcapng::{Writer, LINKTYPE_ETHERNET};
+use netpkt::pcapng::Writer;
 
 use crate::action::Action;
 use crate::driver::{Cmd, Inline, Report};
@@ -61,7 +64,6 @@ use crate::kernel::{Engine, Ns, SEC};
 
 /// how far "run until idle" goes at most
 pub const IDLE_CAP: Ns = 3600 * SEC;
-const LINKTYPE_C_HDLC: u16 = 104;
 
 /// what a scenario run gives
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,19 +82,20 @@ pub struct Outcome {
 /// every recorded frame as pcapng: one interface per cable, stamped when it was sent
 pub fn capture(e: &Engine) -> (Vec<u8>, usize) {
     let mut w = Writer::new("JFNetworker");
-    let mut ifs: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut ifs: BTreeMap<(u32, u16), u32> = BTreeMap::new();
     let name = |dev: u32, port: u16| match e.node(dev) {
         Some(n) => format!("{} {}", n.name, ifname::short(n.port_name(port))),
         None => format!("{} {}", dev, port),
     };
     let mut n = 0;
     for h in e.trace.hops() {
-        let i = match ifs.get(&h.link) {
+        // a serial line's frames are Cisco HDLC or PPP (pcap.rs, serial.rs)
+        let lt = crate::pcap::linktype(h);
+        let i = match ifs.get(&(h.link, lt)) {
             Some(i) => *i,
             None => {
-                let serial = e.link_rt(h.link).is_some_and(|l| l.cable.is_serial());
-                let i = w.add_interface(&format!("{} \u{2013} {}", name(h.from.0, h.from.1), name(h.to.0, h.to.1)), if serial { LINKTYPE_C_HDLC } else { LINKTYPE_ETHERNET }, 0);
-                ifs.insert(h.link, i);
+                let i = w.add_interface(&format!("{} \u{2013} {}", name(h.from.0, h.from.1), name(h.to.0, h.to.1)), lt, 0);
+                ifs.insert((h.link, lt), i);
                 i
             }
         };
@@ -368,6 +371,11 @@ fn svc_config(p: &Project, dev: &str, svc: &str, sets: &[(String, String)]) -> R
 
 /// runs a scenario against a project (`pcap`: capture also without a "pcap" step)
 pub fn run_scenario(p: &Project, sc: &Scenario, name: &str, pcap: bool) -> Outcome {
+    run_scenario_in(p, sc, name, pcap, jfn_model::msg::Lang::De)
+}
+
+/// run_scenario with the console's own tools (lbctl, systemctl ...) in `lang`
+pub fn run_scenario_in(p: &Project, sc: &Scenario, name: &str, pcap: bool, lang: jfn_model::msg::Lang) -> Outcome {
     let force_pcap = pcap;
     let mut proj = p.clone();
     if let Some(s) = sc.seed {
@@ -380,7 +388,7 @@ pub fn run_scenario(p: &Project, sc: &Scenario, name: &str, pcap: bool) -> Outco
     let who = names.values().map(|n| n.chars().count()).max().unwrap_or(0).max(6);
     let mut r = Rep { s: String::new(), who, part: BTreeMap::new(), since: BTreeMap::new(), names };
     r.s.push_str(&format!("# JFNetworker-Szenario {}: \u{201e}{}\u{201c}, {} Geräte, {} Verbindungen, Seed {}\n", name, proj.title, proj.devices.len(), proj.links.len(), proj.seed));
-    let eng = match Engine::from_project(&proj) {
+    let eng = match Engine::from_project_in(&proj, lang) {
         Ok(e) => e,
         Err(e) => {
             r.s.push_str(&format!("# Das Projekt läuft nicht: {}\n", e));

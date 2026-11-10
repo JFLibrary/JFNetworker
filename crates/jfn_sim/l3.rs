@@ -5,6 +5,7 @@
 //   l3_from_port / l3_from_svi    a frame for the device's own IP part (from a routed port or
 //                             from its bridge); tagged frames go to the port's 802.1Q
 //                             subinterface of their VLAN; serial ports carry Cisco HDLC
+//                             or PPP (serial.rs)
 //   ip_output(n, packet, origin)  route lookup, MTU (fragment or "fragmentation needed"),
 //                             next hop resolution with ARP, framing
 //   ip_input / ip_deliver     on IOS-like devices with access lists or NAT, the inbound list
@@ -39,7 +40,7 @@
 // 224.0.0.9: ip.rs join, rip.rs); the others are dropped with a note.  IP protocol 89 goes to
 // the device's OSPF (ospf.rs: 224.0.0.5 and 224.0.0.6 joined where it runs); without OSPF it
 // gets "protocol unreachable" like any protocol the device does not speak.
-// IPv6 frames (ethertype 86DD, Cisco HDLC 86DD on serial lines) go to l3v6.rs.
+// IPv6 frames (ethertype 86DD, Cisco HDLC 86DD or PPP 0057 on serial lines) go to l3v6.rs.
 // WLAN (wlan.rs): the radio of an access point that sends a network counts as a live port of
 // its VLAN for the VLAN interface (an AP's BVI1 is up without a cable while it beacons).
 
@@ -173,9 +174,11 @@ impl Engine {
             return;
         };
         if media == Media::Serial {
-            if frame.len() > 4 && frame[..4] == HDLC_IPV4 {
+            // Cisco HDLC or PPP (serial.rs: a frame of the other format cannot arrive, the line
+            // is down then)
+            if frame.len() > 4 && (frame[..4] == HDLC_IPV4 || frame[..4] == crate::serial::PPP_IPV4) {
                 self.ip_input(ni, iface, &frame[4..], hop);
-            } else if frame.len() > 4 && frame[..4] == HDLC_IPV6 {
+            } else if frame.len() > 4 && (frame[..4] == HDLC_IPV6 || frame[..4] == crate::serial::PPP_IPV6) {
                 self.ip6_input(ni, iface, &frame[4..], hop);
             } else {
                 self.note(dev, Some(hop), Note::DropMalformed { port: pi });
@@ -689,8 +692,8 @@ impl Engine {
         }
     }
 
-    /// frames a payload for interface `iface` (Ethernet, padded; Cisco HDLC on serial ports;
-    /// through the bridge for SVIs)
+    /// frames a payload for interface `iface` (Ethernet, padded; Cisco HDLC or PPP on serial
+    /// ports, as "encapsulation" says: serial.rs; through the bridge for SVIs)
     pub(crate) fn frame_out(&mut self, ni: usize, iface: u16, dst: Mac, ethertype: u16, payload: &[u8], cause: Option<HopId>) {
         let Some(Some(n)) = self.nodes.get(ni) else {
             return;
@@ -703,8 +706,7 @@ impl Engine {
             IfKind::Port(p) => {
                 if n.ports[p as usize].spec.media == Media::Serial {
                     let mut fr = Vec::with_capacity(payload.len() + 4);
-                    fr.extend_from_slice(&[0x0F, 0x00]);
-                    fr.extend_from_slice(&ethertype.to_be_bytes());
+                    fr.extend_from_slice(&crate::serial::frame_hdr(n.ports[p as usize].serial.encap, ethertype));
                     fr.extend_from_slice(payload);
                     self.send(ni, p, Arc::from(fr), cause);
                 } else {

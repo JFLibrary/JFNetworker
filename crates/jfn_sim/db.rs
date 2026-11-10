@@ -78,7 +78,7 @@ use agent_core::jmap::Value;
 use base::metrics::Window;
 use base::rng::Pcg32;
 use jfn_model::msg;
-use jfn_model::msg::Msg;
+use jfn_model::msg::{Lang, Msg};
 use netpkt::http::Headers;
 
 use crate::dbsql::{self, Cmp, Cond, Iso, Join, Lit, Select, Set, SetTo, SqlErr, Stmt, What};
@@ -634,12 +634,17 @@ impl Db {
     }
     /// how a statement would go, as dbctl and EXPLAIN say it
     pub fn explain(&self, sql: &str) -> Result<String, SqlErr> {
+        self.explain_in(sql, Lang::De)
+    }
+    /// the same with its "why" in `lang` (dbctl in the console's language; the errors stay the
+    /// database's own, German)
+    pub fn explain_in(&self, sql: &str, lang: Lang) -> Result<String, SqlErr> {
         let s = dbsql::parse(sql)?;
         let inner = match &s {
             Stmt::Explain(i) => &**i,
             x => x,
         };
-        self.explain_text(inner, &[])
+        self.explain_text(inner, &[], lang)
     }
     fn touched(&self) -> u64 {
         self.tables.iter().map(|t| t.rows.len() as u64).sum()
@@ -753,7 +758,7 @@ impl Db {
         (access, why, f, cost)
     }
 
-    fn explain_text(&self, s: &Stmt, params: &[Val]) -> Result<String, SqlErr> {
+    fn explain_text(&self, s: &Stmt, params: &[Val], lang: Lang) -> Result<String, SqlErr> {
         let (table, filter, order, limit, count_only) = match s {
             Stmt::Select(x) => (x.table.as_str(), &x.filter, x.order.as_ref(), x.limit, matches!(x.what, What::Count)),
             Stmt::Update { table, filter, .. } | Stmt::Delete { table, filter, .. } => (table.as_str(), filter, None, None, false),
@@ -769,6 +774,7 @@ impl Db {
         };
         let snap = Snap { ts: self.clock, txn: 0 };
         let (access, why, f, cost) = Db::run_find(t, &self.cfg.layout, &cs, ord, limit, count_only, self.cfg.max_rows, snap);
+        let why = if lang == Lang::En { jfn_model::msg::en(why) } else { why };
         let (way, index) = match &access {
             Access::Key { .. } => ("index", String::from(t.spec.key.as_str())),
             Access::Index { cond } => ("index", String::from(t.spec.col_name(cond.col()))),
@@ -1098,7 +1104,7 @@ impl Db {
             Stmt::Begin(iso) => self.do_begin(os, id, e, *iso),
             Stmt::Commit => self.do_commit(os, id, e),
             Stmt::Rollback => self.do_rollback(os, e),
-            Stmt::Explain(inner) => match self.explain_text(inner, &e.params) {
+            Stmt::Explain(inner) => match self.explain_text(inner, &e.params, Lang::De) {
                 Ok(b) => {
                     let body = format!("{{\"ok\":true,\"explain\":{}}}\n", b);
                     self.reply(os, e.sid, 200, body, Some(e.start));

@@ -1,0 +1,17 @@
+# Das Labor mit der Konsole auf Englisch (jfn-sim run --lang en): lbctl und kvctl schreiben englisch,
+# ihre Tabellen bleiben ausgerichtet, Zeiten mit Dezimalpunkt; der Bericht selbst bleibt deutsch.
+run 1500ms
+expect LB1 svc lb metric backends_up == 3
+LB1: lbctl
+expect LB1 output contains "Load balancer lb: HTTP on port 80"
+KV1: kvctl
+expect KV1 output contains "every 500.000 ms (down after 1.500 s)"
+KV1: kvctl where k7
+KV1: kvctl get k7
+KV1: kvctl nix
+at 6s fault power KV2
+run 5s
+KV1: kvctl
+expect KV1 output contains "10.0.2.22  down"
+LB1: lbctl -h
+run 10ms

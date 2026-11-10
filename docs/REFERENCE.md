@@ -47,10 +47,10 @@
 | Webbrowser | [`src/workspace/devwin/browser.rs`](src/workspace/devwin/browser.rs) (das Programm), [`src/workspace/devwin/pagescript.rs`](src/workspace/devwin/pagescript.rs) (Seitenskripte: der Host der VM, die Konsole), [`src/workspace/devwin/devtools.rs`](src/workspace/devwin/devtools.rs) (die Entwickleransicht), [`crates/jfn_sim/webc.rs`](crates/jfn_sim/webc.rs) (Anfragen und Weiterleitungen in der Engine), [`crates/jfn_sim/tlssim.rs`](crates/jfn_sim/tlssim.rs) (Zertifikate des Labors, TLS-Notizen), [`lib/netpkt/uri.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/uri.rs) (URLs nach RFC 3986), [`lib/netpkt/cookie.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/cookie.rs) (Cookies nach RFC 6265), [`lib/netpkt/tls.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/tls.rs) und [`lib/netpkt/x509.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/x509.rs) (TLS 1.3 ohne I/O) |
 | SSH | [`lib/netpkt/ssh.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/ssh.rs), [`crates/jfn_sim/sshd.rs`](crates/jfn_sim/sshd.rs), [`sshtrace.rs`](crates/jfn_sim/sshtrace.rs), [`cli/ssh.rs`](crates/jfn_sim/cli/ssh.rs), [`src/sshtest.rs`](src/sshtest.rs) | das Protokoll ohne I/O, Client und Server auf den Geräten, Schlüssel als Dateien, `known_hosts`, `authorized_keys`, `scp` |
 | SNMPv3 | [`lib/netpkt/snmpv3.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/snmpv3.rs), [`crates/jfn_sim/snmpd.rs`](crates/jfn_sim/snmpd.rs), [`cli/snmp.rs`](crates/jfn_sim/cli/snmp.rs), [`src/workspace/devwin/mib.rs`](src/workspace/devwin/mib.rs), [`src/snmpv3test.rs`](src/snmpv3test.rs) | die Nachricht, USM, VACM, die Reports, die Werkzeuge, der MIB-Browser |
-| Sitzungen und Telnet-Server | [`crates/jfn_sim/cli/ses.rs`](crates/jfn_sim/cli/ses.rs), [`telnetd.rs`](crates/jfn_sim/telnetd.rs), [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs), [`src/doc/console.rs`](src/doc/console.rs), [`src/workspace/terminal.rs`](src/workspace/terminal.rs), [`src/sessiontest.rs`](src/sessiontest.rs) | mehrere Befehlszeilen je Gerät (Konsole, lokale Terminals, Telnet), der Telnet-Server der vty-Leitungen und `telnetd`, `show users`, `who`, die Sitzungen im Terminal-Panel |
+| Sitzungen und Telnet-Server | [`crates/jfn_sim/cli/ses.rs`](crates/jfn_sim/cli/ses.rs), [`telnetd.rs`](crates/jfn_sim/telnetd.rs), [`ttyusb.rs`](crates/jfn_sim/ttyusb.rs), [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs), [`src/doc/console.rs`](src/doc/console.rs), [`src/workspace/terminal.rs`](src/workspace/terminal.rs), [`src/sessiontest.rs`](src/sessiontest.rs), [`src/serialtest.rs`](src/serialtest.rs) | mehrere Befehlszeilen je Gerät (Konsole, lokale Terminals, Telnet, das Konsolenkabel mit `screen /dev/ttyUSB0`), der Telnet-Server der vty-Leitungen und `telnetd`, `show users`, `who`, die Sitzungen im Terminal-Panel |
 | 802.1X und WPA-Enterprise | [`crates/jfn_sim/dot1x.rs`](crates/jfn_sim/dot1x.rs), [`supp.rs`](crates/jfn_sim/supp.rs), [`dot1xtrace.rs`](crates/jfn_sim/dot1xtrace.rs), [`cli/dot1x.rs`](crates/jfn_sim/cli/dot1x.rs), [`lib/eapm`](https://github.com/JFLibrary/JFLib/blob/main/lib/eapm/lib.rs), [`lib/netpkt/eap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/eap.rs), [`lib/crypto/eappwd.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/crypto/eappwd.rs) |
 | IMAP | [`crates/jfn_sim/imapd.rs`](crates/jfn_sim/imapd.rs), [`mailbox.rs`](crates/jfn_sim/mailbox.rs), [`mailc.rs`](crates/jfn_sim/mailc.rs), [`lib/netpkt/imap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/imap.rs) |
-| Zonen und Sitzungen | [`crates/jfn_sim/fw.rs`](crates/jfn_sim/fw.rs), [`fwtrace.rs`](crates/jfn_sim/fwtrace.rs), [`cli/fw.rs`](crates/jfn_sim/cli/fw.rs), [`cli/ufw.rs`](crates/jfn_sim/cli/ufw.rs), [`src/workspace/devwin/fwzones.rs`](src/workspace/devwin/fwzones.rs), [`src/firewalltest.rs`](src/firewalltest.rs) |
+| Zonen und Sitzungen | [`crates/jfn_sim/fw.rs`](crates/jfn_sim/fw.rs), [`fwtrace.rs`](crates/jfn_sim/fwtrace.rs), [`cli/fw.rs`](crates/jfn_sim/cli/fw.rs), [`cli/ufw.rs`](crates/jfn_sim/cli/ufw.rs), [`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs), [`src/workspace/devwin/fwzones.rs`](src/workspace/devwin/fwzones.rs), [`src/firewalltest.rs`](src/firewalltest.rs), [`src/homenattest.rs`](src/homenattest.rs) |
 | Firewall-Reiter | [`src/workspace/devwin/firewall.rs`](src/workspace/devwin/firewall.rs), [`crates/jfn_sim/acl.rs`](crates/jfn_sim/acl.rs) (`Acls::probe`), [`src/doc/console.rs`](src/doc/console.rs) (`run_lines_running`), [`src/fwguitest.rs`](src/fwguitest.rs) | Regeln, NAT und Test im Gerätefenster als Formulare über den Befehlen, sein Selbsttest (siehe [NAT und Zugriffslisten](#nat-und-zugriffslisten)) |
 | Akademie | [`crates/jfn_model/academy.rs`](crates/jfn_model/academy.rs), [`crates/jfn_model/quiz.rs`](crates/jfn_model/quiz.rs), [`crates/jfn_run/lib.rs`](crates/jfn_run/lib.rs) (`check_course`), [`src/workspace/academy/`](src/workspace/academy/mod.rs) (`store.rs`, `pages.rs`, `quiz.rs`), [`academy/beispiel`](academy/beispiel), [`src/academytest.rs`](src/academytest.rs), [`src/quiztest.rs`](src/quiztest.rs) | Quiz und Tests als Dateien, ihre Bewertung und ihre Seite; Kurse als Dateien, was an einem Kurs nicht stimmt, der Fortschritt (ohne I/O); `jfn-sim course`; die Seiten Liste, Gliederung und Lektion, die Leiste über der Zeichenfläche, was gelesen und geschrieben wird; der Beispielkurs; ihr Selbsttest (Gruppe `academy`; siehe [Akademie](#akademie)) |
 | Startseite | [`src/workspace/startpage.rs`](src/workspace/startpage.rs), [`assets/templates`](assets/templates), [`lib/ui/action_card.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/ui/action_card.rs), [`src/startpagetest.rs`](src/startpagetest.rs) | die Seite statt Werkzeugleiste, Dock und Statusleiste mit Neu, Zuletzt und Lernen, der Dialog Projektinfo, die fünf Vorlagen, die Karte aus der Bibliothek (getestet in `apps/cardtest`), ihr Selbsttest (Gruppe `startpage`) |
@@ -72,6 +72,16 @@ Message Queue, Lastgenerator, Container-Host. Netzwerkgeräte tragen IOS-Interfa
 (`GigabitEthernet1/0/1`, Abkürzungen wie `gi1/0/1` gehen überall), Hosts Linux-Namen (`eth0`,
 `wlan0`).
 
+Die Modems (Modem/ONT, Kabelmodem, DSL-Modem) sind Brücken zwischen ihrer Leitung (`wan0`, `coax0`,
+`dsl0`) und `lan0`: die Ethernet-Frames reisen in der Leitung mit (`Media::is_bridged`), ohne GPON,
+DOCSIS, DSL oder PPPoE. Die Internet-Wolke ist ein durchsichtiges Netz der Schicht 2 zwischen
+allen zwölf Ports, eine lernende Bridge ohne Befehlszeile, Spanning Tree oder eigene VLANs
+(`F_CLOUD`, `Node::new`): zwei Router an der Wolke erreichen sich im selben Netz, Adressen, DHCP
+oder Routing hat sie nicht. Eine Schnellverbindung nimmt zwischen Modem und Wolke die Leitung, nicht
+den LAN-Port (`suggest_ports`: die Leitungen der Modems kommen vor Kupfer). Das IP-Telefon reicht
+EAPOL zwischen `pc0` und `eth0` durch (anders als eine Bridge nach 802.1D), so meldet sich der PC
+dahinter mit 802.1X am Switch an (`DNote::PassedOn`).
+
 | Modell | Art | Ports |
 |---|---|---|
 | JF-S8 | Tisch-Switch, unmanaged: keine Befehlszeile, keine Adresse | 8× 1G (`port0` bis `port7`) |
@@ -87,7 +97,7 @@ Message Queue, Lastgenerator, Container-Host. Netzwerkgeräte tragen IOS-Interfa
 | JF-R2 | Filial-Router | 2× 1G, 2× Seriell, Konsole |
 | JF-R4 | Edge-Router | 4× 1G, 2× 10G SFP+, 2× Seriell, Konsole |
 | JF-R8 | Core-Router | 1× 1G, 8× 10G SFP+, 2× 100G QSFP28, Konsole |
-| Heimrouter | Router mit WLAN und NAT, Linux-Befehlszeile | 1G WAN, 4× 1G LAN, Funk |
+| Heimrouter | Router mit WLAN und NAT, Linux-Befehlszeile; aus der Palette mit NAT auf `wan` und einem Filter, der nur Antworten hereinlässt (`iptables`, siehe [NAT und Zugriffslisten](#nat-und-zugriffslisten)) | 1G WAN, 4× 1G LAN, Funk |
 | Hub | Schicht 1, ohne Befehlszeile | 8× 100M (`port0` bis `port7`) |
 | Repeater | Schicht 1 wie der Hub, ohne Befehlszeile | 2× 1G (`port0`, `port1`) |
 | Bridge | Schicht 2, lernt Adressen, ohne Befehlszeile | 2× 1G (`port0`, `port1`) |
@@ -138,10 +148,39 @@ Dazu kann der Nutzer selbst wählen, und `cable_fits` prüft, ob es steckt:
 
 Ein falsches Kupferkabel steckt, unter „Auto-MDI-X aus“ (Projektinspektor, `strict_mdix`, ein
 Rückgängig-Schritt) bleibt die Leitung dann unten und das Problem nennt das richtige Kabel; Glas
-in RJ45 steckt nicht. Ein gewähltes serielles Ende ändert nur, was man sieht: den Punkt und
-„DCE“ an diesem Ende auf der Zeichenfläche und die Zeile `Serial cable end: DCE` oder `DTE` in
-`show interfaces`. Einen Befehl `clock rate` kennt die Engine nicht, und kein Ende liefert einen
-Takt; das unveränderte `serial` älterer Dateien nennt kein Ende.
+in RJ45 steckt nicht. Ein gewähltes serielles Ende zeigt den Punkt und „DCE“ an diesem Ende auf
+der Zeichenfläche und die Zeile `Serial cable end: DCE` oder `DTE` in `show interfaces`, und es
+gibt den Takt (siehe [Serielle Leitungen](#serielle-leitungen)); das unveränderte `serial`
+älterer Dateien nennt kein Ende und braucht keinen Takt. Das Konsolenkabel trägt die Konsole:
+`screen /dev/ttyUSB0` auf dem PC am USB-Ende (siehe
+[Sitzungen und Telnet-Server](#sitzungen-und-telnet-server)).
+
+#### Serielle Leitungen
+
+[`crates/jfn_sim/serial.rs`](crates/jfn_sim/serial.rs), geprüft in der Selbsttest-Gruppe
+`serial` ([`src/serialtest.rs`](src/serialtest.rs)).
+
+- **Takt:** Das DCE-Ende (`serial-dce` / `serial-dte`) gibt ihn wie neuere IOS-Versionen an einem
+  erkannten DCE-Kabel von sich aus, die Leitung läuft dann mit der Rate ihres Links (ältere
+  Projekte laufen wie bisher). `clock rate N` dort (gerundet auf die übliche Rate daneben, 1200
+  bis 8000000) setzt die Bitrate: Frames brauchen die Zeit bei der kleineren von N und der Rate des
+  Links; `BW` in `show interfaces` und die Kosten von OSPF behalten die Rate des Links, wie
+  `bandwidth` bei IOS. `no clock rate` am DCE-Ende nimmt den Takt: Beide Enden bleiben „up“, das
+  Leitungsprotokoll geht an beiden aus (`%LINEPROTO`, rote LEDs, nichts kommt durch, die
+  verbundenen Routen gehen), `show interfaces` und `show controllers serial` sagen warum, dazu
+  eine Notiz an beiden Enden und das Problem „kein Takt“. Am DTE-Ende wird `clock rate`
+  angenommen, bleibt in der Konfiguration und wirkt nicht. Ohne gewähltes Ende gibt es nichts zu
+  takten.
+- **Rahmen:** `encapsulation hdlc` (Vorgabe, Cisco-HDLC) oder `encapsulation ppp` (die
+  HDLC-artige Rahmung von RFC 1662: `FF 03`, Protokoll `0021` für IPv4, `0057` für IPv6);
+  `no encapsulation` ist HDLC. Verschiedene Enden halten das Leitungsprotokoll an beiden unten
+  (`Encapsulation PPP, LCP Closed` gegen `LCP Open`, der Grund, das Problem „Rahmen passen nicht“).
+  Keine der beiden Arten schickt Eigenes: keine Keepalives, kein LCP, kein IPCP auf der Leitung;
+  das Leitungsprotokoll folgt sofort aus der Konfiguration beider Enden.
+- **Konfiguration:** `encapsulation ppp` nach den Adressen, `clock rate N` oder `no clock rate`
+  nach `shutdown`; die Vorgaben schreiben nichts. `show controllers [serial N]` zeigt je
+  seriellem Port Kabelende und Takt („DCE V.35, clock rate 64000“, „DTE V.35 TX and RX clocks
+  detected.“, „DCE V.35, no clock“).
 
 Die **Kategorie** (`grade` in der Datei) ist ein Feld des Kabels statt weiterer Arten; ohne sie
 gelten die Grenzen wie bisher:
@@ -342,7 +381,7 @@ Interfaces (`Vlan10`, unter Linux `br0`), gerouteten Switch-Ports und Loopbacks:
 - **Weiterleiten:** TTL, Fragmentieren und Zusammensetzen, „Fragmentation needed“ mit der MTU
   des nächsten Abschnitts. Gerichtete Broadcasts bleiben draußen. IOS-Interfaces beantworten
   ARP für Hosts hinter einem anderen Interface (Proxy-ARP). Serielle Leitungen tragen
-  Cisco-HDLC.
+  Cisco-HDLC oder PPP (siehe [Serielle Leitungen](#serielle-leitungen)).
 - **ICMP-Fehler:** nach RFC 1812, also nie über Fehler, Broadcasts oder Folgefragmente.
   Absender ist das Eingangs-Interface. Linux zitiert bis zu 576 Byte des Pakets, IOS den Kopf
   und 8 Byte. Die Rate ist begrenzt wie im Original: IOS schickt höchstens alle 500 ms ein
@@ -355,7 +394,8 @@ Interfaces (`Vlan10`, unter Linux `br0`), gerouteten Switch-Ports und Loopbacks:
 
 ### Spanning Tree
 
-Die IOS-artigen Switches (JF-S24P, JF-S24L3, JF-S48X) sprechen Spanning Tree nach IEEE: STP
+Alle IOS-artigen Switches (JF-S8P, JF-S24, JF-S24P, JF-S24M, JF-S48P und die L3-Switches JF-S24L3, JF-S48X,
+JF-S48Y, JF-S32C) sprechen Spanning Tree nach IEEE: STP
 nach 802.1D (der Algorithmus von 802.1D-1998, [`stp98.rs`](crates/jfn_sim/stp98.rs)) oder RSTP
 nach 802.1w, heute 802.1D-2004 Abschnitt 17 ([`rstp.rs`](crates/jfn_sim/rstp.rs)); wie die
 Bridge ihn nutzt, steht in [`stp.rs`](crates/jfn_sim/stp.rs). **Ohne Konfiguration ist er
@@ -449,7 +489,7 @@ Simulator:
   Hosts melden auch, dass sie eine ARP-Anfrage nach einer fremden Adresse verwerfen.
 - **Paket-Tab:** was ein Gerät mit einem Frame gemacht hat, also eingehende PDU, Entscheidungen
   und ausgehende PDUs (`step_of`, `hop_steps`). Jeder Frame kennt den Frame, der ihn ausgelöst
-  hat. `hop_layers` zerlegt die Bytes, bei seriellen Leitungen samt Cisco-HDLC-Kopf.
+  hat. `hop_layers` zerlegt die Bytes, bei seriellen Leitungen samt Cisco-HDLC- oder PPP-Kopf.
 - **Eigene PDUs** ([`pdu.rs`](crates/jfn_sim/pdu.rs)): ein Dienst schickt UDP-Datagramme mit
   eigener TTL und Größe oder öffnet TCP-Verbindungen, einmal, n-mal oder bis er gestoppt wird,
   auch an Namen, die der Resolver des Geräts erst auflöst. ICMP-Echos sind Ping-Jobs,
@@ -575,7 +615,8 @@ Ereigniswarteschlange und die Tabellen der Geräte.
 Schnittstelle pro Kabel, „PC1 eth0 – SW1 Gi1/0/1“), einen gefilterten Teil (Protokolle,
 Geräte, Zeitfenster), ein Kabel oder ein Gerät (eine Schnittstelle pro Port; Gesendetes mit
 der Sende-, Empfangenes mit der Empfangszeit). Zeitstempel sind die virtuelle Zeit in
-Nanosekunden. Ethernet-Kabel bekommen den Linktyp Ethernet, serielle Leitungen Cisco HDLC. Ein
+Nanosekunden. Ethernet-Kabel bekommen den Linktyp Ethernet, serielle Leitungen Cisco HDLC oder,
+mit PPP, `LINKTYPE_PPP_HDLC` (50). Ein
 Kommentar pro Frame nennt beide Enden und Verluste auf der Leitung. Die Mitschnitte der
 Selbsttests (`--selftest --pcap-out DIR`) zerlegt tshark 4.6 vollständig und ohne
 Prüfsummenfehler.
@@ -866,7 +907,9 @@ prüfen Zeiträume (siehe [Szenarien](#szenarien-scn)).
 
 - **Dienste ohne JSON** (Gerätefenster, Reiter Dienste; [`devwin/svcform.rs`](src/workspace/devwin/svcform.rs)):
   „Dienst hinzufügen …“ legt einen Webserver, Lastgenerator, Load Balancer, KV-Knoten, Cache, eine Queue oder einen
-  Worker an, „Einstellungen …“ zeigt ihre Formulare: Beschriftungen mit Einheit und einer Zeile Hilfe, das Seltene
+  Worker an, auf einem Linux-Gerät auch einen DHCP-Server (seine Shell hat keinen anderen Weg zu einem): Er beginnt mit
+  einem Pool für das Netz seines LAN (`br0`, sonst das erste Interface mit Adresse; .100 bis .199, das Gerät als
+  Router), und seine Einstellungen öffnen sich als JSON. „Einstellungen …“ zeigt die Formulare der anderen: Beschriftungen mit Einheit und einer Zeile Hilfe, das Seltene
   eingeklappt. Ein Backend oder Ziel wird unter den Geräten des Projekts gewählt (daraus wird die Adresse, die der Dienst
   braucht, mit dem Port seines Dienstes) oder eingetippt. Ein Formular ändert nur, was sich darin geändert hat; jeder andere
   Eintrag der Konfiguration bleibt an seiner Stelle, ein leeres Feld nimmt den Eintrag heraus. „Als JSON bearbeiten“ zeigt,
@@ -937,7 +980,10 @@ prüfen Zeiträume (siehe [Szenarien](#szenarien-scn)).
   (`status_msg`), die Zeile der Disk (`Disk::msg`) und die Texte der Fehler in Markierungen und
   Ereignissen (`FaultMark::msg`, `Note::FaultStart` / `FaultEnd`) sind Meldungen mit englischer
   Zeile in `engine.tsv`; die Berichte der Szenarien behalten ihren deutschen Text, die
-  Golden-Berichte sind unverändert.
+  Golden-Berichte sind unverändert. `lbctl`, `kvctl`, `dbctl`, `cachectl`, `mqctl` und
+  `workerctl` schreiben in der Sprache der Konsole (siehe [Befehlszeilen](#befehlszeilen)):
+  im englischen Fenster englisch, mit Dezimalpunkt („6.512 s“, „80.0 %“) und ausgerichteten
+  Tabellen.
 
 ### Befehlszeilen
 
@@ -1021,7 +1067,7 @@ Router und Switches zeigen `show tcp brief [all]`, `show tcp statistics` und
 `show control-plane host open-ports`. Die Dienste des Labors zeigen `lbctl` (Backends mit
 Zustand und Zahlen), `dbctl` (Zustand, `tables`, `locks`, `explain ANWEISUNG`: [Datenbank](#datenbank-der-dienst-db)), `kvctl` (Mitglieder, `ring`, `where SCHLÜSSEL` mit den Replikaten und
 ihren Versionen, `get`, `keys`), `cachectl`, `mqctl` und `workerctl`, mit `-s NAME` für einen
-bestimmten Dienst; ihre Texte sind eigene Worte. Die Skripte eines Hosts zeigt und steuert
+bestimmten Dienst; ihre Texte sind eigene Worte in der Sprache der Konsole (unten). Die Skripte eines Hosts zeigt und steuert
 `script` (siehe [Skripte in Hosts](#skripte-in-hosts)).
 Spanning Tree stellen `spanning-tree …`, `show spanning-tree`, `debug spanning-tree events`
 und `clear spanning-tree detected-protocols` ein und zeigen ihn (siehe
@@ -1054,6 +1100,22 @@ Hilfetexte (`?`, `ip … help`), Modus-Titel, Statuszeilen wie die ersten Zeilen
 die Befehlswörter und ihre Syntax, Interface-Namen, Konfigurationszeilen, kurze
 `%`-Fehlermeldungen, die Tabellen der `show`-Befehle und die Ergebniszeilen von `ping`
 (`!!!!!`, `Success rate is …`), iproute2 und iputils.
+
+**Die Sprache der Konsole** (`Engine::console_lang`, `Action::ConsoleLang`): Die IOS-artige
+Befehlszeile ist in beiden Sprachen englisch, wie das Vorbild; `show version` nennt das Modell
+mit seinem englischen Titel aus `engine.tsv`, `show interfaces Dot11RadioN` eines Access Points
+das Band des Funkteils („media type is WLAN radio 5 GHz“, `jfn_model::wlan::radio_bands`). Die
+eigenen Werkzeuge der Linux-Shell folgen der Sprache wie unter Linux dem Locale: `lbctl`, `kvctl`,
+`dbctl` (mit den Gründen von `explain`; die SQL-Fehler bleiben die Antwort der Datenbank, deutsch),
+`cachectl`, `mqctl`, `workerctl`, `systemctl` und `journalctl`, dazu die Zeilen, die der
+Einheiten-Verwalter ins Log schreibt (in der Sprache zur Zeit des Schreibens). Ihre Texte sind
+Meldungen (`msg!`) mit englischer Zeile in `engine.tsv`; `jfn_model` bettet die Datei ein
+(`msg::en`, `Msg::text_in`), der Simulator braucht keinen Katalog der App. Ein Tabellenkopf ist
+eine Meldung, deren Zellen `|` trennt; die Spalten richten sich in beiden Sprachen nach der
+breitesten Zelle. Deutsch ist der Normalfall, so bleiben alle Golden-Berichte gleich; das Fenster
+stellt die Sprache bei jedem neuen Simulator, beim Start, bei jedem Wechsel der Sprache und nach
+„Von hier fortsetzen“ ein (`Sim::follow_lang`), `jfn-sim run --lang en` ebenso. Die Hilfe
+(`man`, `help`) und andere eigene Werkzeuge wie `script` bleiben deutsch.
 
 Die Konfiguration steckt in den Teilen des Geräts (Ports, Bridge, IPv4). `show running-config`
 schreibt sie als IOS-artige Konfiguration, `Engine::running_config` bei Linux-Geräten als
@@ -1096,7 +1158,9 @@ Jede Zeile trägt die Zeit, das Gerät (mit seiner Konsolenausgabe und den getip
 Prompt) oder `--` für einen Schritt und `ok` / `FEHLER` für eine Erwartung. `expect … output
 contains` prüft, was das Gerät seit seinem letzten Befehl ausgegeben hat. `--report F` schreibt
 den Bericht in eine Datei, `--golden F` vergleicht ihn mit einer gespeicherten Fassung,
-`--pcap F` schreibt die Aufzeichnung als pcapng. Die GUI-Exe nimmt dieselben Argumente
+`--pcap F` schreibt die Aufzeichnung als pcapng, `--lang en` lässt die eigenen Werkzeuge der
+Linux-Shell englisch antworten (die Wörter des Berichts selbst bleiben deutsch; ohne die Option
+deutsch). Die GUI-Exe nimmt dieselben Argumente
 (`JFNetworker.exe PROJEKT --scenario S`). Weil die App nur Dateien öffnen darf, die auf der
 Befehlszeile stehen (`fs.user`), gehören Projekt, Vergleichsdatei und pcap-Datei dorthin.
 
@@ -1588,7 +1652,9 @@ WantedBy=multi-user.target
 | `systemctl daemon-reload`, `reset-failed [EINHEIT]`, `cat EINHEIT` | neu lesen, Fehler vergessen, die Datei zeigen |
 | `journalctl [-u EINHEIT] [-n N] [-f] [-r]` | das Log des Geräts (die letzten 1000 Zeilen, `Monat Tag Zeit HOST TAG: TEXT`), mit `-u` die Zeilen einer Einheit: was ihr Dienst schrieb, bei Skripten auch `print`, und ihr Starten und Enden; `-f` folgt, bis Strg+C (130), in jeder Sitzung und im Hintergrund |
 
-`man systemctl`, `man journalctl` und `--help` antworten in eigenen Worten; `Engine::units(dev)`,
+Die Texte von `systemctl` und `journalctl` folgen der Sprache der Konsole (siehe
+[Befehlszeilen](#befehlszeilen)), die Wörter des Originals (`active`, `running`, `disabled`,
+`on-failure`) bleiben. `man systemctl`, `man journalctl` und `--help` antworten in eigenen Worten; `Engine::units(dev)`,
 `Engine::unit(dev, name)` und `Action::Unit { dev, name, op }` bedienen die Oberfläche. Die
 Szenarien prüfen mit `expect WEB1 unit web active|inactive|failed|enabled|disabled`.
 
@@ -2005,10 +2071,21 @@ startet das Gerät mit der alten Konfiguration neu, also beginnen danach alle Z�
 bei 0. Was in der Konsole getippt und noch nicht gesichert war, sichert der nächste Schritt des Reiters
 mit: Sonst könnte er diese Regeln nicht verschieben oder löschen.
 
+**Auf Linux-Geräten** übersetzt `iptables -t nat -A POSTROUTING [-s NETZ] -o IF -j MASQUERADE`
+([`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs)) mit derselben Maschine: IF ist außen, jedes andere
+Interface des Geräts innen (auch eines, das später mit `ip link add` dazukommt), und die Regel ist eine
+dynamische mit Ports auf der Adresse, die IF gerade hat. Wie beim Vorbild beginnt nur das erste Paket einer
+Verbindung eine Übersetzung: Die Antwort eines inneren Hosts auf eine Verbindung von außen (Echo Reply, TCP
+ohne SYN) geht unverändert hinaus. `-D`, `-F` und `-L`/`-S` wie beim Vorbild (`-v` zählt die Verbindungen, die
+die Regel begonnen hat); ohne Regel bleibt nichts übrig, auch keine Übersetzung. Die Zeilen stehen in der
+Konfiguration des Geräts, `iptables-save` gibt die Tabellen im Format des Vorbilds aus. Ein Heimrouter aus der
+Palette bootet mit MASQUERADE auf `wan` und dem Filter unten ([Firewall](#firewall-zonen-und-sitzungen)); einer aus
+einer Datei, auch aus der Vorlage „Heimnetz“, bootet mit dem, was dort steht. Andere Ziele der Tabelle nat (SNAT,
+DNAT, Portweiterleitung über PREROUTING) gibt es nicht.
+
 Noch offen: Hairpinning (ein innerer Host erreicht einen anderen über dessen globale Adresse;
 RFC 4787 verlangt es, das klassische Vorbild kann es nicht), `ip nat outside source`,
-Route-Maps, Helfer für Protokolle mit Adressen im Inhalt (FTP …), NAT und Filter auf Linux-Geräten
-(iptables, der Heimrouter).
+Route-Maps, Helfer für Protokolle mit Adressen im Inhalt (FTP …), DNAT auf Linux-Geräten.
 
 Geprüft wird das in der Selbsttest-Gruppe `nat` ([`src/nattest.rs`](src/nattest.rs)) und im
 Golden-Szenario `nat_pat.scn` auf `fixtures/nat_pat.jfnet`: ein Büro hinter R1 mit PAT auf
@@ -2113,13 +2190,33 @@ oben, und die Antworten kommen zurück. Ping, ICMP-Fehler und die Antworten an e
 der Host weiterleitet, sieht sie nicht an. Die Zeilen stehen in der Konfiguration des Geräts, die Regeln gelten für
 IPv4 und IPv6, `from` nur für IPv4. Kein Log, keine Anwendungsprofile.
 
+Was ein Linux-Gerät **weiterleitet**, filtert die Kette FORWARD von `iptables`
+([`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs)): `-P FORWARD ACCEPT|DROP`, `-A|-I|-D|-C FORWARD` mit
+`-i IF`, `-o IF` (`IF+` für alle, die so beginnen), `-p tcp|udp|icmp|all`, `--dport`, `-s`, `-d`,
+`-m conntrack --ctstate` oder `-m state --state` (NEW, ESTABLISHED, RELATED, INVALID) und `-j ACCEPT|DROP|REJECT
+[--reject-with …]`, `-D FORWARD N`, `-F`, `-Z`, `-L [-n] [-v] [-x] [--line-numbers]` und `-S` im Layout des Vorbilds.
+Die Kette sieht ein Paket, wo `fw_out` es sieht: nach dem Routing, vor der Übersetzung der Quelle und nach der
+Übersetzung zurück, also mit den inneren Adressen. Jedes Paket trifft die Regeln der Reihe nach, sonst entscheidet
+die Vorgabe; die Zustände kommen aus der Sitzungstabelle oben (geteilt mit `ufw`): ESTABLISHED gehört zu einer
+Sitzung, auf dem Rückweg oder nachdem etwas zurückkam, RELATED ist ein ICMP-Fehler zu einer, NEW kann eine beginnen.
+Was eine Regel oder die Vorgabe durchlässt und eine Sitzung beginnen kann, beginnt eine (Paar `iptables`, die
+Wörter der Regel als Klasse); erst eine Regel für ESTABLISHED lässt die Antworten herein. REJECT schickt „port
+unreachable“ (oder was `--reject-with` sagt). Regeln und Vorgabe zählen Pakete und Bytes, Entscheidungen erscheinen
+als dieselben Ereignisse wie die der Zonen. Ein Heimrouter aus der Palette bootet mit `-P FORWARD DROP`, ESTABLISHED
+und RELATED durch und `-i br0 -o wan -j ACCEPT`: Das LAN kommt hinaus, von außen kommen nur Antworten. Mit der
+Vorgabe ACCEPT und ohne Regel ruht die Kette. Was das Gerät selbst sendet oder empfängt (INPUT, OUTPUT), bleibt
+Sache von `ufw`; IPv6 filtert sie nicht, eigene Ketten, `!` und weitere Module gibt es nicht.
+
 **Was sie nicht kann.** Die Firewall schaut nicht in die Daten: `match protocol http` heißt TCP-Port 80, nichts
 weiter. Keine Anwendungserkennung, kein IPS, keine Benutzer oder URLs, keine Hilfe für FTPs Datenverbindung,
 keine Prüfung von Sequenznummern, keine Objektgruppen.
 
 Geprüft wird das in der Selbsttest-Gruppe `firewall` ([`src/firewalltest.rs`](src/firewalltest.rs)), im
 Golden-Szenario `firewall_zones.scn` auf `fixtures/firewall_zones.jfnet` (INNEN, DMZ, AUSSEN mit PAT und einer
-Portweiterleitung) und in den Fensterskripten `firewall_zones.uis` und `firewall_zones_shots.uis`.
+Portweiterleitung) und in den Fensterskripten `firewall_zones.uis` und `firewall_zones_shots.uis`; `iptables` in
+der Gruppe `homenat` ([`src/homenattest.rs`](src/homenattest.rs)): ein Heimnetz hinter einem Heimrouter und ein
+Provider ohne Weg zurück, MASQUERADE, die Kette FORWARD, die Konfiguration hin und zurück, die Vorgaben aus der
+Palette, ein DHCP-Server aus „Dienst hinzufügen“.
 
 ### IPv6
 
@@ -2703,7 +2800,8 @@ Inhalt), `head` und `tail` (`-n N`, `-N`, `-n -N`, `-n +N`, `-c`), `grep` (`-i -
 `-mindepth`; in Namensfolge, Dateien mit Punkt eingeschlossen), `wc` (`-l -w -c -m` mit den
 Spaltenbreiten von GNU), `sort` (`-r -n -u -f -k -t`, nach Bytes), `uniq` (`-c -d -u -i`), `cut`
 (`-d -f -c -s`), `tree` (`-a -d -L`), `du` (`-s -h -a -c`), `df` (`-h`: die Kapazität des
-Gerätemodells), `less` und `more` (die Konsole blättert mit --More--), `file`, `stat`,
+Gerätemodells, mit Hardware die Platte ihrer Zahlen samt den Daten der Dienste; die Dateien haben dann
+dieselbe Größe), `less` und `more` (die Konsole blättert mit --More--), `file`, `stat`,
 `basename`, `dirname`, `date` (die Uhr des Geräts in virtueller Zeit, `+FORMAT`), `sleep`, `seq`,
 `tee`, `test` / `[`, `xargs`, `env`, `export`, `unset`, `which`, `type`, `help` und `man`.
 `ls` zeigt Dateien mit Punkt nur mit `-a`/`-A` und schreibt in eine Pipe einen Namen je Zeile.
@@ -3419,6 +3517,20 @@ Sitzung mit `terminal monitor`.
   er ein Passwort erfragt (der Client hört dann mit dem Echo auf), wie Login-Programme es mit
   einem zeilenweisen Client tun; Prompts und Ausgaben laufen als NVT-Text, `Interrupt Process`
   bricht den laufenden Befehl ab.
+- **Das Konsolenkabel** ([`crates/jfn_sim/ttyusb.rs`](crates/jfn_sim/ttyusb.rs)): `screen
+  /dev/ttyUSB0 [BAUD]` (auch `picocom [-b BAUD] /dev/ttyUSB0` und `minicom -D /dev/ttyUSB0`) in der
+  Shell eines PCs öffnet die Befehlszeile des Geräts am anderen Ende des Konsolenkabels an `usb0`
+  als Sitzung `SesKind::Cable` auf dessen Leitung `con 0`: mit dem Login von `line con 0`, den
+  Meldungen der Konsole und `exit` zurück zu „press Enter“ oder zum Login wie an der Konsole;
+  `show users` zeigt sie mit „PC1 usb0“, `show line` auf der Zeile `con 0`, `clear line console 0`
+  meldet sie ab. Die Konsole des Doppelklicks bleibt eine eigene Sitzung. Endet das Programm
+  (Strg+C wie bei telnet), wird das Kabel gezogen oder geht der PC aus, bleibt die Sitzung
+  angemeldet stehen, und das nächste Programm am Kabel findet sie wieder; Ausschalten des Geräts
+  beendet sie. Ohne Kabel: „Cannot open /dev/ttyUSB0: No such file or directory“; ist das Gerät
+  aus, antwortet nichts (eine Zeile in unseren Worten sagt es), bis eine Zeile nach dem
+  Einschalten die Konsole weckt; ein gezogenes Kabel beendet das Programm („[screen is
+  terminating]“), ein zweites Programm an derselben Leitung bekommt „Device or resource busy“.
+  Die Baudrate wird angenommen und nicht geprüft, Text kommt sofort und nicht im Takt der Leitung.
 - **telnetd auf Linux-Hosts** (Dienst `telnetd`, `{"port": 23, "password": "…"}`): Anmeldung als
   `root` mit dem Passwort des Dienstes, dann eine eigene Shell auf `pts/N`. `who`, `w` und `tty`
   zeigen die Sitzungen; `ps` hat die Spalte `TTY` (`tty1` die Konsole, `pts/N`, `?` für init und
@@ -3757,7 +3869,8 @@ für EAPOL die Kategorie „802.1X“ in einem gedämpften Rostrot.
   sofort. Im Desktop schreibt das Feld „Anmeldung am Netz (802.1X)“ der **IP-Konfiguration** diese
   Datei (Methode, Identität, Passwort, am Kabel und fürs WLAN) und zeigt den Zustand. Alle
   Endgeräte haben die Shell und damit den Supplicant; das IP-Telefon hat nur Brückenports und
-  meldet sich nicht an.
+  meldet sich nicht an, reicht aber das EAPOL seines PCs zum Switch und zurück (der Port öffnet
+  dann für beide, Host-Modi gibt es nicht).
 - **WPA-Enterprise** ([`wlan.rs`](crates/jfn_sim/wlan.rs)): Sicherheit `wpa2-enterprise` (AKM 1) und
   `wpa3-enterprise` (AKM 5, mit AES-128-CMAC und KDF-SHA256, auch auf 6 GHz); ein Netz nennt
   `radius`, `radius_key`, `radius_port`, im Inspektor RADIUS-Server und Schlüssel. Eine Station hat
@@ -3952,7 +4065,7 @@ Eine Spalte kurz: `"name"` (eine Zahl je Schlüssel), `"name:text"`, `"name:int:
 | 503 `too_many_connections`, `recovering` | Überlast oder noch in der Wiederherstellung |
 | 507 `disk_full` | die Platte ist voll |
 
-`GET /_db/health` sagt Zustand, Rolle und Log-Positionen, `GET /_db/stats` alle Zahlen und die Tabellen. Die Shell hat `dbctl [status|tables|locks|explain ANWEISUNG] [-s DIENST]`. Eine Route eines Webservers fragt mit `"backend": "db"`, dazu auf Serverebene `"db": {"addr": "10.0.0.30", "port": 7100, "timeout_ms": 5000, "conns": 32}`:
+`GET /_db/health` sagt Zustand, Rolle und Log-Positionen, `GET /_db/stats` alle Zahlen und die Tabellen. Die Shell hat `dbctl [status|tables|locks|explain ANWEISUNG] [-s DIENST]`. Eine Route eines Webservers fragt mit `"backend": "db"`, dazu auf Serverebene `"db": {"addr": "10.0.0.30", "port": 7100, "timeout_ms": 5000, "connect_timeout_ms": 3000, "conns": 32}` (der Verbindungsaufbau wartet 3 s: TCP schickt ein verlorenes SYN nach 1 s noch einmal, etwa wenn ein Router unterwegs erst nach ARP fragt; ein Backend, das nicht antwortet, ergibt 502 oder 504 mit einer englischen Zeile wie `502 Bad Gateway: no connection to the backend`):
 
 ```json
 {"path": "/pay", "method": "POST", "backend": "db", "param": "draw", "retries": 3,
@@ -4077,7 +4190,9 @@ jfn-sim sweep tests/experiments/scale_up_vs_out.jfnex tests/experiments/scale_up
 Das Projekt steht mit auf der Befehlszeile, denn das Programm liest nur Dateien, die dort genannt sind. Ein Projekt kann seine Experimente
 auch selbst tragen (Abschnitt `experiments`, ohne dass sich an Dateien ohne Experimente etwas ändert), dann reicht
 `jfn-sim sweep PROJEKT [--name N]`. `--detail F` schreibt je Lauf eine Zeile für jeden Host, jedes Kabel und jeden Dienst, `--report F` die Tabelle,
-`--golden F` vergleicht sie mit einer gespeicherten, `--timing` nennt auf stderr, wie lange es gedauert hat. Die GUI-Fassung heißt
+`--golden F` vergleicht sie mit einer gespeicherten, `--timing` nennt auf stderr, wie lange es gedauert hat, `--lang en` schreibt die
+Tabelle englisch (Köpfe, Namen der Konfigurationen und Engpässe Wort für Wort wie im Fenster: `jfn_model::experiment::words_in`;
+die Zahlen haben in beiden Sprachen den Dezimalpunkt, `Sweep::table_in`). Die GUI-Fassung heißt
 `JFNetworker PROJEKT --sweep DATEI ...` und läuft ohne Fenster.
 
 **Die Datei** (`.jfnex`, JSON):

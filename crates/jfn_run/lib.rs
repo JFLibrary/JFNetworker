@@ -5,11 +5,15 @@
 //                                    [--pcap F] [--report F] [--golden F] [--series F]" or "--sweep
 //                                    FILE [PROJECT] [...]" runs and ends
 //   main(&args) -> i32               jfn-sim: run PROJECT [--scenario S] [--pcap F] [--report F]
-//                                    [--golden F] [--series F] | check PROJECT | course DIR |
-//                                    decode HEX | gen N [--out F] | sweep FILE [PROJECT]
+//                                    [--golden F] [--series F] [--lang de|en] | check PROJECT |
+//                                    course DIR | decode HEX | gen N [--out F] | sweep FILE [PROJECT]
 //                                    [--threads N] [--csv F] [--detail F] [--report F] [--golden F]
-//                                    [--name N] [--timing] | course-install SOURCE COURSE --into DIR |
-//                                    course-list SOURCE | course-remove COURSE --into DIR (install.rs)
+//                                    [--name N] [--timing] [--lang de|en] | course-install SOURCE
+//                                    COURSE --into DIR | course-list SOURCE | course-remove COURSE
+//                                    --into DIR (install.rs)
+//                                    --lang en: run's console tools (lbctl, systemctl ...) and
+//                                    sweep's table in English; German without it, so the goldens
+//                                    stay as they are (the report's own words stay German)
 //   install                          installing courses, from the web or a folder, for the window and
 //                                    for jfn-sim (install.rs)
 //   sweep(&args) -> i32              jfn-sim sweep (SA2): an experiment (a .jfnex file with its project,
@@ -64,7 +68,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use jfn_model::experiment::Experiment;
 use jfn_model::project::Project;
 use jfn_model::scenario::{self, Scenario, Step, StepKind};
-use jfn_model::msg::Msg;
+use jfn_model::msg::{Lang, Msg};
 use jfn_sim::experiment::{Fig, Plan, Status, Stop, Sweep};
 use jfn_sim::Engine;
 use plat::sync::Mutex;
@@ -78,6 +82,8 @@ pub struct Opts {
     pub report: Option<String>,
     pub golden: Option<String>,
     pub series: Option<String>,
+    /// the language of the console's own tools (--lang)
+    pub lang: Lang,
 }
 
 fn say(s: &str) {
@@ -111,7 +117,8 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
             "--report" => o.report = Some(value()?),
             "--golden" => o.golden = Some(value()?),
             "--series" => o.series = Some(value()?),
-            "--script" | "--shot" | "--style" | "--lang" | "--academy-dir" | "--academy-folder" | "--sweep" | "--threads" | "--csv" | "--detail" | "--name" => {
+            "--lang" => o.lang = lang_of(&value()?)?,
+            "--script" | "--shot" | "--style" | "--academy-dir" | "--academy-folder" | "--sweep" | "--threads" | "--csv" | "--detail" | "--name" => {
                 value()?;
             }
             k if k.starts_with('-') => {}
@@ -125,6 +132,11 @@ pub fn parse_opts(args: &[String]) -> Result<Opts, String> {
         i += 1;
     }
     Ok(o)
+}
+
+/// the value of --lang
+fn lang_of(v: &str) -> Result<Lang, String> {
+    Lang::parse(v).ok_or_else(|| format!("--lang nimmt de oder en, nicht {}.", v))
 }
 
 /// a text file (a UTF-8 byte order mark at the start is dropped, as editors write one)
@@ -203,7 +215,7 @@ pub fn run(o: &Opts) -> i32 {
         sc.steps.push(Step { line: 0, at: None, kind: StepKind::Series(String::from(f)) });
     }
     let name = base_name(o.scenario.as_deref().unwrap_or(pp));
-    let out = jfn_sim::run_scenario(&proj, &sc, name, o.pcap.is_some());
+    let out = jfn_sim::run_scenario_in(&proj, &sc, name, o.pcap.is_some(), o.lang);
     say(&out.report);
     let mut code = if out.ok { 0 } else { 1 };
     if let Some(f) = o.report.as_deref()
@@ -420,7 +432,7 @@ pub fn generate(args: &[String]) -> i32 {
     0
 }
 
-const USAGE: &str = "jfn-sim -- JFNetworker ohne Fenster\n\n  jfn-sim run PROJEKT [--scenario S] [--pcap F] [--report F] [--golden F] [--series F]\n  jfn-sim check PROJEKT\n  jfn-sim course ORDNER\n  jfn-sim course-install QUELLE KURS|all --into ORDNER [--index DATEI] [--stop-after BYTES]\n  jfn-sim course-list QUELLE [--into ORDNER] [--index DATEI]\n  jfn-sim course-remove KURS --into ORDNER\n  jfn-sim decode HEX\n  jfn-sim gen N [--out DATEI]\n  jfn-sim rewind PROJEKT [SEKUNDEN] [--traffic K]\n  jfn-sim sweep DATEI [PROJEKT] [--threads N] [--csv F] [--detail F] [--report F] [--golden F] [--name N] [--timing]\n";
+const USAGE: &str = "jfn-sim -- JFNetworker ohne Fenster\n\n  jfn-sim run PROJEKT [--scenario S] [--pcap F] [--report F] [--golden F] [--series F] [--lang de|en]\n  jfn-sim check PROJEKT\n  jfn-sim course ORDNER\n  jfn-sim course-install QUELLE KURS|all --into ORDNER [--index DATEI] [--stop-after BYTES]\n  jfn-sim course-list QUELLE [--into ORDNER] [--index DATEI]\n  jfn-sim course-remove KURS --into ORDNER\n  jfn-sim decode HEX\n  jfn-sim gen N [--out DATEI]\n  jfn-sim rewind PROJEKT [SEKUNDEN] [--traffic K]\n  jfn-sim sweep DATEI [PROJEKT] [--threads N] [--csv F] [--detail F] [--report F] [--golden F] [--name N] [--timing] [--lang de|en]\n";
 
 /// jfn-sim's command line (args[0] is the program)
 pub fn main(args: &[String]) -> i32 {
@@ -788,6 +800,8 @@ struct SweepOpts {
     timing: bool,
     /// with the recording on: only to see what the quiet trace saves
     loud: bool,
+    /// the table's language (--lang)
+    lang: Lang,
 }
 
 fn sweep_opts(args: &[String]) -> Result<SweepOpts, String> {
@@ -819,7 +833,8 @@ fn sweep_opts(args: &[String]) -> Result<SweepOpts, String> {
             "--name" => o.name = Some(value()?),
             "--timing" => o.timing = true,
             "--loud" => o.loud = true,
-            "--script" | "--shot" | "--style" | "--lang" | "--academy-dir" => {
+            "--lang" => o.lang = lang_of(&value()?)?,
+            "--script" | "--shot" | "--style" | "--academy-dir" => {
                 value()?;
             }
             k if k.starts_with('-') => {}
@@ -906,7 +921,7 @@ pub fn sweep(args: &[String]) -> i32 {
     let t0 = plat::time_us();
     let out = run_sweep(&plan, threads);
     let wall = plat::time_us() - t0;
-    let table = out.table();
+    let table = out.table_in(o.lang);
     say(&table);
     if o.timing {
         let events: u64 = out.details.iter().map(|f| f.events).sum();

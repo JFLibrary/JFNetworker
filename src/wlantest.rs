@@ -281,7 +281,8 @@ fn radio(t: &mut T) {
     t.eq("passphrases", [mw::passphrase_ok("1234567"), mw::passphrase_ok("12345678"), mw::passphrase_ok(&"x".repeat(63)), mw::passphrase_ok(&"x".repeat(64)), mw::passphrase_ok("Grüße2026")], [false, true, true, false, false]);
     let text = |m: Option<jfn_model::Msg>| m.map(|m| m.text());
     t.eq("no ssid", text(mw::check_net(&net("", Band::G5, Security::Open, ""))), Some(s("Eine SSID hat 1 bis 32 Bytes.")));
-    t.eq("6 GHz takes WPA3 only", text(mw::check_net(&net("X", Band::G6, Security::Wpa2, PASS))), Some(s("Im 6-GHz-Band gibt es nur WPA3-Personal.")));
+    t.eq("6 GHz takes WPA3 only", text(mw::check_net(&net("X", Band::G6, Security::Wpa2, PASS))), Some(s("Im 6-GHz-Band gibt es nur WPA3, Personal oder Enterprise.")));
+    t.check("6 GHz takes WPA3-Enterprise too", !text(mw::check_net(&net("X", Band::G6, Security::Wpa3Ent, PASS))).is_some_and(|m| m.contains("6-GHz")));
     t.eq("short passphrase", text(mw::check_net(&net("Buero", Band::G5, Security::Wpa2, "kurz"))), Some(s("Die Passphrase von \u{201e}Buero\u{201c} braucht 8 bis 63 Zeichen (ASCII).")));
     t.eq("no channel 14", text(mw::check_net(&WlanNet { channel: 14, ..net("X", Band::G24, Security::Open, "") })), Some(s("Kanal 14 gibt es im Band 2,4 GHz nicht.")));
     t.eq("no vlan 4095", text(mw::check_net(&WlanNet { vlan: 4095, ..net("X", Band::G24, Security::Open, "") })), Some(s("VLAN 4095 gibt es nicht (1 bis 4094).")));
@@ -549,7 +550,7 @@ fn wpa3(t: &mut T) {
         "its problems",
         wlan_problems(&e),
         vec![
-            (ProblemKind::WlanBadNet, Severity::Error, ap, Some(3), s("Im 6-GHz-Band gibt es nur WPA3-Personal.")),
+            (ProblemKind::WlanBadNet, Severity::Error, ap, Some(3), s("Im 6-GHz-Band gibt es nur WPA3, Personal oder Enterprise.")),
             (ProblemKind::WlanNoNetwork, Severity::Error, nb, Some(0), s("Kein Access Point bietet das WLAN \u{201e}Labor\u{201c} an, das Laptop1 sucht.")),
         ],
     );
@@ -969,7 +970,7 @@ fn problems(t: &mut T) {
         "problems",
         wlan_problems(&e),
         vec![
-            (ProblemKind::WlanBadNet, Severity::Error, ap, Some(3), s("Im 6-GHz-Band gibt es nur WPA3-Personal.")),
+            (ProblemKind::WlanBadNet, Severity::Error, ap, Some(3), s("Im 6-GHz-Band gibt es nur WPA3, Personal oder Enterprise.")),
             (ProblemKind::WlanNoNetwork, Severity::Error, a, Some(0), s("Kein Access Point bietet das WLAN \u{201e}Nirgendwo\u{201c} an, das Laptop1 sucht.")),
             (ProblemKind::WlanPassphrase, Severity::Error, b, Some(0), s("Laptop2 hat keine Passphrase f\u{fc}r das WLAN \u{201e}Buero\u{201c}.")),
             (ProblemKind::WlanPassphrase, Severity::Error, c, Some(0), s("Die Passphrase von Laptop3 passt nicht zum WLAN \u{201e}Buero\u{201c}.")),

@@ -17,7 +17,10 @@
 //                                an interface (the next hop may be further away); the legend
 //                                names B only where BGP runs (cli/bgp.rs)
 //   show interfaces              a port whose cable is too long or whose optics do not fit
-//                                (phys.rs, P1) gets a line in our own words that says so
+//                                (phys.rs, P1) gets a line in our own words that says so, and so
+//                                does a serial line whose protocol is down for want of a clock
+//                                or for two frame formats (serial.rs, which writes its
+//                                encapsulation lines: HDLC, or PPP with "LCP Open" / "Closed")
 //
 // The layouts follow IOS 15 / IOS-XE: column widths of "show ip interface brief" (22, 15, 3,
 // 6, 21), "show arp" (address 15, age right-aligned in 9), "show mac address-table" and "show
@@ -371,6 +374,12 @@ impl Engine {
             // its zone (cli/fw.rs)
             s.push_str(&self.ios_fw_if_config(ni, i));
         }
+        // a serial port's frame format and clock (serial.rs)
+        let (encap, clock) = match port {
+            Some(p) if !name.contains('.') => self.serial_if_config(ni, p),
+            _ => (String::new(), String::new()),
+        };
+        s.push_str(&encap);
         let admin = match (port, f) {
             (Some(p), None) | (Some(p), Some(_)) if !name.contains('.') => n.ports.get(p as usize).is_some_and(|x| x.admin_up),
             (_, Some(i)) => n.ip.as_ref().is_some_and(|st| st.ifaces[i as usize].admin_up),
@@ -379,6 +388,7 @@ impl Engine {
         if !admin {
             s.push_str(" shutdown\n");
         }
+        s.push_str(&clock);
         // its IPv6 lines (cli/ip6.rs)
         if let Some(i) = f {
             s.push_str(&self.ios_ip6_if_config(ni, i));
@@ -515,14 +525,23 @@ impl Engine {
             match kind {
                 Some(IfKind::Loopback(_)) => s.push_str("  Encapsulation LOOPBACK, loopback not set\n"),
                 Some(IfKind::Sub { vlan, .. }) => s.push_str(&format!("  Encapsulation 802.1Q Virtual LAN, Vlan ID  {}.\n", vlan)),
-                _ if serial => s.push_str("  Encapsulation HDLC, crc 16, loopback not set\n  Keepalive set (10 sec)\n"),
+                // HDLC or PPP, and why the line protocol is down (serial.rs)
+                _ if serial => s.push_str(&self.serial_show(ni, port.unwrap_or(0), proto)),
                 _ => s.push_str("  Encapsulation ARPA, loopback not set\n  Keepalive set (10 sec)\n"),
             }
             if let Some(p) = pv
                 && !serial
                 && kind.is_none_or(|k| matches!(k, IfKind::Port(_)))
             {
-                let mut media = if p.spec.media == Media::Rj45 { String::from("RJ45") } else { format!("{} {}", speed_str(p.spec.kbps), p.spec.media.name()) };
+                // a radio: the bands it sends on (its speed is no band: "2.4G" on a 5 GHz radio)
+                let mut media = match p.spec.media {
+                    Media::Rj45 => String::from("RJ45"),
+                    Media::RadioAp | Media::RadioClient => {
+                        let bands: Vec<&str> = jfn_model::wlan::radio_bands(n.model, &p.spec.name).into_iter().map(|b| jfn_model::msg::en(b.title())).collect();
+                        if bands.is_empty() { String::from("WLAN radio") } else { format!("WLAN radio {}", bands.join("/")) }
+                    }
+                    m => format!("{} {}", speed_str(p.spec.kbps), jfn_model::msg::en(m.name())),
+                };
                 // what the cable adds: DAC, AOC, its category
                 if let Some((li, l)) = cable {
                     match l.cable {
@@ -552,6 +571,15 @@ impl Engine {
                     crate::phys::PhysFault::Optics(_) => s.push_str("  Optics do not fit the far end or the fibre: no link\n"),
                     crate::phys::PhysFault::Grade { grade, std } => s.push_str(&format!("  A {} cable does not carry {}: no link\n", grade.name(), std)),
                 }
+            }
+            // "Auto-MDI-X aus" of the project: the wrong copper cable holds the link down
+            if kind.is_none_or(|k| matches!(k, IfKind::Port(_)))
+                && self.strict_mdix
+                && let Some(l) = pv.and_then(|p| p.link).and_then(|li| self.links.get(li)).and_then(|l| l.as_ref())
+                && l.wrong_cable
+            {
+                let want = if l.cable == jfn_model::CableKind::CopperCross { "straight-through" } else { "crossover" };
+                s.push_str(&format!("  Wrong copper cable for these ports, no auto-MDI-X: a {} cable is needed, no link\n", want));
             }
             if x.is_some() && !serial && !matches!(kind, Some(IfKind::Loopback(_))) {
                 s.push_str("  ARP type: ARPA, ARP Timeout 04:00:00\n");
@@ -876,7 +904,8 @@ impl Engine {
             uptime.push_str(&format!("{} hour{}, ", h, if h == 1 { "" } else { "s" }));
         }
         uptime.push_str(&format!("{} minute{}", m, if m == 1 { "" } else { "s" }));
-        let mut s = format!("JFNetworker device software 1.0 for the {} ({})\n{} is up for {}\nImage: flash:{}.bin\n\nPorts:\n", n.model.name, n.model.title, n.name, uptime, n.model.id);
+        // (IOS output is English in both languages: the model's title from the catalogue's rows)
+        let mut s = format!("JFNetworker device software 1.0 for the {} ({})\n{} is up for {}\nImage: flash:{}.bin\n\nPorts:\n", n.model.name, jfn_model::msg::en(n.model.title), n.name, uptime, n.model.id);
         let mut kinds: Vec<(String, usize)> = Vec::new();
         for p in &n.ports {
             let k = match p.spec.media {

@@ -655,8 +655,10 @@ impl Project {
                 let Ok(k) = cable::cable_kind(pa, pb) else {
                     continue;
                 };
+                // the line of a modem (fibre, coax, telephone) goes to the provider before any copper
                 let class = match k {
                     CableKind::Wireless if ap => 3,
+                    CableKind::Wan | CableKind::Coax | CableKind::Phone => 3,
                     CableKind::Wireless => 1,
                     CableKind::Console => 0,
                     _ => 2,

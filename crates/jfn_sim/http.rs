@@ -944,6 +944,28 @@ impl Fail {
         }
     }
     /// a timeout (total or connect)
+    /// the body a gateway (web server, cache) answers with `status` when its backend failed:
+    /// English like the rest of what goes over the wire, "502 Bad Gateway: ..."
+    pub fn gateway_body(&self, status: u16) -> String {
+        let why = match self {
+            Fail::Resolve(_) => "the backend's name was not found",
+            Fail::Connect(_) | Fail::NoRoute(_) => "no connection to the backend",
+            Fail::ConnectTimeout => "the connection to the backend took too long",
+            Fail::Timeout { .. } => "the backend took too long to answer",
+            Fail::Reset(_) => "the backend reset the connection",
+            Fail::Empty => "the backend closed the connection without an answer",
+            Fail::Truncated { .. } => "the backend's answer broke off",
+            Fail::Bad(_) => "the backend's answer could not be read",
+            Fail::Aborted => "the request to the backend was given up",
+            Fail::Tls { .. } => "TLS with the backend failed",
+        };
+        let reason = match status {
+            504 => "Gateway Timeout",
+            503 => "Service Unavailable",
+            _ => "Bad Gateway",
+        };
+        format!("{} {}: {}\n", status, reason, why)
+    }
     pub fn is_timeout(&self) -> bool {
         matches!(self, Fail::Timeout { .. } | Fail::ConnectTimeout) || *self == Fail::Connect(TcpEnd::Timeout)
     }

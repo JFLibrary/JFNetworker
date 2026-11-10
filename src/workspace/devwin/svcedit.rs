@@ -9,6 +9,8 @@
 //                                      configuration (indented JSON), Übernehmen, Abbrechen,
 //                                      what Übernehmen would do and why the text was refused
 //   open_form(dev, &def) / close()     the form of a service opens; nothing stays open
+//   open_json(n, ui, dev, &def)        its configuration as JSON in the editor instead (a kind without
+//                                      a form, also right after "Dienst hinzufügen")
 //   to_json(n, &def)                   from the form to the editor, with what the form has so far
 //   trial(&device, &def) -> Result     a simulator's verdict on a service's config (the form's too)
 //
@@ -95,14 +97,20 @@ pub(crate) fn button(n: &mut Net, ui: &mut Ui, id: u32, dev: u32, j: usize) {
         } else if super::svcform::form_of(&def.kind).is_some() {
             ed.open_form(dev, &def);
         } else {
-            ed.close();
-            ed.at = Some((dev, def.name.clone()));
-            ed.doc = CodeDoc::from_text(&text_of(&def));
-            ed.err.clear();
-            ui.focus(ID_SVC_EDIT);
+            open_json(n, ui, dev, &def);
         }
         ui.repass();
     }
+}
+
+/// the configuration of a service as JSON in the editor below its card (a kind without a form)
+pub(crate) fn open_json(n: &mut Net, ui: &mut Ui, dev: u32, def: &ServiceDef) {
+    let ed = &mut n.devwin.svc;
+    ed.close();
+    ed.at = Some((dev, def.name.clone()));
+    ed.doc = CodeDoc::from_text(&text_of(def));
+    ed.err.clear();
+    ui.focus(ID_SVC_EDIT);
 }
 
 /// from the form to the editor: the text has what the form has so far, if that makes a config

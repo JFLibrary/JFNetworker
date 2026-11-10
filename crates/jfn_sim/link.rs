@@ -4,7 +4,8 @@
 //   LinkRt                 both ends, cable, speed, delay, jitter, loss, unplugged, cable fit
 //   Engine::send(n, p, f)  a node puts a frame on its port: serialise at once or queue
 //   Engine::link_up(l)     powered ends, ports not shut down (nor err-disabled), plugged in, the
-//                          cable works
+//                          cable works (link_carrier), and a serial line's protocol can come up
+//                          (serial.rs: a clock, the same frame format at both ends)
 //   Engine::refresh_link   after any change: notes LinkUp / LinkDown, drops what was on the
 //                          cable, flushes the bridges' MAC entries of that port, tells spanning
 //                          tree (stp.rs), the services and RIP (rip.rs) of both ends, and
@@ -23,7 +24,8 @@
 // its notes when one of them goes.
 //
 // Serialisation of Ethernet takes the frame (at least 60 bytes) + FCS + preamble + inter-frame
-// gap: (max(len, 60) + 24) * 8 bits at the link speed.  The receiver gets the frame when its
+// gap: (max(len, 60) + 24) * 8 bits at the link speed; a serial line goes at the clock rate of
+// its DCE end when that is lower (serial.rs).  The receiver gets the frame when its
 // last bit arrives: start + serialisation + delay (+ jitter).  A queue holds up to 2 MiB per
 // direction (tail drop beyond); a waiting frame (Queued) keeps the cause and batch of its
 // sending for the trace.
@@ -32,7 +34,7 @@ use alloc::collections::VecDeque;
 
 use base::rng::Pcg32;
 use jfn_model::cable::{self, CableKind};
-use jfn_model::catalog::{Media, F_BRIDGE, F_HUB};
+use jfn_model::catalog::{Media, F_HUB};
 use netpkt::decode;
 
 use crate::kernel::{Engine, Ev, Frame, Ns};
@@ -114,9 +116,13 @@ fn count_cast(frame: &[u8], serial: bool, mcast: &mut u64, bcast: &mut u64) {
 
 /// time on the wire of a frame of `len` bytes at `kbps`
 pub fn serialisation_ns(len: usize, kbps: u32, ethernet: bool) -> Ns {
+    serialisation_ns_bps(len, kbps.max(1) as u64 * 1000, ethernet)
+}
+
+/// the same at `bps` bits per second (a serial line's clock rate need not be whole kbit/s)
+pub fn serialisation_ns_bps(len: usize, bps: u64, ethernet: bool) -> Ns {
     let wire = if ethernet { len.max(60) + 24 } else { len } as u128;
-    let bps = (kbps.max(1) as u128) * 1000;
-    ((wire * 8 * 1_000_000_000) / bps) as Ns
+    ((wire * 8 * 1_000_000_000) / bps.max(1) as u128) as Ns
 }
 
 impl Engine {
@@ -134,8 +140,14 @@ impl Engine {
         k
     }
 
-    /// the link carries traffic
+    /// the link carries traffic: its carrier, and the line protocol of a serial line (serial.rs)
     pub fn link_up(&self, li: usize) -> bool {
+        self.link_carrier(li) && !matches!(self.links.get(li), Some(Some(l)) if l.cable.is_serial() && self.serial_fault(li).is_some())
+    }
+
+    /// the link has its carrier: powered ends, ports not shut down (nor err-disabled), plugged
+    /// in, the cable works (IOS's "is up"; link_up adds the line protocol of serial lines)
+    pub fn link_carrier(&self, li: usize) -> bool {
         let Some(Some(l)) = self.links.get(li) else {
             return false;
         };
@@ -173,6 +185,10 @@ impl Engine {
 
     /// re-evaluates a link after a change of power, port state, cable or plug
     pub(crate) fn refresh_link(&mut self, li: usize) {
+        // a console cable that is gone ends the terminal programs on it (ttyusb.rs)
+        if matches!(self.links.get(li), Some(Some(l)) if l.cable == CableKind::Console) && !self.console_carrier(li) {
+            self.tty_unplugged(li);
+        }
         let up = self.link_up(li);
         let Some(Some(l)) = self.links.get_mut(li) else {
             return;
@@ -191,9 +207,11 @@ impl Engine {
                 d.busy_until = 0;
             }
         }
-        // too long, optics that do not fit: why, before the ports go down (phys.rs)
+        // too long, optics that do not fit: why, before the ports go down (phys.rs); a serial
+        // line without a clock or with two frame formats (serial.rs)
         if !up {
             self.phys_down(li);
+            self.serial_down(li);
         }
         // a WLAN association: the AP's radio port keeps its other stations (wlan.rs)
         let ap_end = self.wlan_ap_end(li);
@@ -323,11 +341,19 @@ impl Engine {
         if let Some(k) = over.kbps {
             kbps = kbps.min(k);
         }
+        let clock = self.serial_bps(li);
         let now = self.now;
         let Some(Some(l)) = self.links.get_mut(li) else {
             return;
         };
-        let ser = serialisation_ns(frame.len(), kbps, l.cable.is_ethernet());
+        // a serial line goes at its DCE's clock rate when that is lower (serial.rs)
+        let mut bps = kbps.max(1) as u64 * 1000;
+        if l.cable.is_serial()
+            && let Some(c) = clock
+        {
+            bps = bps.min(c);
+        }
+        let ser = serialisation_ns_bps(frame.len(), bps, l.cable.is_ethernet());
         let end = now + ser;
         l.dir[d as usize].busy_until = end;
         let epoch = l.epoch;
@@ -436,7 +462,7 @@ impl Engine {
             }
             return;
         }
-        let member = node.model.has(F_BRIDGE) && node.bridge.as_ref().is_some_and(|b| b.ports.get(pi as usize).is_some_and(|bp| bp.member));
+        let member = node.bridge.as_ref().is_some_and(|b| b.ports.get(pi as usize).is_some_and(|bp| bp.member));
         if member {
             self.bridge_input(ni, pi, frame, hop);
         } else if frame.get(12..14) == Some(&netpkt::eth::ET_EAPOL.to_be_bytes()) && self.supp_rx(ni, pi, &frame, hop) {

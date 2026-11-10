@@ -2331,7 +2331,10 @@ impl Engine {
         let Some(r) = self.os(ni).and_then(|o| o.res.as_deref()) else {
             return Ok(());
         };
-        let s = format!("CPU(s):        {}\nModel name:    simulated core ({}.{} x the reference core)\nThread(s):     1 per core\n", r.hw.cores, r.hw.speed_pm / 1000, r.hw.speed_pm % 1000 / 100);
+        // the speed in thousandths without the zeros at its end: 0.95, 1.0, 2.5
+        let frac = format!("{:03}", r.hw.speed_pm % 1000);
+        let frac = frac.trim_end_matches('0');
+        let s = format!("CPU(s):        {}\nModel name:    simulated core ({}.{} x the reference core)\nThread(s):     1 per core\n", r.hw.cores, r.hw.speed_pm / 1000, if frac.is_empty() { "0" } else { frac });
         self.out(ni, &s);
         Ok(())
     }

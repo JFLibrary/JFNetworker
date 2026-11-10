@@ -188,35 +188,13 @@ impl Exp {
 
 // ---------------------------------------------------------------- what the fields take
 
-/// numbers separated by commas or spaces
-/// The words the simulator writes into a configuration's name and into "limited by" ("größer 8
-/// Kerne", "Sperre DB db"): its reports and CSV stay German, the window shows them in its language,
-/// word for word (größer and mehr name the series of the template "Größer oder mehr?").
-const SIM_WORDS: [&str; 7] = ["größer", "mehr", "Kerne", "Kern", "Platte", "Sperre", "Kabel"];
-
-/// a name or a bottleneck of the simulator in the window's language; a translated word inside the
-/// text starts small ("bigger 8 cores", "Lock DB db")
+/// a name or a bottleneck of the simulator in the window's language, word for word
+/// (jfn_model::experiment::WORDS: "größer 8 Kerne" is "bigger 8 cores", "Sperre DB db" "Lock DB db")
 pub(crate) fn sim_text(s: &str) -> String {
-    let mut out = String::new();
-    for (i, w) in s.split(' ').enumerate() {
-        if i > 0 {
-            out.push(' ');
-        }
-        match SIM_WORDS.iter().find(|x| **x == w) {
-            Some(x) if t(x) != *x && i > 0 => {
-                let mut c = t(x).chars();
-                if let Some(first) = c.next() {
-                    out.extend(first.to_lowercase());
-                    out.push_str(c.as_str());
-                }
-            }
-            Some(x) => out.push_str(t(x)),
-            None => out.push_str(w),
-        }
-    }
-    out
+    jfn_model::experiment::words_in(s, &t)
 }
 
+/// numbers separated by commas or spaces
 pub(crate) fn parse_numbers(text: &str) -> Result<Vec<u64>, String> {
     let mut out = Vec::new();
     for w in text.split([',', ' ', ';']).map(str::trim).filter(|w| !w.is_empty()) {

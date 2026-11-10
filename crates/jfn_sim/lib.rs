@@ -145,6 +145,11 @@
 //            optics of fibres, the categories of cables; Action::CableLen / Optic / CableGrade,
 //            cable_phys, PhysNote (Note::Phys), the problems CableTooLong, OpticMismatch and
 //            CableGrade
+//   serial   the serial WAN lines (S1): the clock of the DCE end ("clock rate"), the frame
+//            format ("encapsulation hdlc|ppp"), the line protocol both ends decide, SerialNote
+//            (Note::Serial), "show controllers serial", the problems SerialNoClock and SerialEncap
+//   ttyusb   the console cable at work (S1): "screen /dev/ttyUSB0" (picocom, minicom) on a
+//            Linux host as a session on the console line of the device at the far end
 //   mailtrace MNote: the decisions of mail as notes (Note::Mail) with their German sentences
 //   mailbox  the mailboxes of the mail servers in the device's files: a Maildir per user
 //   webc     the Webbrowser's side in the engine: requests with redirects over the HTTP client
@@ -285,6 +290,8 @@ pub mod ftpd;
 pub mod ftpc;
 pub mod keyframe;
 pub mod phys;
+pub mod serial;
+pub mod ttyusb;
 pub mod mailtrace;
 pub mod mailbox;
 pub mod mailc;
@@ -341,7 +348,7 @@ pub use syslogd::{SyslogMsg, SyslogServer};
 pub use trace::{fmt_ns, DhcpReq, RelayDrop};
 pub use bridge::{SwMode, SwSet};
 pub use driver::Report;
-pub use runner::{run_scenario, Outcome};
+pub use runner::{run_scenario, run_scenario_in, Outcome};
 pub use tcp::{RstWhy, SockOpts, TcpCfg, TcpCounters, TcpEnd, TcpRow, TcpState, TcpStats, TcpTimer};
 pub use tcpsvc::{CloseMode, TcpClient, TcpDiscard, TcpEcho};
 pub use os::ConsoleEv;
@@ -384,6 +391,8 @@ pub use ftpd::{FtpServer, FtpUser};
 pub use ftpc::FtpProgram;
 pub use keyframe::{Budget, Footprint, InKind, Input, Past, Pos, Restore, Rewind, Target};
 pub use phys::{CablePhys, PhysFault, PhysNote};
+pub use serial::{Encap, LineClock, SerialCfg, SerialFault, SerialNote};
+pub use ttyusb::ConsoleClient;
 pub use mailtrace::MNote;
 pub use mailc::{Account, MailClient, MailClientView, MailDraft, MailEntry, MailJob, MailOutcome};
 pub use smtpd::{MailUser, SmtpServer};

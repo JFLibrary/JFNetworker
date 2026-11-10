@@ -73,6 +73,8 @@
 // the bridge, the access point).
 // cablestest.rs: the choice of cables (group cables: jfn_model::cable, phys::reach_graded, the
 // engine's categories and Auto-MDI-X, what canvas/connect.rs and paint.rs decide).
+// serialtest.rs: the serial lines and the console cable (group serial: jfn_sim::serial's clock
+// rate and encapsulation, ttyusb's screen, picocom and minicom on /dev/ttyUSB0).
 // labelstest.rs: the slim labels of the canvas (group labels: a note's style in the file, the steps
 // of doc/edits.rs, the scene of canvas/paint.rs).
 // startpagetest.rs: the start page (group startpage: the templates of assets/templates running, the
@@ -87,6 +89,8 @@
 // hardwaretest.rs: CPU and RAM of devices (group hardware: jfn_sim::res against the closed forms of
 // queueing theory, what the services pay, memory, resizes, determinism, scenario steps).
 // firewalltest.rs: the zone firewall (group firewall: zones, sessions, NAT and lists with them).
+// homenattest.rs: iptables on Linux devices (group homenat: MASQUERADE, the FORWARD chain, the home
+// router's defaults from the palette, a DHCP server from "Dienst hinzufügen").
 // fwguitest.rs: the Firewall tab (group fwgui: what its forms type, rows back from the engine, moves,
 // the Test part against packets sent for real, the steps of console::run_lines_running).
 // academytest.rs: the Akademie (group academy: jfn_model::academy, the progress in its file, step order
@@ -95,6 +99,9 @@
 // a diagnosis, the check that something must fail, the sample course's fault hunt with and without its fix).
 // installtest.rs: installing courses (group install: jfn_run::install, the list and its refusals, a source that
 // fails, cancels and resumes, updates and uninstalling, every file of --academy-dir against its index).
+// consolelangtest.rs: the console's language (group consolelang: the Linux shell's own tools --
+// lbctl, kvctl, dbctl, cachectl, mqctl, workerctl, systemctl, journalctl -- in English and German,
+// IOS output English in both, a scenario in English).
 // coursetest.rs: the courses can be done (group courses: per step of every course that is no sample, a lab solved
 // at the console, a fault hunt repaired and diagnosed, a quiz answered, what a lesson shows typed and compared).
 
@@ -164,6 +171,8 @@ mod keyframetest;
 mod phystest;
 #[path = "cablestest.rs"]
 mod cablestest;
+#[path = "serialtest.rs"]
+mod serialtest;
 #[path = "mailtest.rs"]
 mod mailtest;
 #[path = "groupstest.rs"]
@@ -212,6 +221,8 @@ mod dbtest;
 mod fwguitest;
 #[path = "firewalltest.rs"]
 mod firewalltest;
+#[path = "homenattest.rs"]
+mod homenattest;
 #[path = "academytest.rs"]
 mod academytest;
 #[path = "quiztest.rs"]
@@ -224,9 +235,11 @@ mod installtest;
 mod expguitest;
 #[path = "coursetest.rs"]
 mod coursetest;
+#[path = "consolelangtest.rs"]
+mod consolelangtest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 68] = [
+    let groups: [(&'static str, fn(&mut T)); 71] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
@@ -283,17 +296,20 @@ pub fn run() -> i32 {
         ("imap", imaptest::run),
         ("models", modelstest::run),
         ("cables", cablestest::run),
+        ("serial", serialtest::run),
         ("labels", labelstest::run),
         ("startpage", startpagetest::run),
         ("hardware", hardwaretest::run),
         ("fwgui", fwguitest::run),
         ("academy", academytest::run),
         ("firewall", firewalltest::run),
+        ("homenat", homenattest::run),
         ("quiz", quiztest::run),
         ("sweep", sweeptest::run),
         ("install", installtest::run),
         ("expgui", expguitest::run),
         ("db", dbtest::run),
+        ("consolelang", consolelangtest::run),
         ("courses", coursetest::run),
     ];
     let (mut total, mut failed) = (0, 0);

@@ -1056,6 +1056,7 @@ Höheneinheit	Rack unit
 Die Höheneinheit ist eine Zahl ab 1.	The rack unit is a number from 1.
 Im Plan zeigen	Show in the plan
 Optiken	Optics
+SR reicht über Multimode-Faser einige hundert Meter, LR über Singlemode-Faser bis 10 km.	SR reaches a few hundred metres over multimode fibre, LR up to 10 km over single-mode fibre.
 Länge	Length
 {} m (automatisch)	{} m (automatic)
 {} m (von Hand; automatisch {} m)	{} m (by hand; automatic {} m)
@@ -2732,6 +2733,9 @@ größer	bigger
 mehr	more
 Kern	Core
 Platte	Disk
+# a DHCP server from "Dienst hinzufügen" (workspace/devwin/svcform.rs)
+Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer.	Hands out addresses to the devices of the network. It starts with a pool for the network of the LAN; its settings are JSON: pools with network, range, routers, DNS and lease time.
+{} startet dafür neu. Danach folgen die Einstellungen als JSON.	{} restarts for this. Its settings as JSON come next.
 # "Erklärung öffnen": the explanation of a device or cable on the website (workspace/docs.rs)
 &Erklärung öffnen …	Open &explanation …
 Erklärung im Browser öffnen?	Open the explanation in your browser?

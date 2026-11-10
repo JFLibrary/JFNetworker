@@ -1518,9 +1518,9 @@ impl Service for Lb {
         let live: Vec<&Backend> = self.backends.iter().filter(|b| !b.gone()).collect();
         let up = live.iter().filter(|b| b.up && b.admin == Admin::Active).count();
         if self.mode == LbMode::Http {
-            msg!("HTTP Port {}, {}: {} von {} Backends verfügbar, {} Anfragen, {} Fehler", self.port, self.algo.name(), up, live.len(), self.requests, self.errors)
+            msg!("HTTP Port {}, {}: {} von {} Backends verfügbar, {}, {} Fehler", self.port, self.algo.name(), up, live.len(), jfn_model::msg::count(self.requests as u64, msg!("{} Anfrage", self.requests), msg!("{} Anfragen", self.requests)), self.errors)
         } else {
-            msg!("TCP Port {}, {}: {} von {} Backends verfügbar, {} Verbindungen, {} Fehler", self.port, self.algo.name(), up, live.len(), self.requests, self.errors)
+            msg!("TCP Port {}, {}: {} von {} Backends verfügbar, {}, {} Fehler", self.port, self.algo.name(), up, live.len(), jfn_model::msg::count(self.requests as u64, msg!("{} Verbindung", self.requests), msg!("{} Verbindungen", self.requests)), self.errors)
         }
     }
     fn clone_box(&self) -> Box<dyn Service> {

@@ -79,7 +79,7 @@ fn texts(t: &mut T) {
         ("LB1", "lb", "HTTP port 80, round-robin: 2 of 2 backends available, 249 requests, 0 errors"),
         ("KV2", "kv", "10.0.2.22: 35 keys, 3 of 3 nodes reachable, RF 2, eventual W1/R1"),
         ("CACHE1", "cache", "Port 80 in front of http://10.0.1.1/: 22 entries, 263 hits, 99 misses (72.6 % hits)"),
-        ("MQ1", "mq", "Port 9000: 1 topics, 0 waiting, 1 out, 209 acknowledged"),
+        ("MQ1", "mq", "Port 9000: 1 topic, 0 waiting, 1 out, 209 acknowledged"),
         ("WRK1", "worker", "http://10.0.2.30:9000/ jobs: 1 of 2 busy, 209 done, 0 failed"),
     ];
     for (dev, svc, want) in lines {

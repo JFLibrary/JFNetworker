@@ -1,0 +1,23 @@
+#!args --verify-dirty --open tests/fixtures/phys_campus.jfnet
+# the optics of a switch's cages in the physical view's Properties (tests/fixtures/phys_campus.jfnet,
+# SW1 in Rack 1): the choices have short names that fit the panel ("SR, Multimode", four cages),
+# the reaches stand in a line above them
+size 1280 900
+theme light
+wait 500
+click "Physisch"
+wait 200
+dblclick listitem:"Rack Rack 1, 2 Geräte"
+wait 300
+click listitem:"SW1, Rack 1, HE 20"
+wait 300
+wheel 1140,280 -6000
+wait 300
+wheel 1140,280 -6000
+wait 300
+expect text:"Optiken" exists
+expect text:"SR reicht über Multimode-Faser einige hundert Meter, LR über Singlemode-Faser bis 10 km." exists
+shot build/jfnetworker/phys_optics.png
+theme dark
+wait 200
+shot build/jfnetworker/phys_optics_dark.png

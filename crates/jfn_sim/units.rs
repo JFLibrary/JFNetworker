@@ -39,6 +39,9 @@
 // files and without a word typed, nothing here runs and no state changes, so old projects run as
 // they did.
 //
+// The unit manager's lines in the log and a unit's reason (UnitView::why) are written in the
+// console's language at the time (Engine::console_lang), as systemctl and journalctl show them.
+//
 // Restart policies: a script that runs from a unit ends when nothing is left to do (status 0) or
 // after an error that ends it (status 1: its main program fails, its file is missing, or any
 // error with "stop_on_error"); Restart=on-failure starts it again after RestartSec when the status
@@ -284,12 +287,14 @@ impl Engine {
     fn unit_issues(&mut self, ni: usize, name: &str, u: &Unit) {
         for i in &u.issues {
             let sev = if i.error { 3 } else { 4 };
-            self.os_log(ni, sev, LOG_TAG, &format!("{}: {}", name, i.msg.text()), None);
+            let t = format!("{}: {}", name, self.tx(&i.msg));
+            self.os_log(ni, sev, LOG_TAG, &t, None);
         }
     }
 
     fn unit_say(&mut self, ni: usize, sev: u8, name: &str, what: Msg) {
-        self.os_log(ni, sev, LOG_TAG, &format!("{}: {}", name, what.text()), None);
+        let t = format!("{}: {}", name, self.tx(&what));
+        self.os_log(ni, sev, LOG_TAG, &t, None);
         let dev = self.dev_of(ni);
         self.note(dev, None, Note::Unit { unit: String::from(name), what });
     }
@@ -559,7 +564,7 @@ impl Engine {
 
     fn unit_failed(&mut self, ni: usize, name: &str, why: Msg) {
         let now = self.now;
-        let text = why.text();
+        let text = self.tx(&why);
         if let Some(rt) = self.os_mut(ni).and_then(|o| o.units.map.get_mut(name)) {
             rt.state = UnitState::Failed;
             rt.since = now;
@@ -636,7 +641,7 @@ impl Engine {
             self.unit_say(ni, 4, name, msg!("beendet mit Status {}", code));
         }
         if again {
-            self.unit_say(ni, 6, name, msg!("Neustart in {}", crate::trace::fmt_ns(ns as i64)));
+            self.unit_say(ni, 6, name, msg!("Neustart in {}", jfn_model::msg::dur(ns as i64)));
             if let Some(id) = id {
                 self.set_timer(ni, SLOT_SVC + id * SVC_TIMERS + K_RESTART, due);
             }
@@ -645,7 +650,7 @@ impl Engine {
 
     /// a timer of a service that does not run: its unit's RestartSec is over (os.rs)
     pub(crate) fn unit_timer(&mut self, ni: usize, id: u32) {
-        let now = self.now;
+        let (now, lang) = (self.now, self.console_lang);
         let Some(os) = self.os_mut(ni) else { return };
         let Some((name, rt)) = os.units.map.iter_mut().find(|(_, u)| u.svc == Some(id) && u.due.is_some_and(|d| d <= now)) else {
             return;
@@ -660,14 +665,15 @@ impl Engine {
         if burst > 0 && rt.starts.len() >= burst {
             rt.state = UnitState::Failed;
             rt.since = now;
-            rt.why = Some(msg!("zu viele Starts in kurzer Zeit").text());
+            rt.why = Some(msg!("zu viele Starts in kurzer Zeit").text_in(lang));
             self.unit_say(ni, 3, &name, msg!("zu viele Starts in kurzer Zeit: er bleibt gestoppt"));
             return;
         }
         rt.restarts += 1;
         if let Err(e) = self.unit_start(ni, &name) {
             // its file went missing or does not compile: that ends it again
-            self.unit_ended(ni, &name, 1, Some(e.msg().text()));
+            let why = self.tx(&e.msg());
+            self.unit_ended(ni, &name, 1, Some(why));
         }
     }
 

@@ -37,6 +37,10 @@
 // SSH (cli/ssh.rs, sshd.rs): ip domain-name, crypto key generate|zeroize, ip ssh ..., show ip ssh,
 // show ssh, show crypto key, debug ip ssh and the client ssh -l USER HOST.
 // The zone firewall (cli/fw.rs): on firewall models only; its modes are found by their prompt.
+// Serial lines (serial.rs): "clock rate N" / "no clock rate" and "encapsulation hdlc|ppp" in
+// interface mode, "show controllers [serial N]", on models with serial ports; another interface
+// refuses them with the marker.  The console cable's session (ttyusb.rs): exit / logout there
+// logs out as at the console instead of ending the session.
 
 use alloc::format;
 use alloc::string::String;
@@ -100,6 +104,10 @@ pub enum K {
     SwAllowed,
     SwEncap,
     Encap,
+    // serial lines (serial.rs): clock rate, encapsulation hdlc|ppp, show controllers
+    ClockRate,
+    SerialEncap,
+    ShowControllers,
     ProxyArp,
     IpMtu,
     Descr,
@@ -329,6 +337,8 @@ const CAP_BRIDGE: u32 = 1;
 const CAP_ROUTER: u32 = 2;
 const CAP_AP: u32 = 4;
 const CAP_FIREWALL: u32 = 8;
+/// the model has serial ports (serial.rs: clock rate, encapsulation, show controllers)
+const CAP_SERIAL: u32 = 16;
 
 fn mode_id(m: Mode) -> ModeId {
     match m {
@@ -695,6 +705,10 @@ fn build(caps: u32) -> Tree<K> {
     if caps & CAP_FIREWALL != 0 {
         super::fw::build_fw(&mut t, [user, prv, conf, ifm, sub]);
     }
+    // ---- the serial lines: clock rate, encapsulation, show controllers (serial.rs)
+    if caps & CAP_SERIAL != 0 {
+        crate::serial::build_serial(&mut t, [user, prv, ifm]);
+    }
     t
 }
 
@@ -772,7 +786,8 @@ fn caps_of(e: &Engine, ni: usize) -> u32 {
     match e.nodes.get(ni) {
         Some(Some(n)) => {
             let m = n.model;
-            (if m.has(F_BRIDGE) { CAP_BRIDGE } else { 0 }) | (if m.has(F_ROUTER) { CAP_ROUTER } else { 0 }) | (if m.has(F_AP) { CAP_AP } else { 0 }) | (if m.has(F_FIREWALL) { CAP_FIREWALL } else { 0 })
+            let serial = n.ports.iter().any(|p| p.spec.media == Media::Serial);
+            (if m.has(F_BRIDGE) { CAP_BRIDGE } else { 0 }) | (if m.has(F_ROUTER) { CAP_ROUTER } else { 0 }) | (if m.has(F_AP) { CAP_AP } else { 0 }) | (if m.has(F_FIREWALL) { CAP_FIREWALL } else { 0 }) | (if serial { CAP_SERIAL } else { 0 })
         }
         _ => 0,
     }
@@ -927,6 +942,11 @@ impl Engine {
             K::Disable => self.disable_cmd(ni, p),
             K::Exit => match mode {
                 Mode::User | Mode::Priv => {
+                    // the console cable's session logs out as the console does (ttyusb.rs)
+                    if self.tty_here(ni) {
+                        self.tty_exit(ni);
+                        return Ok(());
+                    }
                     // a vty or local session ends (cli/ses.rs, telnetd.rs)
                     if self.ses_cur(ni) != 0 {
                         self.ses_logout(ni);
@@ -1297,6 +1317,22 @@ impl Engine {
             | K::ShowUsers
             | K::TestAaa => self.ios_aaa(ni, p, line),
             K::Telnet => self.ios_telnet(ni, p),
+            // serial lines (serial.rs)
+            K::ClockRate | K::SerialEncap => {
+                let ifs = self.cdev(ni).map(|c| c.ifs.clone()).unwrap_or_default();
+                let mut r = Ok(());
+                for f in ifs {
+                    if let Err(e) = self.serial_if_cmd(ni, &f, p, line) {
+                        r = Err(e);
+                    }
+                }
+                r
+            }
+            K::ShowControllers => {
+                let t = self.ios_controllers(ni, p.text("if"));
+                self.out(ni, &t);
+                Ok(())
+            }
             K::TransportInput | K::AccessClass | K::TermMonitor | K::ShowLine | K::ClearLine => self.ios_vty(ni, p),
             K::SnmpEngine | K::SnmpView | K::SnmpGroup | K::SnmpUser | K::ShowSnmpV3 => self.ios_snmp_v3(ni, p),
             K::Ssh | K::IpDomainName | K::CryptoKeyGen | K::CryptoKeyZero | K::IpSsh | K::ShowIpSsh | K::ShowSsh | K::ShowCryptoKey | K::DebugSsh => self.ios_ssh(ni, p),

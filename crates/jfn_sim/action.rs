@@ -96,6 +96,9 @@
 //                                                      (res.rs)
 //   ServiceConfig                                      a service takes a new config while it runs
 //                                                      (Service::reconfigure: lab.rs)
+//   ConsoleLang                                        the language of the console's own tools
+//                                                      (lbctl, systemctl ...: Engine::console_lang;
+//                                                      the window's language, jfn-sim --lang)
 //
 // A device that is switched off forgets what it learned (MAC table, ARP cache, fragments) and
 // its jobs end; its configuration stays.  Removing a device removes its cables; frames on them
@@ -295,6 +298,8 @@ pub enum Action {
     CableGrade { link: u32, grade: jfn_model::cable::CableGrade },
     /// a wrong copper cable holds its link down (Project::strict_mdix)
     StrictMdix { on: bool },
+    /// the language of the console's own tools from now on (Engine::console_lang)
+    ConsoleLang { lang: jfn_model::msg::Lang },
     /// the transceiver in a port's optics cage (phys.rs)
     Optic { dev: u32, port: String, optic: jfn_model::catalog::Optic },
     /// the E-Mail program of a device sends a message (mailc.rs)
@@ -613,8 +618,17 @@ impl Engine {
                 Ok(())
             }
             Action::Svi { dev, vlan, add } => self.svi(dev, vlan, add),
-            Action::SubIf { dev, name, vlan, add } => self.sub_if(dev, &name, vlan, add),
-            Action::Loopback { dev, n, add } => self.loopback(dev, n, add),
+            // (MASQUERADE gives a new interface its side: nat.rs masq_sides)
+            Action::SubIf { dev, name, vlan, add } => {
+                let r = self.sub_if(dev, &name, vlan, add);
+                self.masq_sync(dev);
+                r
+            }
+            Action::Loopback { dev, n, add } => {
+                let r = self.loopback(dev, n, add);
+                self.masq_sync(dev);
+                r
+            }
             Action::RoutedPort { dev, port, routed } => self.routed_port(dev, &port, routed),
             Action::Route { dev, prefix, via, iface, ad, add } => {
                 let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;
@@ -745,6 +759,10 @@ impl Engine {
                 Ok(())
             }
             Action::Optic { dev, port, optic } => self.set_optic(dev, &port, optic),
+            Action::ConsoleLang { lang } => {
+                self.console_lang = lang;
+                Ok(())
+            }
             // the E-Mail program (mailc.rs)
             Action::MailSend { dev, draft } => self.mail_job(dev, crate::mailc::MailJob::Send(draft)),
             Action::MailFetch { dev } => self.mail_job(dev, crate::mailc::MailJob::Fetch),

@@ -62,6 +62,8 @@ fn take(n: &mut Net, ui: &mut Ui) {
     }
     if n.prefs.lang != lang || n.prefs.motion != motion {
         n.prefs.apply(ui);
+        // the console's own tools (lbctl, systemctl ...) follow the language
+        n.doc.sim.follow_lang();
     }
     if n.prefs.tempo != tempo {
         ui.cmd_run(CMD_SIM_TEMPO0 + n.prefs.tempo as u32, 0);

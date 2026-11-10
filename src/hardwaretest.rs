@@ -879,11 +879,24 @@ fn console(t: &mut T) {
     t.check(&format!("free: {}", o), o.contains("Mem:") && o.contains("16384") && o.contains("Swap:") && o.contains("2048"));
     let o = out(&mut e, n.srv, "lscpu");
     t.check(&format!("lscpu: {}", o), o.contains("CPU(s):        8") && o.contains("1.5 x"));
+    // df: the disk of the figures (480 GiB), not the model's
+    let o = out(&mut e, n.srv, "df -h");
+    t.check(&format!("df -h: {}", o), o.contains(" 480G ") && !o.contains("2.0T"));
     let o = out(&mut e, n.srv, "top -b -n 1");
     t.check(&format!("top: {}", o), o.contains("MiB Mem :    16384 total") && o.contains("MiB Swap:     2048 total") && o.contains("web"));
     // 8 cores at 1.5: 3000 per second of 4 ms: all busy
     t.check(&format!("top sees its cores busy: {}", o), o.lines().find(|l| l.starts_with("%Cpu(s)")).is_some_and(|l| l.contains("100.0 us")));
     t.check("the desktop counts its cores", jfn_sim::cli::tools::cpus_of(&e, n.srv) == 8 && jfn_sim::cli::tools::cpus_of(&e, n.gen_) == jfn_sim::cli::tools::CPUS);
+    // other figures: every digit of the speed, the new disk
+    let _ = e.apply(Action::Resize { dev: n.srv, hw: Some(Hw { cores: 2, speed_pm: 950, ram_mb: 8 << 10, swap_mb: 0, disk: DiskClass::Sata, disk_gb: 240 }), downtime: 0 });
+    run_for(&mut e, SEC);
+    let o = out(&mut e, n.srv, "lscpu");
+    t.check(&format!("lscpu, every digit: {}", o), o.contains("(0.95 x the reference core)"));
+    t.check("df after the resize", out(&mut e, n.srv, "df -h").contains(" 240G "));
+    t.eq("the files have the disk's size", e.file_store(n.srv).map(|s| s.capacity), Some(240 << 30));
+    let _ = e.apply(Action::Resize { dev: n.srv, hw: None, downtime: 0 });
+    run_for(&mut e, SEC);
+    t.eq("without hardware: the model's again", e.file_store(n.srv).map(|s| s.capacity), catalog::model("server-1u").map(jfn_model::files::capacity_of));
 }
 
 fn determinism(t: &mut T) {

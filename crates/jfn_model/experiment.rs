@@ -10,8 +10,13 @@
 //   Experiment::levels() -> Vec<Level>     the load levels, Level::text()
 //   Experiment::seeds_or(project_seed)     the seeds of a run; prices_of(): the assumed prices with
 //                                      what it names instead (catalog::Prices)
-//   Slo::limits() -> SloLimits         the limits in ns and parts per million; held(...), text()
+//   Slo::limits() -> SloLimits         the limits in ns and parts per million; held(...), text() /
+//                                      msg()
 //   Config::label() / labels()         a configuration in words, its value per axis
+//   WORDS / words_in(text, tr)         the words of the tables in a configuration's name and in a
+//                                      bottleneck ("größer 8 Kerne", "Sperre DB db"), translated
+//                                      word for word (the window's experiments, jfn-sim sweep
+//                                      --lang en)
 //   patch_hw / patch_config / patch_load / patch_pool / patch_clones   what an axis does to a copy
 //                                      of the project (jfn_sim's experiment.rs calls them)
 //   SavedRun                           a run kept by its name in the project's "runs" (SA3): the name,
@@ -202,11 +207,44 @@ impl Level {
     }
     /// "400/s", "32 Nutzer"
     pub fn text(self) -> String {
+        self.msg().text()
+    }
+    /// text() as a message
+    pub fn msg(self) -> Msg {
         match self {
-            Level::Rps(r) => format!("{}/s", r),
-            Level::Users(u) => format!("{} Nutzer", u),
+            Level::Rps(r) => Msg::plain(format!("{}/s", r)),
+            Level::Users(u) => msg!("{} Nutzer", u),
         }
     }
+}
+
+/// The words the simulator writes into a configuration's name and into "limited by" ("größer 8
+/// Kerne", "Sperre DB db"): its reports and CSV stay German, the window and jfn-sim sweep --lang en
+/// show them in their language, word for word (größer and mehr name the series of the template
+/// "Größer oder mehr?").
+pub const WORDS: [&str; 7] = ["größer", "mehr", "Kerne", "Kern", "Platte", "Sperre", "Kabel"]; // i18n
+
+/// a name or a bottleneck with its WORDS translated by `tr`; a translated word inside the text
+/// starts small ("bigger 8 cores", "Lock DB db")
+pub fn words_in(s: &str, tr: &dyn Fn(&'static str) -> &'static str) -> String {
+    let mut out = String::new();
+    for (i, w) in s.split(' ').enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        match WORDS.iter().find(|x| **x == w) {
+            Some(x) if tr(x) != *x && i > 0 => {
+                let mut c = tr(x).chars();
+                if let Some(first) = c.next() {
+                    out.extend(first.to_lowercase());
+                    out.push_str(c.as_str());
+                }
+            }
+            Some(x) => out.push_str(tr(x)),
+            None => out.push_str(w),
+        }
+    }
+    out
 }
 
 /// one configuration: its series' name and for each axis the value it takes
@@ -279,17 +317,21 @@ impl SloLimits {
     }
     /// "p99 bis 200 ms, Fehler bis 1 %"
     pub fn text(&self) -> String {
+        self.msg().text()
+    }
+    /// text() as a message
+    pub fn msg(&self) -> Msg {
         let mut parts = Vec::new();
         let ms = |ns: u64| fixed(ns, 1_000_000);
         for (name, lim) in [("p50", self.p50), ("p95", self.p95), ("p99", self.p99), ("p99.9", self.p999)] {
             if let Some(l) = lim {
-                parts.push(format!("{} bis {} ms", name, ms(l)));
+                parts.push(msg!("{} bis {} ms", name, ms(l)));
             }
         }
         if let Some(e) = self.errors_ppm {
-            parts.push(format!("Fehler bis {} %", fixed(e, 10_000)));
+            parts.push(msg!("Fehler bis {} %", fixed(e, 10_000)));
         }
-        if parts.is_empty() { String::from("kein SLO") } else { parts.join(", ") }
+        if parts.is_empty() { crate::msg::phrase("kein SLO") } else { crate::msg::list(parts) }
     }
 }
 

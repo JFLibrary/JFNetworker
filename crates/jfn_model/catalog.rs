@@ -175,6 +175,14 @@ impl Media {
     pub fn is_radio(self) -> bool {
         matches!(self, Media::RadioAp | Media::RadioClient)
     }
+    /// the line of a modem or the cloud (fibre/coax/DSL): the frames ride inside it
+    pub fn is_wan_line(self) -> bool {
+        matches!(self, Media::Wan | Media::Rj11 | Media::Coax)
+    }
+    /// a bridge forwards frames between such ports: Ethernet and the lines of modems and the cloud
+    pub fn is_bridged(self) -> bool {
+        self.is_ethernet() || self.is_wan_line()
+    }
 }
 
 /// Power over Ethernet role of a port
@@ -195,14 +203,16 @@ pub const F_HOST: u32 = 1;
 pub const F_BRIDGE: u32 = 2;
 /// forwards IP between interfaces (router, L3 switch)
 pub const F_ROUTER: u32 = 4;
-/// a firewall model; nothing reads it yet: it routes with access lists and NAT, zones and stateful
-/// filtering come with milestone F2
+/// a firewall model: it routes with access lists and NAT and has zones with stateful sessions
+/// (jfn_sim's fw.rs takes zone commands only on such a model, its device window shows the Firewall
+/// tab, its neighbours see the capability)
 pub const F_FIREWALL: u32 = 8;
 /// bridges its radios with its wired port (access point)
 pub const F_AP: u32 = 16;
 /// repeats every frame to every other port
 pub const F_HUB: u32 = 32;
-/// the provider network / Internet
+/// the provider network / Internet: one transparent layer-2 network between all its ports (a
+/// learning bridge without spanning tree or VLANs of its own)
 pub const F_CLOUD: u32 = 64;
 /// a model made for address translation (home router, firewall); nothing reads it: NAT comes from
 /// the device's configuration
@@ -1112,12 +1122,13 @@ impl Optic {
             Optic::Lr => "LR",
         }
     }
-    /// the German name (the app translates it)
+    /// the German name, short enough for a choice in the Properties panel (the app translates it;
+    /// the reaches stand in a line below the choices there)
     pub fn title(self) -> &'static str {
         // i18n
         match self {
-            Optic::Sr => "SR, Multimode (kurze Strecken)",
-            Optic::Lr => "LR, Singlemode (bis 10 km)",
+            Optic::Sr => "SR, Multimode",
+            Optic::Lr => "LR, Singlemode",
         }
     }
 }
@@ -1396,6 +1407,20 @@ pub fn preset_service(model: &str) -> Option<(&'static str, &'static str)> {
         _ => return None,
     })
 }
+
+/// the startup configuration a tile of the palette brings when it is placed in the window: a home
+/// router translates what leaves through wan to its address and lets in only the answers, as one does
+/// out of the box (written as the simulator's running configuration writes these lines).  A file that
+/// is loaded keeps its own
+pub fn preset_startup(model: &str) -> Option<&'static str> {
+    match model {
+        "home-router" => Some(HOME_ROUTER_STARTUP),
+        _ => None,
+    }
+}
+
+/// what a new home router boots with (preset_startup)
+pub const HOME_ROUTER_STARTUP: &str = "iptables -t nat -A POSTROUTING -o wan -j MASQUERADE\niptables -P FORWARD DROP\niptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\niptables -A FORWARD -i br0 -o wan -j ACCEPT\n";
 
 /// the config of a tile's service when it is more than empty: JSON text
 pub fn preset_config(model: &str) -> Option<&'static str> {

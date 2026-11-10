@@ -15,9 +15,9 @@
 //   limits_msg(kind, grade)                        the kind's limits for a tooltip
 //
 // Copper: a straight cable joins MDI (host, router) and MDI-X (switch) ports, a crossover cable
-// two of the same kind.  With auto-MDI-X (the default of every multi-gigabit port, and of the
-// project unless "strict_mdix" is set) both cables work; the simulator decides that, this
-// module only names the right one.  Optics: SFP, SFP+ and SFP28 cages take each other's
+// two of the same kind.  With auto-MDI-X (the project's default) both cables work; with
+// "strict_mdix" set ("Auto-MDI-X aus") the wrong one holds the link down on every copper port,
+// whatever its speed.  The simulator decides that, this module only names the right one.  Optics: SFP, SFP+ and SFP28 cages take each other's
 // optics at the lower speed; QSFP28 only joins QSFP28.  Radios: a client associates with an
 // access point (no ad-hoc mode).  The optics in the cages (PortSpec::optic, P1) pick the fibre:
 // long-reach (LR) at both ends single-mode, else multimode; the lengths each medium allows at a

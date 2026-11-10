@@ -6,7 +6,8 @@
 // down, the running configuration through a reboot, wpa_cli and its file, a laptop on a
 // WPA2-Enterprise SSID that gets its PMK from the MSK and passes the 4-way handshake, a wrong
 // password on air, EAP-MD5 on air (no keys), WPA3-Enterprise, the notes, the problems list, the
-// English texts and determinism
+// English texts and determinism; a PC behind an IP phone signs on through it (the phone passes
+// EAPOL on), the phone's bridge ports in ip link
 //
 // The LAN (device ids in order): SW1 (switch, Vlan1 10.0.0.2), SRV1 (server-1u, 10.0.0.10, the
 // RADIUS server), PC1 (Gi1/0/2), PC2 (Gi1/0/3), R1 (router 10.0.0.1 on Gi1/0/4, an open port the
@@ -164,6 +165,7 @@ pub(crate) fn run(t: &mut T) {
     local_fallback(t);
     link_down(t);
     logoff(t);
+    behind_phone(t);
     config_roundtrip(t);
     wpa_cli(t);
     frames(t);
@@ -457,6 +459,46 @@ fn logoff(t: &mut T) {
     t.check("OK again", o.contains("OK"));
     t.eq("in again", state_of(&e, P_PC1), Some(PaeState::Authenticated));
     t.check("EAPOL-Start came", notes(&e, SW1).iter().any(|n| matches!(n, DNote::Start { .. })));
+}
+
+// PC1 behind an IP phone: switch port Gi1/0/2 - phone eth0, phone pc0 - PC1
+fn behind_phone(t: &mut T) {
+    let mut p = project(&switch_cfg("group radius", &auto_ports("")), Some(&wired_conf("MD5", "anna", "geheim")), None, Some(RADIUS));
+    let pr = |dev: u32, port: &str| PortRef { dev, port: s(port) };
+    if let Some(l) = p.links.iter().find(|l| l.a.dev == PC1 || l.b.dev == PC1).map(|l| l.id) {
+        let _ = p.disconnect(l);
+    }
+    let phone = p.add_device("ip-phone", 0, 120).unwrap_or(0);
+    let _ = p.connect(&pr(phone, "eth0"), &pr(SW1, "gi1/0/2"), None);
+    let _ = p.connect(&pr(PC1, "eth0"), &pr(phone, "pc0"), None);
+    if let Some(d) = p.device_mut(phone) {
+        d.startup_config = s("hostname IPPhone1\nip addr add 10.0.0.30/24 dev br0\n");
+    }
+    let mut e = engine(&p);
+    run_for(&mut e, 3 * SEC);
+    t.eq("PC1 is in through the phone", state_of(&e, P_PC1), Some(PaeState::Authenticated));
+    t.check("the phone passed EAPOL on", notes(&e, phone).iter().any(|n| matches!(n, DNote::PassedOn { port } if port == "pc0")));
+    t.check("and the switch's answers back", notes(&e, phone).iter().any(|n| matches!(n, DNote::PassedOn { port } if port == "eth0")));
+    t.check("the phone's note", DNote::PassedOn { port: s("pc0") }.message().text().contains("weitergereicht"));
+    t.check("PC1 reaches the router", ping(&mut e, PC1, "10.0.0.1"));
+    t.check("the phone too (the port is open)", ping(&mut e, phone, "10.0.0.1"));
+    // the phone's bridge ports in ip link and ip addr
+    let o = cli(&mut e, phone, &["ip link"], 10 * MS);
+    t.check("ip link: br0", o.contains(": br0: <BROADCAST,MULTICAST,UP,LOWER_UP>"));
+    t.check("ip link: eth0 in br0", o.contains(": eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master br0 state UP mode DEFAULT"));
+    t.check("ip link: pc0 in br0", o.contains(": pc0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master br0 state UP"));
+    let o = cli(&mut e, phone, &["ip -br addr"], 10 * MS);
+    t.check("ip -br addr: the address on br0", o.contains("10.0.0.30/24") && o.lines().any(|l| l.starts_with("eth0 ") && l.ends_with("UP")));
+    let o = cli(&mut e, phone, &["ip addr add 10.0.0.31/24 dev eth0"], 10 * MS);
+    t.eq("an address on a port", o, s("Error: eth0 is a port of the bridge br0; its addresses belong on br0.\n"));
+    let o = cli(&mut e, phone, &["ip link show pc0"], 10 * MS);
+    t.check("one port", o.contains(": pc0: ") && !o.contains("br0:"));
+    let _ = cli(&mut e, phone, &["ip link set pc0 down"], 100 * MS);
+    t.check("pc0 down", cli(&mut e, phone, &["ip link show pc0"], 10 * MS).contains("<BROADCAST,MULTICAST> mtu 1500 qdisc fq_codel master br0 state DOWN"));
+    t.check("in the configuration", e.running_config(phone).contains("ip link set dev pc0 down\n"));
+    t.check("PC1 is cut off", !ping(&mut e, PC1, "10.0.0.1"));
+    let _ = cli(&mut e, phone, &["ip link set pc0 up"], 100 * MS);
+    t.check("not any more", !e.running_config(phone).contains("pc0 down"));
 }
 
 fn config_roundtrip(t: &mut T) {

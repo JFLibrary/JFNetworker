@@ -534,7 +534,7 @@ impl Service for NasService {
         self.status_msg().text()
     }
     fn status_msg(&self) -> Msg {
-        msg!("{} Anfragen, {} angenommen, {} abgelehnt, {} Zeit\u{00fc}berschreitungen", self.requests, self.accepts, self.rejects, self.timeouts)
+        msg!("{}, {} angenommen, {} abgelehnt, {} Zeit\u{00fc}berschreitungen", jfn_model::msg::count(self.requests as u64, msg!("{} Anfrage", self.requests), msg!("{} Anfragen", self.requests)), self.accepts, self.rejects, self.timeouts)
     }
     fn clone_box(&self) -> Box<dyn Service> {
         Box::new(self.clone())

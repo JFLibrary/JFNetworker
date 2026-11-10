@@ -1,6 +1,9 @@
 // load -- an engine from a project
 //
 //   Engine::from_project(&Project) -> Result<Engine, ActErr>
+//   Engine::from_project_in(&Project, lang)   the same with the console's own tools in `lang`
+//                                          from the start (what units write into the log at
+//                                          boot too; Engine::console_lang)
 //
 // Every device and every cable of the project starts at time 0 (devices that are switched off
 // stay off).  Then each device's startup configuration runs through its command line, the
@@ -20,7 +23,12 @@ use crate::kernel::Engine;
 
 impl Engine {
     pub fn from_project(p: &Project) -> Result<Engine, ActErr> {
+        Engine::from_project_in(p, jfn_model::msg::Lang::De)
+    }
+
+    pub fn from_project_in(p: &Project, lang: jfn_model::msg::Lang) -> Result<Engine, ActErr> {
         let mut e = Engine::new(p.seed);
+        e.console_lang = lang;
         e.strict_mdix = p.strict_mdix;
         e.metered = p.metered;
         e.wlan.dip_per_m = p.dip_per_m;
