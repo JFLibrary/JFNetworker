@@ -24,7 +24,7 @@ env:
   CARGO_TERM_COLOR: always
   # Until the next JFLib release .cargo/config.toml takes JFLib's crates from ../JFLib (the style
   # netlab is not on crates.io yet): the commit this repository was tested against
-  JFLIB_REF: 16ec0ab40fa769e8dc29881b05eb7f047e84b12f
+  JFLIB_REF: 3044b5acadde6cbd95b0aafbc084686c123bc917
 
 jobs:
   check:
