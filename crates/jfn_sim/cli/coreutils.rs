@@ -1365,8 +1365,8 @@ impl Engine {
             }
         }
         let Some(st) = self.store(ni) else { return self.sh_err(ni, "df: no file systems processed\n") };
-        // a device with hardware (res.rs) has the disk of its figures, and what its services keep
-        // there (a database's tables) is used as well as its files
+        // a device with hardware (res.rs) has the disk of its figures (its files have that size
+        // too), and what its services keep there (a database's tables) is used as well as its files
         let (cap, used) = match self.os(ni).filter(|o| o.res.is_some()) {
             Some(o) => (o.disk.capacity, st.used() + o.disk.used()),
             None => (st.capacity, st.used()),

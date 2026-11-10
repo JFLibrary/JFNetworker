@@ -468,7 +468,8 @@ pub struct ResView {
     pub hog: u64,
 }
 
-/// a disk of a class holding what it holds (jfn_model's table)
+/// a disk of a class holding what it holds (jfn_model's table); the device's files get its size
+/// too (df shows it, a write beyond it fails)
 pub(crate) fn disk_as(o: &mut Os, class: DiskClass, gb: u64) {
     let (latency, bps, iops) = class.spec();
     o.disk.latency = latency;
@@ -476,13 +477,18 @@ pub(crate) fn disk_as(o: &mut Os, class: DiskClass, gb: u64) {
     o.disk.iops = iops;
     if gb > 0 {
         o.disk.capacity = gb << 30;
+        o.files.capacity = gb << 30;
     }
 }
 
-/// the disk of a device without hardware again (what it holds stays)
-fn disk_plain(o: &mut Os) {
+/// the disk of a device without hardware again (what it holds stays), its files the size of the
+/// model's storage
+fn disk_plain(o: &mut Os, model: &str) {
     let d = crate::disk::Disk::default();
     (o.disk.latency, o.disk.bps, o.disk.iops, o.disk.capacity) = (d.latency, d.bps, d.iops, d.capacity);
+    if let Some(m) = jfn_model::catalog::model(model) {
+        o.files.capacity = jfn_model::files::capacity_of(m);
+    }
 }
 
 /// one job on what `o` has: its completion, a page-in on its disk included
@@ -596,7 +602,7 @@ impl Engine {
                 }
                 (false, _) if o.res.is_some() => {
                     o.res = None;
-                    disk_plain(o);
+                    disk_plain(o, model);
                 }
                 _ => {}
             }
@@ -641,7 +647,7 @@ impl Engine {
                 }
                 None => {
                     o.res = None;
-                    disk_plain(o);
+                    disk_plain(o, model);
                 }
             }
         }
