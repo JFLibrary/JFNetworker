@@ -893,6 +893,10 @@ fn console(t: &mut T) {
     let o = out(&mut e, n.srv, "lscpu");
     t.check(&format!("lscpu, every digit: {}", o), o.contains("(0.95 x the reference core)"));
     t.check("df after the resize", out(&mut e, n.srv, "df -h").contains(" 240G "));
+    t.eq("the files have the disk's size", e.file_store(n.srv).map(|s| s.capacity), Some(240 << 30));
+    let _ = e.apply(Action::Resize { dev: n.srv, hw: None, downtime: 0 });
+    run_for(&mut e, SEC);
+    t.eq("without hardware: the model's again", e.file_store(n.srv).map(|s| s.capacity), catalog::model("server-1u").map(jfn_model::files::capacity_of));
 }
 
 fn determinism(t: &mut T) {

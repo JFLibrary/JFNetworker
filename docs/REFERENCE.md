@@ -2714,7 +2714,8 @@ Inhalt), `head` und `tail` (`-n N`, `-N`, `-n -N`, `-n +N`, `-c`), `grep` (`-i -
 `-mindepth`; in Namensfolge, Dateien mit Punkt eingeschlossen), `wc` (`-l -w -c -m` mit den
 Spaltenbreiten von GNU), `sort` (`-r -n -u -f -k -t`, nach Bytes), `uniq` (`-c -d -u -i`), `cut`
 (`-d -f -c -s`), `tree` (`-a -d -L`), `du` (`-s -h -a -c`), `df` (`-h`: die Kapazität des
-Gerätemodells), `less` und `more` (die Konsole blättert mit --More--), `file`, `stat`,
+Gerätemodells, mit Hardware die Platte ihrer Zahlen samt den Daten der Dienste; die Dateien haben dann
+dieselbe Größe), `less` und `more` (die Konsole blättert mit --More--), `file`, `stat`,
 `basename`, `dirname`, `date` (die Uhr des Geräts in virtueller Zeit, `+FORMAT`), `sleep`, `seq`,
 `tee`, `test` / `[`, `xargs`, `env`, `export`, `unset`, `which`, `type`, `help` und `man`.
 `ls` zeigt Dateien mit Punkt nur mit `-a`/`-A` und schreibt in eine Pipe einen Namen je Zeile.
