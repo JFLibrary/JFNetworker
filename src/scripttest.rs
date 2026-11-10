@@ -971,7 +971,8 @@ fn shell(t: &mut T) {
     t.eq("shell: which one", sh(&mut e, h[0], "script stop", MS), String::from("script stop: welches Skript? (script stop NAME)\n"));
     t.eq("shell: none here", sh(&mut e, h[1], "script", MS), String::from("script: auf diesem Gerät läuft kein Skript\n"));
     t.check("shell: help", sh(&mut e, h[1], "script --help", MS).starts_with("script [list]  "));
-    let (_, done) = e.cli_complete(h[0], "scr");
+    // ("scr" is screen too: ttyusb.rs)
+    let (_, done) = e.cli_complete(h[0], "scri");
     t.eq("shell: completion", done, vec![String::from("script")]);
 }
 

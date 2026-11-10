@@ -16,7 +16,7 @@
 // Simulation mode (below): frames_at(t) for the animation (which frame is how far along which
 // cable), drops_between (the red crosses), event_row(s) for the event list, step_of /
 // hop_steps for the packet tab (the PDU a device got, its decisions, the PDUs it sent),
-// hop_layers / hop_info (the dissection, HDLC frames of serial lines included).
+// hop_layers / hop_info (the dissection, the Cisco HDLC and PPP frames of serial lines included).
 //
 // LEDs: no power (grey), down (red: shut down, err-disabled, unplugged, far end off, wrong cable
 // with strict MDI-X), up (green); with spanning tree a bridge port that does not forward is
@@ -411,9 +411,16 @@ pub fn proto_name(mask: u32) -> &'static str {
 
 /// netpkt dissects Ethernet: the packet of a Cisco HDLC frame goes behind a stand-in header
 /// (12 bytes of addresses, then the HDLC protocol field as the ethertype), so it sits
-/// HDLC_SHIFT bytes later than in the frame
+/// HDLC_SHIFT bytes later than in the frame; a PPP frame's protocol becomes its ethertype
+/// (0x0021 IPv4, 0x0057 IPv6; netpkt has no PPP of its own: serial.rs)
 fn hdlc_standin(b: &[u8]) -> Vec<u8> {
     let mut f = alloc::vec![0u8; 12];
+    if crate::serial::is_ppp(b) {
+        let proto = u16::from_be_bytes([b[2], b[3]]);
+        f.extend_from_slice(&crate::serial::ppp_ethertype(proto).unwrap_or(0).to_be_bytes());
+        f.extend_from_slice(&b[4..]);
+        return f;
+    }
     f.extend_from_slice(&b[2..]);
     f
 }
@@ -421,11 +428,14 @@ fn hdlc_standin(b: &[u8]) -> Vec<u8> {
 const HDLC_SHIFT: u32 = 10;
 
 /// the layers of a recorded frame for the inspector (netpkt::decode::layers); the Cisco HDLC
-/// frame of a serial line starts with a layer of its own (address, control, protocol)
+/// or PPP frame of a serial line starts with a layer of its own (address, control, protocol)
 pub fn hop_layers(h: &Hop) -> Vec<Layer> {
     let b = &h.bytes;
     if !h.hdlc || b.len() < 4 {
         return decode::layers(b);
+    }
+    if crate::serial::is_ppp(b) {
+        return ppp_layers(b);
     }
     let et = u16::from_be_bytes([b[2], b[3]]);
     let proto = match netpkt::eth::ethertype_name(et) {
@@ -440,6 +450,30 @@ pub fn hop_layers(h: &Hop) -> Vec<Layer> {
     ];
     // the link layer of a serial line (netpkt has no HDLC protocol of its own)
     let mut out = alloc::vec![Layer { proto: Proto::Eth, off: 0, len: 4, title: String::from("Cisco HDLC"), fields, problems: Vec::new() }];
+    for mut l in decode::layers(&hdlc_standin(b)).into_iter().skip(1) {
+        l.off -= HDLC_SHIFT;
+        for f in l.fields.iter_mut() {
+            f.off -= HDLC_SHIFT;
+        }
+        out.push(l);
+    }
+    out
+}
+
+/// the layers of a PPP frame (RFC 1662 framing): address, control, protocol, then the packet
+fn ppp_layers(b: &[u8]) -> Vec<Layer> {
+    let proto = u16::from_be_bytes([b[2], b[3]]);
+    let name = match proto {
+        0x0021 => format!("Internet Protocol version 4 (0x{:04x})", proto),
+        0x0057 => format!("Internet Protocol version 6 (0x{:04x})", proto),
+        _ => format!("0x{:04x}", proto),
+    };
+    let fields = alloc::vec![
+        Field { name: "Address", value: format!("0x{:02x} (all stations)", b[0]), off: 0, len: 1 },
+        Field { name: "Control", value: format!("0x{:02x} (unnumbered information)", b[1]), off: 1, len: 1 },
+        Field { name: "Protocol", value: name, off: 2, len: 2 },
+    ];
+    let mut out = alloc::vec![Layer { proto: Proto::Eth, off: 0, len: 4, title: String::from("PPP"), fields, problems: Vec::new() }];
     for mut l in decode::layers(&hdlc_standin(b)).into_iter().skip(1) {
         l.off -= HDLC_SHIFT;
         for f in l.fields.iter_mut() {

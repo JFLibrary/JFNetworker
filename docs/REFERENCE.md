@@ -47,7 +47,7 @@
 | Webbrowser | [`src/workspace/devwin/browser.rs`](src/workspace/devwin/browser.rs) (das Programm), [`src/workspace/devwin/pagescript.rs`](src/workspace/devwin/pagescript.rs) (Seitenskripte: der Host der VM, die Konsole), [`src/workspace/devwin/devtools.rs`](src/workspace/devwin/devtools.rs) (die Entwickleransicht), [`crates/jfn_sim/webc.rs`](crates/jfn_sim/webc.rs) (Anfragen und Weiterleitungen in der Engine), [`crates/jfn_sim/tlssim.rs`](crates/jfn_sim/tlssim.rs) (Zertifikate des Labors, TLS-Notizen), [`lib/netpkt/uri.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/uri.rs) (URLs nach RFC 3986), [`lib/netpkt/cookie.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/cookie.rs) (Cookies nach RFC 6265), [`lib/netpkt/tls.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/tls.rs) und [`lib/netpkt/x509.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/x509.rs) (TLS 1.3 ohne I/O) |
 | SSH | [`lib/netpkt/ssh.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/ssh.rs), [`crates/jfn_sim/sshd.rs`](crates/jfn_sim/sshd.rs), [`sshtrace.rs`](crates/jfn_sim/sshtrace.rs), [`cli/ssh.rs`](crates/jfn_sim/cli/ssh.rs), [`src/sshtest.rs`](src/sshtest.rs) | das Protokoll ohne I/O, Client und Server auf den Geräten, Schlüssel als Dateien, `known_hosts`, `authorized_keys`, `scp` |
 | SNMPv3 | [`lib/netpkt/snmpv3.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/snmpv3.rs), [`crates/jfn_sim/snmpd.rs`](crates/jfn_sim/snmpd.rs), [`cli/snmp.rs`](crates/jfn_sim/cli/snmp.rs), [`src/workspace/devwin/mib.rs`](src/workspace/devwin/mib.rs), [`src/snmpv3test.rs`](src/snmpv3test.rs) | die Nachricht, USM, VACM, die Reports, die Werkzeuge, der MIB-Browser |
-| Sitzungen und Telnet-Server | [`crates/jfn_sim/cli/ses.rs`](crates/jfn_sim/cli/ses.rs), [`telnetd.rs`](crates/jfn_sim/telnetd.rs), [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs), [`src/doc/console.rs`](src/doc/console.rs), [`src/workspace/terminal.rs`](src/workspace/terminal.rs), [`src/sessiontest.rs`](src/sessiontest.rs) | mehrere Befehlszeilen je Gerät (Konsole, lokale Terminals, Telnet), der Telnet-Server der vty-Leitungen und `telnetd`, `show users`, `who`, die Sitzungen im Terminal-Panel |
+| Sitzungen und Telnet-Server | [`crates/jfn_sim/cli/ses.rs`](crates/jfn_sim/cli/ses.rs), [`telnetd.rs`](crates/jfn_sim/telnetd.rs), [`ttyusb.rs`](crates/jfn_sim/ttyusb.rs), [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs), [`src/doc/console.rs`](src/doc/console.rs), [`src/workspace/terminal.rs`](src/workspace/terminal.rs), [`src/sessiontest.rs`](src/sessiontest.rs), [`src/serialtest.rs`](src/serialtest.rs) | mehrere Befehlszeilen je Gerät (Konsole, lokale Terminals, Telnet, das Konsolenkabel mit `screen /dev/ttyUSB0`), der Telnet-Server der vty-Leitungen und `telnetd`, `show users`, `who`, die Sitzungen im Terminal-Panel |
 | 802.1X und WPA-Enterprise | [`crates/jfn_sim/dot1x.rs`](crates/jfn_sim/dot1x.rs), [`supp.rs`](crates/jfn_sim/supp.rs), [`dot1xtrace.rs`](crates/jfn_sim/dot1xtrace.rs), [`cli/dot1x.rs`](crates/jfn_sim/cli/dot1x.rs), [`lib/eapm`](https://github.com/JFLibrary/JFLib/blob/main/lib/eapm/lib.rs), [`lib/netpkt/eap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/eap.rs), [`lib/crypto/eappwd.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/crypto/eappwd.rs) |
 | IMAP | [`crates/jfn_sim/imapd.rs`](crates/jfn_sim/imapd.rs), [`mailbox.rs`](crates/jfn_sim/mailbox.rs), [`mailc.rs`](crates/jfn_sim/mailc.rs), [`lib/netpkt/imap.rs`](https://github.com/JFLibrary/JFLib/blob/main/lib/netpkt/imap.rs) |
 | Zonen und Sitzungen | [`crates/jfn_sim/fw.rs`](crates/jfn_sim/fw.rs), [`fwtrace.rs`](crates/jfn_sim/fwtrace.rs), [`cli/fw.rs`](crates/jfn_sim/cli/fw.rs), [`cli/ufw.rs`](crates/jfn_sim/cli/ufw.rs), [`cli/iptables.rs`](crates/jfn_sim/cli/iptables.rs), [`src/workspace/devwin/fwzones.rs`](src/workspace/devwin/fwzones.rs), [`src/firewalltest.rs`](src/firewalltest.rs), [`src/homenattest.rs`](src/homenattest.rs) |
@@ -148,10 +148,39 @@ Dazu kann der Nutzer selbst wählen, und `cable_fits` prüft, ob es steckt:
 
 Ein falsches Kupferkabel steckt, unter „Auto-MDI-X aus“ (Projektinspektor, `strict_mdix`, ein
 Rückgängig-Schritt) bleibt die Leitung dann unten und das Problem nennt das richtige Kabel; Glas
-in RJ45 steckt nicht. Ein gewähltes serielles Ende ändert nur, was man sieht: den Punkt und
-„DCE“ an diesem Ende auf der Zeichenfläche und die Zeile `Serial cable end: DCE` oder `DTE` in
-`show interfaces`. Einen Befehl `clock rate` kennt die Engine nicht, und kein Ende liefert einen
-Takt; das unveränderte `serial` älterer Dateien nennt kein Ende.
+in RJ45 steckt nicht. Ein gewähltes serielles Ende zeigt den Punkt und „DCE“ an diesem Ende auf
+der Zeichenfläche und die Zeile `Serial cable end: DCE` oder `DTE` in `show interfaces`, und es
+gibt den Takt (siehe [Serielle Leitungen](#serielle-leitungen)); das unveränderte `serial`
+älterer Dateien nennt kein Ende und braucht keinen Takt. Das Konsolenkabel trägt die Konsole:
+`screen /dev/ttyUSB0` auf dem PC am USB-Ende (siehe
+[Sitzungen und Telnet-Server](#sitzungen-und-telnet-server)).
+
+#### Serielle Leitungen
+
+[`crates/jfn_sim/serial.rs`](crates/jfn_sim/serial.rs), geprüft in der Selbsttest-Gruppe
+`serial` ([`src/serialtest.rs`](src/serialtest.rs)).
+
+- **Takt:** Das DCE-Ende (`serial-dce` / `serial-dte`) gibt ihn wie neuere IOS-Versionen an einem
+  erkannten DCE-Kabel von sich aus, die Leitung läuft dann mit der Rate ihres Links (ältere
+  Projekte laufen wie bisher). `clock rate N` dort (gerundet auf die übliche Rate daneben, 1200
+  bis 8000000) setzt die Bitrate: Frames brauchen die Zeit bei der kleineren von N und der Rate des
+  Links; `BW` in `show interfaces` und die Kosten von OSPF behalten die Rate des Links, wie
+  `bandwidth` bei IOS. `no clock rate` am DCE-Ende nimmt den Takt: Beide Enden bleiben „up“, das
+  Leitungsprotokoll geht an beiden aus (`%LINEPROTO`, rote LEDs, nichts kommt durch, die
+  verbundenen Routen gehen), `show interfaces` und `show controllers serial` sagen warum, dazu
+  eine Notiz an beiden Enden und das Problem „kein Takt“. Am DTE-Ende wird `clock rate`
+  angenommen, bleibt in der Konfiguration und wirkt nicht. Ohne gewähltes Ende gibt es nichts zu
+  takten.
+- **Rahmen:** `encapsulation hdlc` (Vorgabe, Cisco-HDLC) oder `encapsulation ppp` (die
+  HDLC-artige Rahmung von RFC 1662: `FF 03`, Protokoll `0021` für IPv4, `0057` für IPv6);
+  `no encapsulation` ist HDLC. Verschiedene Enden halten das Leitungsprotokoll an beiden unten
+  (`Encapsulation PPP, LCP Closed` gegen `LCP Open`, der Grund, das Problem „Rahmen passen nicht“).
+  Keine der beiden Arten schickt Eigenes: keine Keepalives, kein LCP, kein IPCP auf der Leitung;
+  das Leitungsprotokoll folgt sofort aus der Konfiguration beider Enden.
+- **Konfiguration:** `encapsulation ppp` nach den Adressen, `clock rate N` oder `no clock rate`
+  nach `shutdown`; die Vorgaben schreiben nichts. `show controllers [serial N]` zeigt je
+  seriellem Port Kabelende und Takt („DCE V.35, clock rate 64000“, „DTE V.35 TX and RX clocks
+  detected.“, „DCE V.35, no clock“).
 
 Die **Kategorie** (`grade` in der Datei) ist ein Feld des Kabels statt weiterer Arten; ohne sie
 gelten die Grenzen wie bisher:
@@ -352,7 +381,7 @@ Interfaces (`Vlan10`, unter Linux `br0`), gerouteten Switch-Ports und Loopbacks:
 - **Weiterleiten:** TTL, Fragmentieren und Zusammensetzen, „Fragmentation needed“ mit der MTU
   des nächsten Abschnitts. Gerichtete Broadcasts bleiben draußen. IOS-Interfaces beantworten
   ARP für Hosts hinter einem anderen Interface (Proxy-ARP). Serielle Leitungen tragen
-  Cisco-HDLC.
+  Cisco-HDLC oder PPP (siehe [Serielle Leitungen](#serielle-leitungen)).
 - **ICMP-Fehler:** nach RFC 1812, also nie über Fehler, Broadcasts oder Folgefragmente.
   Absender ist das Eingangs-Interface. Linux zitiert bis zu 576 Byte des Pakets, IOS den Kopf
   und 8 Byte. Die Rate ist begrenzt wie im Original: IOS schickt höchstens alle 500 ms ein
@@ -460,7 +489,7 @@ Simulator:
   Hosts melden auch, dass sie eine ARP-Anfrage nach einer fremden Adresse verwerfen.
 - **Paket-Tab:** was ein Gerät mit einem Frame gemacht hat, also eingehende PDU, Entscheidungen
   und ausgehende PDUs (`step_of`, `hop_steps`). Jeder Frame kennt den Frame, der ihn ausgelöst
-  hat. `hop_layers` zerlegt die Bytes, bei seriellen Leitungen samt Cisco-HDLC-Kopf.
+  hat. `hop_layers` zerlegt die Bytes, bei seriellen Leitungen samt Cisco-HDLC- oder PPP-Kopf.
 - **Eigene PDUs** ([`pdu.rs`](crates/jfn_sim/pdu.rs)): ein Dienst schickt UDP-Datagramme mit
   eigener TTL und Größe oder öffnet TCP-Verbindungen, einmal, n-mal oder bis er gestoppt wird,
   auch an Namen, die der Resolver des Geräts erst auflöst. ICMP-Echos sind Ping-Jobs,
@@ -586,7 +615,8 @@ Ereigniswarteschlange und die Tabellen der Geräte.
 Schnittstelle pro Kabel, „PC1 eth0 – SW1 Gi1/0/1“), einen gefilterten Teil (Protokolle,
 Geräte, Zeitfenster), ein Kabel oder ein Gerät (eine Schnittstelle pro Port; Gesendetes mit
 der Sende-, Empfangenes mit der Empfangszeit). Zeitstempel sind die virtuelle Zeit in
-Nanosekunden. Ethernet-Kabel bekommen den Linktyp Ethernet, serielle Leitungen Cisco HDLC. Ein
+Nanosekunden. Ethernet-Kabel bekommen den Linktyp Ethernet, serielle Leitungen Cisco HDLC oder,
+mit PPP, `LINKTYPE_PPP_HDLC` (50). Ein
 Kommentar pro Frame nennt beide Enden und Verluste auf der Leitung. Die Mitschnitte der
 Selbsttests (`--selftest --pcap-out DIR`) zerlegt tshark 4.6 vollständig und ohne
 Prüfsummenfehler.
@@ -3486,6 +3516,20 @@ Sitzung mit `terminal monitor`.
   er ein Passwort erfragt (der Client hört dann mit dem Echo auf), wie Login-Programme es mit
   einem zeilenweisen Client tun; Prompts und Ausgaben laufen als NVT-Text, `Interrupt Process`
   bricht den laufenden Befehl ab.
+- **Das Konsolenkabel** ([`crates/jfn_sim/ttyusb.rs`](crates/jfn_sim/ttyusb.rs)): `screen
+  /dev/ttyUSB0 [BAUD]` (auch `picocom [-b BAUD] /dev/ttyUSB0` und `minicom -D /dev/ttyUSB0`) in der
+  Shell eines PCs öffnet die Befehlszeile des Geräts am anderen Ende des Konsolenkabels an `usb0`
+  als Sitzung `SesKind::Cable` auf dessen Leitung `con 0`: mit dem Login von `line con 0`, den
+  Meldungen der Konsole und `exit` zurück zu „press Enter“ oder zum Login wie an der Konsole;
+  `show users` zeigt sie mit „PC1 usb0“, `show line` auf der Zeile `con 0`, `clear line console 0`
+  meldet sie ab. Die Konsole des Doppelklicks bleibt eine eigene Sitzung. Endet das Programm
+  (Strg+C wie bei telnet), wird das Kabel gezogen oder geht der PC aus, bleibt die Sitzung
+  angemeldet stehen, und das nächste Programm am Kabel findet sie wieder; Ausschalten des Geräts
+  beendet sie. Ohne Kabel: „Cannot open /dev/ttyUSB0: No such file or directory“; ist das Gerät
+  aus, antwortet nichts (eine Zeile in unseren Worten sagt es), bis eine Zeile nach dem
+  Einschalten die Konsole weckt; ein gezogenes Kabel beendet das Programm („[screen is
+  terminating]“), ein zweites Programm an derselben Leitung bekommt „Device or resource busy“.
+  Die Baudrate wird angenommen und nicht geprüft, Text kommt sofort und nicht im Takt der Leitung.
 - **telnetd auf Linux-Hosts** (Dienst `telnetd`, `{"port": 23, "password": "…"}`): Anmeldung als
   `root` mit dem Passwort des Dienstes, dann eine eigene Shell auf `pts/N`. `who`, `w` und `tty`
   zeigen die Sitzungen; `ps` hat die Spalte `TTY` (`tty1` die Konsole, `pts/N`, `?` für init und

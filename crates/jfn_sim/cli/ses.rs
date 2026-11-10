@@ -1,13 +1,17 @@
 // ses -- the command-line sessions of a device: the console (session 0, always there), local
 // terminals the app opens (the Terminal panel's further tabs, the desktop's terminal windows,
-// the IDE's terminal pane) and sessions from the network: telnet (telnetd.rs: the vty lines of
-// IOS-like devices, telnetd on Linux hosts) and SSH (sshd.rs: the same lines, sshd on Linux hosts)
+// the IDE's terminal pane), sessions from the network: telnet (telnetd.rs: the vty lines of
+// IOS-like devices, telnetd on Linux hosts) and SSH (sshd.rs: the same lines, sshd on Linux
+// hosts), and the console line as a console cable reaches it (ttyusb.rs: screen /dev/ttyUSB0 on
+// the host at its other end)
 //
 //   SesKind                       Console | Local | Telnet (from the network; Conn::ssh tells SSH)
+//                                 | Cable (the console cable's: line "con 0", Tty its terminal)
 //   SesInfo                       what the device knows of a session: its id, kind, line name
 //                                 ("con 0", "tty 1", "vty 0"; Linux "tty1", "pts/0"), since,
 //                                 the last line typed, "terminal monitor", the shell's PID, its
-//                                 telnet connection (Conn) and the Linux login of telnetd (Login)
+//                                 telnet connection (Conn), the Linux login of telnetd (Login),
+//                                 the terminal program on a console cable (Tty)
 //   SesCli                        a session's command line while another one is in place: mode
 //                                 and its context (interfaces, VLANs, line block, pool, access
 //                                 list, RADIUS group and server), the running job and the lines
@@ -42,7 +46,8 @@
 // program's output or exit, a wake-up, a RADIUS answer for its login -- runs with that session
 // put in place (in_ses: a swap of the fields there and back), so every command works unchanged
 // in every session.  Output follows the session in place: the console's Report::CliOut, a local
-// session's Report::SesOut, a telnet session's connection.  Wake-ups of a session are
+// session's Report::SesOut, a telnet session's connection, a cable session's program on the host
+// (ttyusb.rs; nobody's while no program has the cable).  Wake-ups of a session are
 // Ev::Ses { node, ses, epoch }; the SES_MARK bit marks the session's own ones (its start, the
 // telnet input, the idle timeout, the time for an SSH login, its end).  Ending a session from
 // inside it (exit, an idle timeout, a closed connection) only marks it: it goes at the same
@@ -74,6 +79,8 @@ pub(crate) const W_INPUT: u32 = SES_MARK | 0x0300_0000;
 pub(crate) const W_IDLE: u32 = SES_MARK | 0x0400_0000;
 /// the time for an SSH login is up (sshd.rs)
 pub(crate) const W_SSH: u32 = SES_MARK | 0x0500_0000;
+/// a cable session's terminal typed a line or found the session (ttyusb.rs)
+pub(crate) const W_TTY: u32 = SES_MARK | 0x0600_0000;
 
 /// what a session is
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,6 +92,9 @@ pub enum SesKind {
     /// a connection from the network: IOS "vty N", Linux "pts/N" (telnetd.rs; Conn::ssh tells an
     /// SSH one, sshd.rs)
     Telnet,
+    /// the console line as a console cable reaches it: IOS "con 0", Linux "ttyS0" (ttyusb.rs;
+    /// SesInfo::tty: the program on the host at the cable's other end, None while there is none)
+    Cable,
 }
 
 /// the connection of a session from the network: telnet (telnetd.rs) or SSH (sshd.rs)
@@ -160,11 +170,13 @@ pub struct SesInfo {
     pub ending: bool,
     /// who a Linux session belongs to when it is not root (sshd.rs: another user of sshd)
     pub account: String,
+    /// a cable session's terminal program (ttyusb.rs)
+    pub tty: Option<crate::ttyusb::Tty>,
 }
 
 impl SesInfo {
     fn new(id: u32, kind: SesKind, line: String, no: u16, now: Ns) -> SesInfo {
-        SesInfo { id, kind, line, no, since: now, last: now, monitor: false, pid: 0, conn: None, login: None, prompted: false, idle_gen: 0, ending: false, account: String::new() }
+        SesInfo { id, kind, line, no, since: now, last: now, monitor: false, pid: 0, conn: None, login: None, prompted: false, idle_gen: 0, ending: false, account: String::new(), tty: None }
     }
     /// the console's (session 0)
     pub fn console(style: CliStyle) -> SesInfo {
@@ -318,9 +330,10 @@ impl Engine {
         let s = c.cur;
         c.ses_mut(s)
     }
-    /// the session in place is a telnet session
+    /// the session in place is a telnet session (or a cable session: its terminal shows what is
+    /// typed, the session writes its prompt into the line)
     pub(crate) fn ses_remote(&self, ni: usize) -> bool {
-        self.ses_here(ni).is_some_and(|i| i.conn.is_some())
+        self.ses_here(ni).is_some_and(|i| i.conn.is_some() || i.kind == SesKind::Cable)
     }
 
     // puts session s's command line in place -> the session that was in place (None: there is
@@ -378,6 +391,9 @@ impl Engine {
             W_SSH => {
                 self.in_ses(ni, s, |e| e.ssh_timeout(ni));
             }
+            W_TTY => {
+                self.in_ses(ni, s, |e| e.tty_wake(ni));
+            }
             W_END => self.ses_drop(ni, s),
             _ => {}
         }
@@ -419,10 +435,15 @@ impl Engine {
             self.con_write(ni, text);
             return;
         }
-        let remote = match self.ses_info(ni, s) {
-            Some(i) => i.conn.is_some(),
+        let (remote, cable) = match self.ses_info(ni, s) {
+            Some(i) => (i.conn.is_some(), i.kind == SesKind::Cable),
             None => return,
         };
+        // a cable session: to the program on the host (ttyusb.rs)
+        if cable {
+            self.tty_out(ni, s, text);
+            return;
+        }
         if remote {
             if let Some(c) = self.ses_info_mut(ni, s).and_then(|i| i.conn.as_mut()) {
                 c.write_text(text);
@@ -525,7 +546,9 @@ impl Engine {
         };
         let line = match (style, kind) {
             (CliStyle::Ios, SesKind::Telnet) => format!("vty {}", no),
+            (CliStyle::Ios, SesKind::Cable) => String::from("con 0"),
             (CliStyle::Ios, _) => format!("tty {}", no),
+            (_, SesKind::Cable) => String::from("ttyS0"),
             _ => format!("pts/{}", no),
         };
         let pid = if style == CliStyle::Linux { self.os_mut(ni).map_or(0, |o| 100 + o.take_id()) } else { 0 };
@@ -554,8 +577,9 @@ impl Engine {
         };
         let style = self.cdev(ni).map_or(CliStyle::None, |c| c.style);
         match (style, kind) {
-            // a local terminal of an IOS-like device logs in as line con 0 says
-            (CliStyle::Ios, SesKind::Local) => self.line_login(ni, "con 0", crate::aaa::Requester::Local(id)),
+            // a local terminal of an IOS-like device logs in as line con 0 says, and so does the
+            // console cable's session (it is that line: ttyusb.rs)
+            (CliStyle::Ios, SesKind::Local | SesKind::Cable) => self.line_login(ni, "con 0", crate::aaa::Requester::Local(id)),
             (_, SesKind::Telnet) => self.telnet_start(ni),
             _ => {}
         }
@@ -595,6 +619,10 @@ impl Engine {
         let info = c.sessions.remove(k);
         if info.kind == SesKind::Local {
             self.cli.reports.push(Report::SesClosed { dev, ses: s });
+        }
+        // a cable session's program hears it (ttyusb.rs: the device went off)
+        if let Some(t) = info.tty.clone() {
+            self.tty_dropped(ni, t);
         }
         if let Some(conn) = info.conn {
             // SSH has last words: the exit status and the channel's end (sshd.rs)
@@ -854,7 +882,8 @@ impl Engine {
             let (user, level) = if i.id == c.cur { (c.user.clone(), c.priv_level) } else { c.parked.get(&i.id).map(|p| (p.user.clone(), p.priv_level)).unwrap_or_default() };
             let who = if user.is_empty() { String::from("-") } else { user };
             let mark = if i.id == c.cur { '*' } else { ' ' };
-            let loc = i.conn.as_ref().map(|x| format!("{}{}", x.from, Engine::ssh_marker(i))).unwrap_or_default();
+            // (a cable session: the host's port at the cable's other end, ttyusb.rs)
+            let loc = i.conn.as_ref().map(|x| format!("{}{}", x.from, Engine::ssh_marker(i))).or_else(|| i.tty.as_ref().map(|t| self.tty_where(t))).unwrap_or_default();
             s.push_str(&format!("{}   {:<10} {:<10} {:<10} {:<9} {}", mark, i.line, who, level, hms(now.saturating_sub(i.last)), loc).trim_end());
             s.push('\n');
         }

@@ -281,11 +281,16 @@ impl Engine {
         self.run_program(ni, "telnet", Box::new(TelnetClient::new(&host, port)), true)
     }
 
-    /// the program of a console job is a telnet client whose far end hides what is typed
+    /// the program of a console job is a telnet client whose far end hides what is typed (or an
+    /// SSH client, or a console cable's terminal whose far session asks for a password:
+    /// ttyusb.rs)
     pub(crate) fn prog_hides(&self, ni: usize, job: &Option<CliJob>) -> bool {
         let Some(CliJob { out: JobOut::Proc { svc, stdin: true }, .. }) = job else {
             return false;
         };
+        if let Some(c) = self.os(ni).and_then(|o| o.svcs.iter().find(|s| s.id == *svc)).and_then(|s| s.svc.as_ref()).and_then(|x| x.as_any().downcast_ref::<crate::ttyusb::ConsoleClient>()) {
+            return self.tty_hides(c.far());
+        }
         if self.os(ni).and_then(|o| o.svcs.iter().find(|s| s.id == *svc)).and_then(|s| s.svc.as_ref()).and_then(|x| x.as_any().downcast_ref::<SshClient>()).is_some() {
             return self.ssh_prog_hides(ni, job);
         }
@@ -1075,7 +1080,11 @@ impl Engine {
         let mut s = String::from("    Line       State    Transport  Timeout    Location\n");
         let row = |mark: char, line: &str, state: &str, tr: &str, to: &str, loc: &str| String::from(format!("{}   {:<10} {:<8} {:<10} {:<10} {}", mark, line, state, tr, to, loc).trim_end()) + "\n";
         let here = c.cur;
-        s.push_str(&row(if here == 0 { '*' } else { ' ' }, "con 0", "in use", "-", "-", ""));
+        // the console cable's session is on this line too, its place the host's port (ttyusb.rs)
+        let cable = c.sessions.iter().find(|i| i.kind == SesKind::Cable);
+        let loc = cable.and_then(|i| i.tty.as_ref()).map(|t| self.tty_where(t)).unwrap_or_default();
+        let mark = if here == 0 || cable.is_some_and(|i| i.id == here) { '*' } else { ' ' };
+        s.push_str(&row(mark, "con 0", "in use", "-", "-", &loc));
         for n in vty_lines(&c.cfg.lines) {
             let opts = vty_opts(&c.cfg.lines, n).unwrap_or_default();
             let tr = match opts.iter().find(|o| o.starts_with("transport input")) {
@@ -1139,6 +1148,8 @@ impl Engine {
                 }
                 e.cli_state(ni);
             });
+            // and the console cable's session (ttyusb.rs)
+            self.tty_cleared(ni);
             return Ok(());
         }
         let here = self.ses_cur(ni);

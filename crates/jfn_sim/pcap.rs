@@ -10,8 +10,9 @@
 //   PcapOpts               protocols and devices (Filter), a window of timestamps, a comment
 //                          per packet with both ends and whether the cable lost it
 //
-// Ethernet cables are LINKTYPE_ETHERNET, serial lines LINKTYPE_C_HDLC: that is what the
-// simulator sends on them.  Timestamps are nanoseconds of virtual time since the start
+// Ethernet cables are LINKTYPE_ETHERNET, serial lines LINKTYPE_C_HDLC, or LINKTYPE_PPP_HDLC for
+// the frames of a line that runs PPP (serial.rs; a line that changes its format midway gets a
+// second interface of the same name): that is what the simulator sends on them.  Timestamps are nanoseconds of virtual time since the start
 // (Wireshark shows 1970-01-01 plus the simulated time).  The bytes are the recorded ones, so
 // checksums, tags and padding are exactly what the devices sent.
 
@@ -53,6 +54,19 @@ pub struct PcapOpts {
 impl Default for PcapOpts {
     fn default() -> PcapOpts {
         PcapOpts { scope: PcapScope::All, filter: Filter::all(), from: 0, until: Ns::MAX, comments: true }
+    }
+}
+
+/// PPP in HDLC-like framing (RFC 1662), what a serial line with "encapsulation ppp" carries
+/// (netpkt::pcapng has no constant for it)
+pub const LINKTYPE_PPP_HDLC: u16 = 50;
+
+/// the link type of a recorded frame
+pub fn linktype(h: &Hop) -> u16 {
+    match (h.hdlc, crate::serial::is_ppp(&h.bytes)) {
+        (true, true) => LINKTYPE_PPP_HDLC,
+        (true, false) => LINKTYPE_C_HDLC,
+        _ => LINKTYPE_ETHERNET,
     }
 }
 
@@ -102,18 +116,19 @@ impl Engine {
         pks.retain(|p| window(p.t));
         pks.sort_by_key(|p| (p.t, p.hop.id, p.inbound));
         let mut w = Writer::new("JFNetworker");
-        let mut ifaces: BTreeMap<u32, u32> = BTreeMap::new();
+        let mut ifaces: BTreeMap<(u32, u16), u32> = BTreeMap::new();
         for p in &pks {
             let h = p.hop;
-            let iface = match ifaces.get(&p.key) {
+            let lt = linktype(h);
+            let iface = match ifaces.get(&(p.key, lt)) {
                 Some(&i) => i,
                 None => {
                     let name = match o.scope {
                         PcapScope::Device(d) => self.end_name((d, p.key as u16)),
                         _ => self.cable_name(h),
                     };
-                    let i = w.add_interface(&name, if h.hdlc { LINKTYPE_C_HDLC } else { LINKTYPE_ETHERNET }, 0);
-                    ifaces.insert(p.key, i);
+                    let i = w.add_interface(&name, lt, 0);
+                    ifaces.insert((p.key, lt), i);
                     i
                 }
             };

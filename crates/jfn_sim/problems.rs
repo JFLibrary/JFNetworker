@@ -31,6 +31,8 @@
 //   CableTooLong        a cable longer than its medium allows at its speed (phys.rs, P1)
 //   OpticMismatch       the optics of a fibre's ends do not fit each other or the fibre
 //   CableGrade          a cable's category does not carry the speed of its ports (phys.rs, H2)
+//   SerialNoClock       a serial line whose DCE end gives no clock ("no clock rate"; serial.rs)
+//   SerialEncap         a serial line whose ends run different encapsulations (HDLC, PPP)
 //   MailMxNowhere       an MX record whose host has no address in any zone (error), or no SMTP
 //                       server runs at its address (warning; smtpd.rs)
 //   MailOpenRelay       an SMTP server that relays for every sender ("open_relay", warning)
@@ -157,6 +159,10 @@ pub enum ProblemKind {
     FwPolicyUnused,
     /// a service of the project does not start
     ServiceNotStarted,
+    /// a serial line whose DCE end gives no clock (serial.rs)
+    SerialNoClock,
+    /// a serial line whose ends run different encapsulations (serial.rs)
+    SerialEncap,
 }
 
 /// a problem of the set-up
@@ -310,6 +316,7 @@ impl Engine {
         self.bgp_problems(&mut out);
         self.file_problems(&mut out);
         self.phys_problems(&mut out);
+        self.serial_problems(&mut out);
         self.mail_problems(&mut out);
         self.snmp_problems(&mut out);
         self.script_problems(&mut out);

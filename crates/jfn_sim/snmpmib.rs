@@ -512,7 +512,8 @@ fn interfaces(e: &Engine, ni: usize, a: &AgentPart) -> Vec<IfRow> {
                 descr: p.spec.name.clone(),
                 name: ifname::short(&p.spec.name),
                 alias: descr(&p.spec.name),
-                if_type: port_type(p.spec.media),
+                // a serial line with PPP is ppp(23) (serial.rs)
+                if_type: if p.spec.media == Media::Serial && p.serial.encap == crate::serial::Encap::Ppp { 23 } else { port_type(p.spec.media) },
                 mtu,
                 speed: port_speed(pi),
                 mac: Some(p.mac),

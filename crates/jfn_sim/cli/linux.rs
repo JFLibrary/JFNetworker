@@ -32,6 +32,8 @@
 //   FORWARD chain and MASQUERADE for what the device forwards)
 //   who, w, tty, exit [N] / logout in a further session (telnetd.rs, cli/ses.rs: the sessions)
 //   ssh, scp, ssh-keygen (cli/ssh.rs, sshd.rs)
+//   screen /dev/ttyUSB0 [BAUD], picocom [-b BAUD] /dev/ttyUSB0, minicom -D /dev/ttyUSB0 (ttyusb.rs:
+//   the console line of the device at the other end of the console cable on usb0)
 //
 // A line goes through the shell's grammar first (sh.rs, shrun.rs: pipes, redirections, lists,
 // quoting, globs, $VAR, &); linux_cmd gets the words of one command and dispatches them.  Paths
@@ -199,6 +201,8 @@ impl Engine {
             "snmpbulkwalk" => self.sh_snmp(ni, super::snmp::Prog::BulkWalk, &args),
             "snmpset" => self.sh_snmp(ni, super::snmp::Prog::Set, &args),
             "telnet" => self.sh_telnet(ni, &args),
+            // a terminal on the console cable (ttyusb.rs)
+            "screen" | "picocom" | "minicom" => self.sh_serial_term(ni, &cmd, &args),
             "clear" => {
                 self.out(ni, "\x1b[H\x1b[2J");
                 Ok(())
@@ -279,6 +283,7 @@ impl Engine {
             "cd", "pwd", "mv", "head", "tail", "grep", "find", "wc", "sort", "uniq", "cut", "tree", "du", "df", "less", "more", "history", "env", "export", "unset", "which", "type", "help", "man", "file", "stat", "basename", "dirname", "date", "seq", "tee", "test", "xargs", "sleep", "jfs", "jobs", "fg", "wait", "kill", "ps", "true", "false",
             "systemctl", "journalctl",
             "who", "w", "tty", "ssh", "scp", "ssh-keygen",
+            "screen", "picocom", "minicom",
             "wpa_cli", "wpa_supplicant",
             "iptables", "iptables-save",
         ];

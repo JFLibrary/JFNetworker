@@ -73,6 +73,8 @@
 // the bridge, the access point).
 // cablestest.rs: the choice of cables (group cables: jfn_model::cable, phys::reach_graded, the
 // engine's categories and Auto-MDI-X, what canvas/connect.rs and paint.rs decide).
+// serialtest.rs: the serial lines and the console cable (group serial: jfn_sim::serial's clock
+// rate and encapsulation, ttyusb's screen, picocom and minicom on /dev/ttyUSB0).
 // labelstest.rs: the slim labels of the canvas (group labels: a note's style in the file, the steps
 // of doc/edits.rs, the scene of canvas/paint.rs).
 // startpagetest.rs: the start page (group startpage: the templates of assets/templates running, the
@@ -169,6 +171,8 @@ mod keyframetest;
 mod phystest;
 #[path = "cablestest.rs"]
 mod cablestest;
+#[path = "serialtest.rs"]
+mod serialtest;
 #[path = "mailtest.rs"]
 mod mailtest;
 #[path = "groupstest.rs"]
@@ -235,7 +239,7 @@ mod coursetest;
 mod consolelangtest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 70] = [
+    let groups: [(&'static str, fn(&mut T)); 71] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
@@ -292,6 +296,7 @@ pub fn run() -> i32 {
         ("imap", imaptest::run),
         ("models", modelstest::run),
         ("cables", cablestest::run),
+        ("serial", serialtest::run),
         ("labels", labelstest::run),
         ("startpage", startpagetest::run),
         ("hardware", hardwaretest::run),
