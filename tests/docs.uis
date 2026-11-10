@@ -20,7 +20,7 @@ expect dialog:"Erklärung im Browser öffnen?" missing
 rclick listitem:"R1"
 expect menuitem:"Erklärung öffnen …" enabled
 click menuitem:"Erklärung öffnen …"
-expect text:"https://networker.jfreund.org/de/docs/devices/jf-r4/v1" exists
+expect text:"https://networker.jfreund.org/de/docs/devices/jf-r4/v2" exists
 click button:"Abbrechen"
 # a cable: PC1's straight copper cable has a page
 rclick listitem:"Kabel PC1 eth0 – SW1 Gi1/0/1, Kupfer, gerade, aktiv"
