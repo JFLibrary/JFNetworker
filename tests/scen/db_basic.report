@@ -102,18 +102,18 @@
   12.100000000  ok      expect GEN output contains "\"balance\":1000000"
   12.100000000  GEN     root@GEN:~# curl -s http://10.0.0.30:7100/_db/health
   12.100000000  --      run 100ms
-  12.100001748  GEN     {"status":"ok","role":"primary","lsn":42312,"flushed_lsn":42312,"checkpoint_lsn":36080,"recoveries":1,"recovery_ms":0}
+  12.100001748  GEN     {"status":"ok","role":"primary","lsn":44936,"flushed_lsn":44936,"checkpoint_lsn":36080,"recoveries":1,"recovery_ms":0}
   12.200000000  ok      expect GEN output contains "\"status\":\"ok\""
   12.200000000  DB      root@DB:~# dbctl
-  12.200000000  DB      Datenbank db: Port 7100, 1 von höchstens 100 Verbindungen, 0 Transaktionen offen, 0 Anweisungen in Arbeit
-  12.200000000  DB      Puffer: 1 MiB von 64 MiB, Treffer 71,2 %
-  12.200000000  DB      Log: Stand 42640, auf der Platte 42640, Prüfpunkt 36080; Schreiben 130, Durability full, Isolation read committed
-  12.200000000  DB      Anweisungen 931: gelesen 540, eingefügt 0, geändert 130, gelöscht 0; Commits 130, Rollbacks 0
-  12.200000000  DB      Fehler 8: Syntax 1, Konflikte 0, Verklemmungen 0, Sperren zu spät 0, still abgebrochen 0, abgewiesen 7
-  12.200000000  DB      Sperren gewartet 0; Zeilen angesehen 675, Seiten gelesen 672; geänderte Zeilen 102, vergessen 0
+  12.200000000  DB      Datenbank db: Port 7100, 8 von höchstens 100 Verbindungen, 0 Transaktionen offen, 0 Anweisungen in Arbeit
+  12.200000000  DB      Puffer: 1 MiB von 64 MiB, Treffer 71,3 %
+  12.200000000  DB      Log: Stand 45264, auf der Platte 45264, Prüfpunkt 36080; Schreiben 138, Durability full, Isolation read committed
+  12.200000000  DB      Anweisungen 980: gelesen 565, eingefügt 0, geändert 138, gelöscht 0; Commits 138, Rollbacks 0
+  12.200000000  DB      Fehler 1: Syntax 1, Konflikte 0, Verklemmungen 0, Sperren zu spät 0, still abgebrochen 0, abgewiesen 0
+  12.200000000  DB      Sperren gewartet 0; Zeilen angesehen 708, Seiten gelesen 704; geänderte Zeilen 109, vergessen 0
   12.200000000  DB      Nach Abstürzen: 1 Mal, zuletzt 0 ms, verlorene Commits 0
   12.200000000  DB      Antwortzeit p50 51 µs, p95 82 µs, p99 82 µs
   12.200000000  --      run 10ms
   12.210000000  ok      expect DB output contains "verlorene Commits 0"
-  13.000000000  ok      expect GEN svc load metric ok >= 400 (575)
+  13.000000000  ok      expect GEN svc load metric ok >= 400 (600)
 # 30 von 30 Erwartungen erfüllt
