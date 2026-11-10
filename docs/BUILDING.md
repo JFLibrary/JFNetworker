@@ -40,6 +40,7 @@ target/debug/jfn-sim.exe course-install academy beispiel --into build/kurse   # 
 python tools/academy_e2e.py                                      # Installieren über echtes HTTP gegen einen Server auf diesem Rechner
 target/debug/jfn-sim.exe decode "ff ff ff ff ff ff 02 4a 00 00 01 01 08 06 ..."
 target/debug/jfn-sim.exe gen 500 --out build/campus.jfnet
+target/debug/jfn-sim.exe catalog --out build/catalog.json   # Modelle und Kabelarten als JSON (für die Docs der Website)
 target/debug/jfn-sim.exe rewind tests/fixtures/lab_window.jfnet 60   # Keyframes und Zeit zum Zurückspulen
 target/debug/JFNetworker.exe tests/fixtures/two_pcs.jfnet --scenario tests/scen/two_pcs.scn
 python tools/i18n.py                                        # jeder Text hat sein Englisch (JFLibs i18n_check aus ../JFLib)

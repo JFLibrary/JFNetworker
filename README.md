@@ -156,8 +156,9 @@ target/x86_64-unknown-linux-gnu/debug/JFNetworker
 ### jfn-sim
 
 `jfn-sim` is JFNetworker without a window: it runs scenarios against projects and compares their
-reports, checks projects and courses, decodes frames, installs courses and runs experiments at full
-speed on several threads.
+reports, checks projects and courses, decodes frames, installs courses, runs experiments at full
+speed on several threads and exports the device models and cable kinds as JSON (`jfn-sim catalog`,
+the facts of the docs on networker.jfreund.org).
 
 ```sh
 cargo run -p jfn-sim -- run tests/fixtures/lan_router.jfnet --scenario tests/scen/lan_router.scn

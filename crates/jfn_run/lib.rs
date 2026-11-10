@@ -50,6 +50,7 @@
 
 extern crate alloc;
 
+pub mod catalog;
 pub mod install;
 
 use alloc::boxed::Box;
@@ -449,6 +450,7 @@ pub fn main(args: &[String]) -> i32 {
         Some("course-list") => install::cli_list(&args[2..]),
         Some("course-remove") => install::cli_remove(&args[2..]),
         Some("decode") if args.len() > 2 => decode(&args[2..].join(" ")),
+        Some("catalog") => catalog::catalog(&args[2..]),
         Some("gen") => generate(&args[2..]),
         Some("rewind") => rewind(&args[2..]),
         Some("sweep") => sweep(&args[2..]),
