@@ -1,0 +1,5 @@
+#!args tests/fixtures/lab_shards.jfnet --scenario tests/scen/lab_en.scn --golden tests/scen/lab_en.report --lang en
+# golden scenario of the lab's console tools in English (--lang en: Engine::console_lang): lbctl and kvctl
+# on the shards of lab_shards.jfnet, a node that fails, the usage and a refusal, with English words, decimal
+# points and aligned tables; the report's own words stay German.  The report must equal
+# tests/scen/lab_en.report byte for byte on every target (the script itself is not run)

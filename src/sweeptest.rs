@@ -382,6 +382,13 @@ fn clone_and_threads(t: &mut T) {
     t.eq("1 and 8 threads: the details", one.detail_csv(), eight.detail_csv());
     t.eq("without workers: the same", one.csv(), seq.csv());
     t.check("the table says what it is", one.table().contains("Klone") && one.table().contains("angenommene Preise"));
+    // jfn-sim sweep --lang en: the same table in English, German by default
+    let en = one.table_in(jfn_model::msg::Lang::En);
+    t.eq("the table in German is table()", one.table_in(jfn_model::msg::Lang::De), one.table());
+    t.check(&format!("the table in English: {}", en), en.starts_with("# JFNetworker experiment ") && en.contains("\n# Configurations: 3, load levels: 4, seeds: ") && en.contains("assumed prices") && en.contains("\nSummary\nConfiguration ") && en.contains("limited by\n"));
+    t.check("the table in English: the head of a configuration", en.contains("\nLoad   ") && en.contains("  reached/s  ") && en.contains("  Errors %  ") && en.contains("  Bottleneck\n"));
+    t.check("the table in English: no German head left", !en.contains("Zusammenfassung") && !en.contains("Engpass") && !en.contains("Konfigurationen") && !en.contains("angenommene"));
+    t.eq("the table in English: as many lines", en.lines().count(), one.table().lines().count());
     t.check("a CSV is regular", {
         let csv = one.csv();
         let n = csv.lines().next().map_or(0, |h| h.split(',').count());

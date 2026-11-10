@@ -1,0 +1,100 @@
+# JFNetworker-Szenario units_en.scn: „Einheiten und Bereitstellung“, 6 Geräte, 5 Verbindungen, Seed 11
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/5 is up
+   0.000000000  --      run 500ms
+   0.500000000  DEV1    root@DEV1:~# systemctl list-units --all
+   0.500000000  DEV1    Unit              Source  Active    Sub   Description
+   0.500000000  DEV1    braucht.service   File    inactive  dead  Braucht web
+   0.500000000  DEV1    crash.service     File    inactive  dead  Stürzt ab
+   0.500000000  DEV1    kaputt.service    Error   inactive  dead  Ohne Programm
+   0.500000000  DEV1    once.service      File    inactive  dead
+   0.500000000  DEV1    statisch.service  File    inactive  dead  Fertiger Webserver
+   0.500000000  DEV1    web.service       File    inactive  dead  Der Webdienst
+   0.500000000  DEV1    6 units
+   0.500000000  DEV1    root@DEV1:~# systemctl list-unit-files
+   0.500000000  DEV1    Unit              At boot   File
+   0.500000000  DEV1    braucht.service   static    /etc/systemd/system/braucht.service
+   0.500000000  DEV1    crash.service     static    /etc/systemd/system/crash.service
+   0.500000000  DEV1    kaputt.service    static    /etc/systemd/system/kaputt.service
+   0.500000000  DEV1    once.service      disabled  /etc/systemd/system/once.service
+   0.500000000  DEV1    statisch.service  disabled  /etc/systemd/system/statisch.service
+   0.500000000  DEV1    web.service       disabled  /etc/systemd/system/web.service
+   0.500000000  DEV1    6 units
+   0.500000000  DEV1    root@DEV1:~# systemctl start web
+   0.500000000  --      run 100ms
+   0.600000000  ok      expect DEV1 unit web active
+   0.600000000  DEV1    root@DEV1:~# systemctl status web
+   0.600000000  DEV1    web.service: Der Webdienst
+   0.600000000  DEV1      State:     running (active/running) since 500.000 ms
+   0.600000000  DEV1      Source:    /etc/systemd/system/web.service (at boot: disabled)
+   0.600000000  DEV1      Program:   jfs /root/app/server.jfs
+   0.600000000  DEV1      Restart:   on-failure after 2 s, 0 so far
+   0.600000000  DEV1      PID:       101
+   0.600000000  DEV1    
+   0.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: web.service: started: jfs /root/app/server.jfs
+   0.600000000  DEV1    Dec 31 23:59:58 DEV1 web: bereit, Version 2
+   0.600000000  ok      expect DEV1 output contains "State:     running (active/running) since 500.000 ms"
+   0.600000000  DEV1    root@DEV1:~# journalctl -u web
+   0.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: web.service: started: jfs /root/app/server.jfs
+   0.600000000  DEV1    Dec 31 23:59:58 DEV1 web: bereit, Version 2
+   0.600000000  ok      expect DEV1 output contains "systemd: web.service: started: jfs /root/app/server.jfs"
+   0.600000000  DEV1    root@DEV1:~# systemctl start crash
+   0.600000000  --      run 2s
+   2.600000000  DEV1    root@DEV1:~# systemctl status crash
+   2.600000000  DEV1    crash.service: Stürzt ab
+   2.600000000  DEV1      State:     running (active/running) since 2.100 s
+   2.600000000  DEV1      Source:    /etc/systemd/system/crash.service (at boot: static)
+   2.600000000  DEV1      Program:   jfs /root/app/crash.jfs
+   2.600000000  DEV1      Restart:   on-failure after 1 s, 1 so far
+   2.600000000  DEV1      PID:       102
+   2.600000000  DEV1    
+   2.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: crash.service: started: jfs /root/app/crash.jfs
+   2.600000000  DEV1    Dec 31 23:59:58 DEV1 crash: gestartet
+   2.600000000  DEV1    Dec 31 23:59:59 DEV1 crash: Fehler in /root/app/crash.jfs, Zeile 3, Spalte 3 (timer): kaputt
+   2.600000000  DEV1    Dec 31 23:59:59 DEV1 systemd: crash.service: ended with status 1
+   2.600000000  DEV1    Dec 31 23:59:59 DEV1 systemd: crash.service: restart in 1.000 s
+   2.600000000  DEV1    Jan  1 00:00:00 DEV1 systemd: crash.service: started: jfs /root/app/crash.jfs
+   2.600000000  DEV1    Jan  1 00:00:00 DEV1 crash: gestartet
+   2.600000000  ok      expect DEV1 output contains "on-failure after 1 s, 1 so far"
+   2.600000000  DEV1    root@DEV1:~# journalctl -u crash -n 3
+   2.600000000  DEV1    Dec 31 23:59:59 DEV1 systemd: crash.service: restart in 1.000 s
+   2.600000000  DEV1    Jan  1 00:00:00 DEV1 systemd: crash.service: started: jfs /root/app/crash.jfs
+   2.600000000  DEV1    Jan  1 00:00:00 DEV1 crash: gestartet
+   2.600000000  ok      expect DEV1 output contains "restart in 1.000 s"
+   2.600000000  DEV1    root@DEV1:~# systemctl start nix
+   2.600000000  DEV1    systemctl start: The unit nix.service does not exist.
+   2.600000000  DEV1    root@DEV1:~# systemctl start kaputt
+   2.600000000  DEV1    systemctl start: [Service] needs ExecStart. (systemctl status kaputt.service, journalctl -u kaputt.service)
+   2.600000000  DEV1    root@DEV1:~# systemctl status kaputt
+   2.600000000  DEV1    kaputt.service: Ohne Programm
+   2.600000000  DEV1      State:     Error (failed/failed) since 2.600 s
+   2.600000000  DEV1      Source:    /etc/systemd/system/kaputt.service (at boot: static)
+   2.600000000  DEV1      Program:   
+   2.600000000  DEV1      Restart:   no
+   2.600000000  DEV1      Reason:    [Service] needs ExecStart.
+   2.600000000  DEV1      Warning: Line 3: there is no Quatsch here, the line does not count.
+   2.600000000  DEV1      Warning: Line 6: there is no Restart=manchmal here (no, on-failure, always).
+   2.600000000  DEV1      Error: [Service] needs ExecStart.
+   2.600000000  DEV1    
+   2.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: kaputt.service: Line 3: there is no Quatsch here, the line does not count.
+   2.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: kaputt.service: Line 6: there is no Restart=manchmal here (no, on-failure, always).
+   2.600000000  DEV1    Dec 31 23:59:58 DEV1 systemd: kaputt.service: [Service] needs ExecStart.
+   2.600000000  DEV1    Jan  1 00:00:00 DEV1 systemd: kaputt.service: start failed: [Service] needs ExecStart.
+   2.600000000  ok      expect DEV1 output contains "Reason:    [Service] needs ExecStart."
+   2.600000000  DEV1    root@DEV1:~# systemctl status
+   2.600000000  DEV1    DEV1: 6 units, 2 running, 1 failed
+   2.600000000  DEV1    root@DEV1:~# systemctl stop web crash
+   2.600000000  DEV1    root@DEV1:~# systemctl frob
+   2.600000000  DEV1    systemctl: the command frob is unknown (systemctl --help)
+   2.600000000  DEV1    root@DEV1:~# journalctl -u nix
+   2.600000000  DEV1    No lines.
+   2.600000000  --      run 100ms
+# 6 von 6 Erwartungen erfüllt

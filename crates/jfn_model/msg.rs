@@ -18,6 +18,11 @@
 //   dur(ns)                    a span of time: "1,250 s", "3,200 ms", "450 µs", "12 ns" in
 //                              German (as fmt_ns of the trace), "1.250 s" in English
 //   list(items)                items joined by "{}, {}" (a separator a language may change)
+//   Lang / en(tpl) / text_in   the language of what the simulator writes itself (its console
+//                              tools, jfn-sim's tables): German, or English from the rows of
+//                              src/locales/engine.tsv, which this crate embeds (en: a German
+//                              template's English, the template itself without a row), so the
+//                              simulator needs no catalogue from the app
 //
 // Placeholders: "{}" takes the next argument, "{0}" .. "{9}" a given one, so a translation may
 // reorder them ("{}" counts only the "{}" before it, as in format!); "{{" and "}}" are braces.
@@ -29,7 +34,7 @@
 // msg! calls) registers the templates of nested messages, so text_with can give the app's
 // lookup the 'static key it needs.
 
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -75,6 +80,13 @@ impl Msg {
     pub fn text_with(&self, tr: &dyn Fn(&'static str) -> &'static str) -> String {
         render(tr(self.tpl), &self.args, Some(tr))
     }
+    /// the text in `lang`: German as text(), English from the rows of engine.tsv (en)
+    pub fn text_in(&self, lang: Lang) -> String {
+        match lang {
+            Lang::De => self.text(),
+            Lang::En => self.text_with(&en),
+        }
+    }
     /// this message as the argument of another one, translated with it (msg! does this for
     /// Msg arguments)
     pub fn arg(&self) -> String {
@@ -117,6 +129,50 @@ pub fn dur(ns: i64) -> Msg {
     } else {
         crate::msg!("{} ns", format!("{}{}", sign, a))
     }
+}
+
+/// the language of the texts the simulator writes itself: its console tools (lbctl, systemctl
+/// ...) and jfn-sim's tables; German is the source
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Lang {
+    #[default]
+    De,
+    En,
+}
+
+impl Lang {
+    /// "de" or "en", also with a region ("en-US"; jfn-sim's --lang); None for anything else
+    pub fn parse(s: &str) -> Option<Lang> {
+        let code = s.trim().split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        match code.as_str() {
+            "de" => Some(Lang::De),
+            "en" => Some(Lang::En),
+            _ => None,
+        }
+    }
+}
+
+// the catalogue of the model's and the simulator's texts (German TAB English), and its rows as
+// a map once English is first asked for
+static ENGINE_TSV: &str = include_str!("../../src/locales/engine.tsv");
+static EN: rt::sync::SpinLock<Option<BTreeMap<&'static str, &'static str>>> = rt::sync::SpinLock::new(None);
+
+/// a German template's English (its row in src/locales/engine.tsv); the template itself when the
+/// catalogue has none
+pub fn en(tpl: &'static str) -> &'static str {
+    let mut g = EN.lock();
+    let map = g.get_or_insert_with(|| {
+        let mut map = BTreeMap::new();
+        for line in ENGINE_TSV.lines().skip(1).filter(|l| !l.starts_with('#')) {
+            if let Some((de, en)) = line.split_once('\t')
+                && !en.is_empty()
+            {
+                map.insert(de, en);
+            }
+        }
+        map
+    });
+    map.get(tpl).copied().unwrap_or(tpl)
 }
 
 /// items joined by ", " ("{}, {}" in the catalogue); nothing for no items

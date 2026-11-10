@@ -1,0 +1,28 @@
+# Die Konsole auf Englisch (jfn-sim run --lang en, das GUI-Programm mit --lang en): die eigenen
+# Werkzeuge der Linux-Shell schreiben englisch, systemctl und journalctl auf DEV1; die Wörter des
+# Originals (active, running, disabled) bleiben, der Bericht selbst bleibt deutsch.
+run 500ms
+DEV1: systemctl list-units --all
+DEV1: systemctl list-unit-files
+DEV1: systemctl start web
+run 100ms
+expect DEV1 unit web active
+DEV1: systemctl status web
+expect DEV1 output contains "State:     running (active/running) since 500.000 ms"
+DEV1: journalctl -u web
+expect DEV1 output contains "systemd: web.service: started: jfs /root/app/server.jfs"
+DEV1: systemctl start crash
+run 2s
+DEV1: systemctl status crash
+expect DEV1 output contains "on-failure after 1 s, 1 so far"
+DEV1: journalctl -u crash -n 3
+expect DEV1 output contains "restart in 1.000 s"
+DEV1: systemctl start nix
+DEV1: systemctl start kaputt
+DEV1: systemctl status kaputt
+expect DEV1 output contains "Reason:    [Service] needs ExecStart."
+DEV1: systemctl status
+DEV1: systemctl stop web crash
+DEV1: systemctl frob
+DEV1: journalctl -u nix
+run 100ms

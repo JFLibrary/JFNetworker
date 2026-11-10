@@ -4,6 +4,9 @@
 //
 //   run_scenario(&Project, &Scenario, name) -> Outcome { report, ok, expects, failed, pcap,
 //   series }
+//   run_scenario_in(.., lang)              the same with the console's own tools in `lang`
+//                                         (Engine::console_lang; jfn-sim run --lang en); the
+//                                         report's own words stay German
 //   start_actions(&Project, &Engine) -> (actions, refusals)   the faults a project's lab starts with
 //                                         (AK2, Lab::start_faults), with their names resolved
 //
@@ -368,6 +371,11 @@ fn svc_config(p: &Project, dev: &str, svc: &str, sets: &[(String, String)]) -> R
 
 /// runs a scenario against a project (`pcap`: capture also without a "pcap" step)
 pub fn run_scenario(p: &Project, sc: &Scenario, name: &str, pcap: bool) -> Outcome {
+    run_scenario_in(p, sc, name, pcap, jfn_model::msg::Lang::De)
+}
+
+/// run_scenario with the console's own tools (lbctl, systemctl ...) in `lang`
+pub fn run_scenario_in(p: &Project, sc: &Scenario, name: &str, pcap: bool, lang: jfn_model::msg::Lang) -> Outcome {
     let force_pcap = pcap;
     let mut proj = p.clone();
     if let Some(s) = sc.seed {
@@ -380,7 +388,7 @@ pub fn run_scenario(p: &Project, sc: &Scenario, name: &str, pcap: bool) -> Outco
     let who = names.values().map(|n| n.chars().count()).max().unwrap_or(0).max(6);
     let mut r = Rep { s: String::new(), who, part: BTreeMap::new(), since: BTreeMap::new(), names };
     r.s.push_str(&format!("# JFNetworker-Szenario {}: \u{201e}{}\u{201c}, {} Geräte, {} Verbindungen, Seed {}\n", name, proj.title, proj.devices.len(), proj.links.len(), proj.seed));
-    let eng = match Engine::from_project(&proj) {
+    let eng = match Engine::from_project_in(&proj, lang) {
         Ok(e) => e,
         Err(e) => {
             r.s.push_str(&format!("# Das Projekt läuft nicht: {}\n", e));

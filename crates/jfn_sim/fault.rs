@@ -593,6 +593,17 @@ pub fn ppm_text(ppm: u32) -> String {
     }
 }
 
+/// ppm_text as a message: "0,5 %" takes the language's decimal mark
+pub fn ppm_msg(ppm: u32) -> Msg {
+    if ppm % 10_000 == 0 {
+        Msg::plain(format!("{} %", ppm / 10_000))
+    } else if ppm % 1000 == 0 {
+        msg!("{},{} %", ppm / 10_000, ppm % 10_000 / 1000)
+    } else {
+        Msg::plain(format!("{} ppm", ppm))
+    }
+}
+
 /// "5 % Verlust", "0,5 % Verlust", "250 ppm Verlust" (ppm_text with "Verlust" as a message)
 fn loss_msg(ppm: u32) -> Msg {
     if ppm % 10_000 == 0 {

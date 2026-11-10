@@ -12,6 +12,7 @@
 //   ap_bands(model) / client_bands(model)   the bands of a model's radios (B_* bits)
 //   range_m(model, band)                 how far an access point of the model reaches
 //   radio_port(model, band)              the port of the access point that sends on a band
+//   radio_bands(model, port)             the bands an access point's radio port sends on
 //   channels(band) / freq_mhz(band, ch) / default_channel(band) / channel_of(net)
 //   scan_channels(band)                  the channels a station listens on when it scans
 //   band_max_kbps(band)                  the fastest rate of a band (802.11ax, two streams)
@@ -241,6 +242,11 @@ pub fn radio_port(m: &Model, band: Band) -> Option<String> {
     }
     let i = band.index().min(radios.len() - 1);
     radios.into_iter().nth(i)
+}
+
+/// the bands an access point's radio port sends on (radio_port backwards; none for another port)
+pub fn radio_bands(m: &Model, port: &str) -> Vec<Band> {
+    [Band::G24, Band::G5, Band::G6].into_iter().filter(|b| ap_bands(m) & b.bit() != 0 && radio_port(m, *b).as_deref() == Some(port)).collect()
 }
 
 /// the radio port of a station (its first radio client port)

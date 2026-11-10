@@ -522,7 +522,15 @@ impl Engine {
                 && !serial
                 && kind.is_none_or(|k| matches!(k, IfKind::Port(_)))
             {
-                let mut media = if p.spec.media == Media::Rj45 { String::from("RJ45") } else { format!("{} {}", speed_str(p.spec.kbps), p.spec.media.name()) };
+                // a radio: the bands it sends on (its speed is no band: "2.4G" on a 5 GHz radio)
+                let mut media = match p.spec.media {
+                    Media::Rj45 => String::from("RJ45"),
+                    Media::RadioAp | Media::RadioClient => {
+                        let bands: Vec<&str> = jfn_model::wlan::radio_bands(n.model, &p.spec.name).into_iter().map(|b| jfn_model::msg::en(b.title())).collect();
+                        if bands.is_empty() { String::from("WLAN radio") } else { format!("WLAN radio {}", bands.join("/")) }
+                    }
+                    m => format!("{} {}", speed_str(p.spec.kbps), jfn_model::msg::en(m.name())),
+                };
                 // what the cable adds: DAC, AOC, its category
                 if let Some((li, l)) = cable {
                     match l.cable {
@@ -876,7 +884,8 @@ impl Engine {
             uptime.push_str(&format!("{} hour{}, ", h, if h == 1 { "" } else { "s" }));
         }
         uptime.push_str(&format!("{} minute{}", m, if m == 1 { "" } else { "s" }));
-        let mut s = format!("JFNetworker device software 1.0 for the {} ({})\n{} is up for {}\nImage: flash:{}.bin\n\nPorts:\n", n.model.name, n.model.title, n.name, uptime, n.model.id);
+        // (IOS output is English in both languages: the model's title from the catalogue's rows)
+        let mut s = format!("JFNetworker device software 1.0 for the {} ({})\n{} is up for {}\nImage: flash:{}.bin\n\nPorts:\n", n.model.name, jfn_model::msg::en(n.model.title), n.name, uptime, n.model.id);
         let mut kinds: Vec<(String, usize)> = Vec::new();
         for p in &n.ports {
             let k = match p.spec.media {

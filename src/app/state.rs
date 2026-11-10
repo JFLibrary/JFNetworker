@@ -142,6 +142,7 @@ impl Net {
         crate::app::tr::install();
         self.prefs = Prefs::open(ui.headless());
         self.prefs.apply(ui);
+        self.doc.sim.follow_lang();
         self.sim.tempo = self.prefs.tempo;
         self.doc.proj.layout.grid = self.prefs.grid_step;
         if !ui.headless() {

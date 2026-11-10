@@ -22,11 +22,16 @@
 // Scripts as units write their print output into the log as well.
 //
 // Tab: "systemctl " offers the verbs, after them the units of the device.  Errors go to stderr.
+// The texts are messages in the console's language (Engine::console_lang: German by default,
+// English with the rows of engine.tsv); the words of the originals (active, running, disabled,
+// on-failure) stay as they are in both.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use jfn_model::msg;
+use jfn_model::msg::{dur, phrase, Msg};
 use jfn_model::unit;
 
 use super::lab::table;
@@ -34,7 +39,6 @@ use super::print::JobOut;
 use super::CliJob;
 use crate::kernel::Engine;
 use crate::os::{bsd_stamp, LogLine};
-use crate::trace::fmt_ns;
 use crate::units::{unit_journal, UnitEnabled, UnitErr, UnitOp, UnitState, UnitView};
 
 const VERBS: &[&str] = &["start", "stop", "restart", "status", "enable", "disable", "is-active", "is-failed", "is-enabled", "list-units", "list-unit-files", "daemon-reload", "reset-failed", "cat"];
@@ -77,6 +81,18 @@ impl Engine {
         self.sh_err(ni, text)
     }
 
+    /// sc_err with a message in the console's language
+    fn sc_no(&mut self, ni: usize, code: i32, m: Msg) -> Result<(), String> {
+        let t = format!("{}\n", self.tx(&m));
+        self.sc_err(ni, code, &t)
+    }
+
+    /// "systemctl VERB: why" (and what may follow it, untranslated)
+    fn sc_refused(&mut self, ni: usize, code: i32, verb: &str, why: &Msg, more: &str) -> Result<(), String> {
+        let t = format!("systemctl {}: {}{}\n", verb, self.tx(why), more);
+        self.sc_err(ni, code, &t)
+    }
+
     /// systemctl VERB ...
     pub(crate) fn sh_systemctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let (mut quiet, mut now, mut all, mut failed) = (false, false, false, false);
@@ -98,7 +114,7 @@ impl Engine {
                     i += 1;
                     lines = args.get(i).and_then(|n| n.parse().ok()).unwrap_or(STATUS_LINES);
                 }
-                o if o.starts_with('-') => return self.sc_err(ni, 1, &format!("systemctl: die Option {} kenne ich nicht\n", o)),
+                o if o.starts_with('-') => return self.sc_no(ni, 1, msg!("systemctl: die Option {} kenne ich nicht", o)),
                 w => words.push(w),
             }
             i += 1;
@@ -106,7 +122,7 @@ impl Engine {
         let verb = words.first().copied().unwrap_or("list-units");
         let rest = if words.is_empty() { &[][..] } else { &words[1..] };
         if !VERBS.contains(&verb) {
-            return self.sc_err(ni, 1, &format!("systemctl: den Befehl {} kenne ich nicht (systemctl --help)\n", verb));
+            return self.sc_no(ni, 1, msg!("systemctl: den Befehl {} kenne ich nicht (systemctl --help)", verb));
         }
         let names = self.units_of(ni, rest);
         let dev = self.dev_of(ni);
@@ -121,7 +137,8 @@ impl Engine {
             }
             "daemon-reload" => {
                 self.units_reload(ni);
-                self.os_log(ni, 6, crate::units::LOG_TAG, "Einheiten neu gelesen", None);
+                let t = self.tx(&phrase("Einheiten neu gelesen"));
+                self.os_log(ni, 6, crate::units::LOG_TAG, &t, None);
                 Ok(())
             }
             "reset-failed" => {
@@ -138,7 +155,7 @@ impl Engine {
                 Ok(())
             }
             "status" => self.sc_status(ni, &names, lines),
-            _ if names.is_empty() => self.sc_err(ni, 1, &format!("systemctl {}: welche Einheit? (systemctl {} NAME)\n", verb, verb)),
+            _ if names.is_empty() => self.sc_no(ni, 1, msg!("systemctl {}: welche Einheit? (systemctl {} NAME)", verb, verb)),
             "start" | "stop" | "restart" => {
                 let op = match verb {
                     "start" => UnitOp::Start,
@@ -150,7 +167,7 @@ impl Engine {
                     if let Err(e) = self.unit_op(dev, n, op) {
                         let code = if matches!(e, UnitErr::NotFound(_)) { 5 } else { 1 };
                         let hint = if matches!(e, UnitErr::Failed(_)) { format!(" (systemctl status {}, journalctl -u {})", n, n) } else { String::new() };
-                        let r = self.sc_err(ni, code, &format!("systemctl {}: {}{}\n", verb, e.msg().text(), hint));
+                        let r = self.sc_refused(ni, code, verb, &e.msg(), &hint);
                         if first.is_ok() {
                             first = r;
                         }
@@ -168,23 +185,25 @@ impl Engine {
                             if files.is_empty() && on {
                                 let has = self.unit_enabled(ni, n) == Some(UnitEnabled::Enabled);
                                 if !has {
-                                    self.out(ni, &format!("{} hat kein [Install] mit WantedBy=: nichts einzuschalten.\n", n));
+                                    let t = format!("{}\n", self.tx(&msg!("{} hat kein [Install] mit WantedBy=: nichts einzuschalten.", n)));
+                                    self.out(ni, &t);
                                 }
                             }
                             for f in files {
-                                self.out(ni, &if on { format!("eingeschaltet: {}\n", f) } else { format!("ausgeschaltet: {}\n", f) });
+                                let t = format!("{}\n", self.tx(&if on { msg!("eingeschaltet: {}", f) } else { msg!("ausgeschaltet: {}", f) }));
+                                self.out(ni, &t);
                             }
                             if now {
                                 let op = if on { UnitOp::Start } else { UnitOp::Stop };
                                 if let Err(e) = self.unit_op(dev, n, op)
                                     && first.is_ok()
                                 {
-                                    first = self.sc_err(ni, 1, &format!("systemctl {}: {}\n", verb, e.msg().text()));
+                                    first = self.sc_refused(ni, 1, verb, &e.msg(), "");
                                 }
                             }
                         }
                         Err(e) => {
-                            let r = self.sc_err(ni, 1, &format!("systemctl {}: {}\n", verb, e.msg().text()));
+                            let r = self.sc_refused(ni, 1, verb, &e.msg(), "");
                             if first.is_ok() {
                                 first = r;
                             }
@@ -231,9 +250,12 @@ impl Engine {
                             let tail = if t.ends_with('\n') { "" } else { "\n" };
                             self.out(ni, &format!("# {}\n{}{}", unit::path_of(n), t, tail));
                         }
-                        (None, Some(u)) => self.out(ni, &format!("# erzeugt: ein Dienst des Projekts\n[Service]\nExecStart=jfn-service {}\n", u.exec)),
+                        (None, Some(u)) => {
+                            let t = format!("# {}\n[Service]\nExecStart=jfn-service {}\n", self.tx(&phrase("erzeugt: ein Dienst des Projekts")), u.exec);
+                            self.out(ni, &t);
+                        }
                         (None, None) => {
-                            let r = self.sc_err(ni, 1, &format!("systemctl cat: {}\n", UnitErr::NotFound(n.clone()).msg().text()));
+                            let r = self.sc_refused(ni, 1, "cat", &UnitErr::NotFound(n.clone()).msg(), "");
                             if first.is_ok() {
                                 first = r;
                             }
@@ -251,34 +273,41 @@ impl Engine {
         let dev = self.dev_of(ni);
         let units: Vec<UnitView> = self.units(dev).into_iter().filter(|u| if failed { u.state == UnitState::Failed } else { all || u.state != UnitState::Inactive }).collect();
         if units.is_empty() {
-            self.out(ni, "Keine Einheiten in diesem Zustand (--all zeigt alle).\n");
+            let t = format!("{}\n", self.tx(&phrase("Keine Einheiten in diesem Zustand (--all zeigt alle).")));
+            self.out(ni, &t);
             return;
         }
-        let mut rows = alloc::vec![super::lab::row(&["Einheit", "Quelle", "Aktiv", "Im Detail", "Beschreibung"])];
+        let mut rows = alloc::vec![self.head(phrase("Einheit|Quelle|Aktiv|Im Detail|Beschreibung"))];
         for u in &units {
             let src = match (u.bad, u.file.is_some()) {
-                (true, _) => "Fehler",
-                (_, true) => "Datei",
-                _ => "Projekt",
+                (true, _) => phrase("Fehler"),
+                (_, true) => phrase("Datei"),
+                _ => phrase("Projekt"),
             };
-            rows.push(alloc::vec![u.name.clone(), String::from(src), String::from(u.state.active_word()), String::from(u.state.sub_word()), u.description.clone()]);
+            rows.push(alloc::vec![u.name.clone(), self.tx(&src), String::from(u.state.active_word()), String::from(u.state.sub_word()), u.description.clone()]);
         }
         let n = units.len();
         let mut s = table(&rows);
-        s.push_str(&if n == 1 { String::from("1 Einheit\n") } else { format!("{} Einheiten\n", n) });
+        s.push_str(&self.tx(&if n == 1 { phrase("1 Einheit") } else { msg!("{} Einheiten", n) }));
+        s.push('\n');
         self.out(ni, &s);
     }
 
     /// list-unit-files: our own table
     fn sc_files(&mut self, ni: usize) {
         let dev = self.dev_of(ni);
-        let mut rows = alloc::vec![super::lab::row(&["Einheit", "Beim Start", "Datei"])];
+        let mut rows = alloc::vec![self.head(phrase("Einheit|Beim Start|Datei"))];
         let units = self.units(dev);
         for u in &units {
-            rows.push(alloc::vec![u.name.clone(), String::from(u.enabled.word()), u.file.clone().unwrap_or_else(|| String::from("(aus dem Projekt)"))]);
+            let file = match &u.file {
+                Some(f) => f.clone(),
+                None => format!("({})", self.tx(&phrase("aus dem Projekt"))),
+            };
+            rows.push(alloc::vec![u.name.clone(), String::from(u.enabled.word()), file]);
         }
         let mut s = table(&rows);
-        s.push_str(&format!("{} Einheiten\n", units.len()));
+        s.push_str(&self.tx(&msg!("{} Einheiten", units.len())));
+        s.push('\n');
         self.out(ni, &s);
     }
 
@@ -287,10 +316,10 @@ impl Engine {
         let dev = self.dev_of(ni);
         let host = self.host(ni);
         if names.is_empty() {
-            let mut s = format!("{}: {} Einheiten", host, self.units(dev).len());
-            let failed = self.units(dev).iter().filter(|u| u.state == UnitState::Failed).count();
-            let up = self.units(dev).iter().filter(|u| u.state == UnitState::Active).count();
-            s.push_str(&format!(", {} laufen, {} mit Fehler\n", up, failed));
+            let all = self.units(dev);
+            let failed = all.iter().filter(|u| u.state == UnitState::Failed).count();
+            let up = all.iter().filter(|u| u.state == UnitState::Active).count();
+            let s = format!("{}\n", self.tx(&msg!("{}: {} Einheiten, {} laufen, {} mit Fehler", host, all.len(), up, failed)));
             self.out(ni, &s);
             return Ok(());
         }
@@ -300,49 +329,64 @@ impl Engine {
                 self.out(ni, "\n");
             }
             let Some(u) = self.unit(dev, n) else {
-                self.err_out(ni, &format!("{}\n", UnitErr::NotFound(n.clone()).msg().text()));
+                let t = format!("{}\n", self.tx(&UnitErr::NotFound(n.clone()).msg()));
+                self.err_out(ni, &t);
                 code = code.max(4);
                 continue;
             };
             let word = match u.state {
-                UnitState::Active => "läuft",
-                UnitState::Inactive => "gestoppt",
-                UnitState::Failed => "Fehler",
-                UnitState::AutoRestart => "wartet auf den Neustart",
+                UnitState::Active => phrase("läuft"),
+                UnitState::Inactive => phrase("gestoppt"),
+                UnitState::Failed => phrase("Fehler"),
+                UnitState::AutoRestart => phrase("wartet auf den Neustart"),
             };
             let mut s = String::new();
             let d = if u.description.is_empty() { String::new() } else { format!(": {}", u.description) };
             s.push_str(&format!("{}{}\n", u.name, d));
+            // a line of the layout: its label, the value from the 14th column on
+            let line = |s: &mut String, label: Msg, value: &str| {
+                let l = format!("{}:", self.tx(&label));
+                s.push_str(&format!("  {:<11}{}\n", l, value));
+            };
             // (nothing ever happened to a unit that never ran)
-            let since = if u.state == UnitState::Inactive && u.since == 0 { String::new() } else { format!(" seit {}", fmt_ns(u.since as i64)) };
-            s.push_str(&format!("  Zustand:   {} ({}/{}){}\n", word, u.state.active_word(), u.state.sub_word(), since));
-            s.push_str(&format!("  Quelle:    {} (beim Start: {})\n", u.file.as_deref().unwrap_or("aus dem Projekt"), u.enabled.word()));
+            let state = if u.state == UnitState::Inactive && u.since == 0 {
+                msg!("{} ({}/{})", word, u.state.active_word(), u.state.sub_word())
+            } else {
+                msg!("{} ({}/{}) seit {}", word, u.state.active_word(), u.state.sub_word(), dur(u.since as i64))
+            };
+            line(&mut s, phrase("Zustand"), &self.tx(&state));
+            let src = match &u.file {
+                Some(f) => Msg::plain(f.clone()),
+                None => phrase("aus dem Projekt"),
+            };
+            line(&mut s, phrase("Quelle"), &self.tx(&msg!("{} (beim Start: {})", src, u.enabled.word())));
             if u.file.is_some() {
-                s.push_str(&format!("  Programm:  {}\n", u.exec));
+                line(&mut s, phrase("Programm"), &u.exec);
                 match u.restart {
-                    unit::Restart::No => s.push_str("  Neustart:  no\n"),
-                    r => s.push_str(&format!("  Neustart:  {} nach {}, bisher {}\n", r.as_str(), crate::units::span_text(u.restart_ns), u.restarts)),
+                    unit::Restart::No => line(&mut s, phrase("Neustart"), "no"),
+                    r => line(&mut s, phrase("Neustart"), &self.tx(&msg!("{} nach {}, bisher {}", r.as_str(), crate::units::span_text(u.restart_ns), u.restarts))),
                 }
             } else {
-                s.push_str(&format!("  Art:       {}\n", u.exec));
+                line(&mut s, phrase("Art"), &u.exec);
             }
             if !u.requires.is_empty() {
-                s.push_str(&format!("  Braucht:   {}\n", u.requires.join(", ")));
+                line(&mut s, phrase("Braucht"), &u.requires.join(", "));
             }
             if let Some(p) = u.pid {
-                s.push_str(&format!("  PID:       {}\n", p));
+                line(&mut s, phrase("PID"), &format!("{}", p));
             }
             if let Some(x) = u.exit {
-                s.push_str(&format!("  Status:    {}\n", x));
+                line(&mut s, phrase("Status"), &format!("{}", x));
             }
             if let Some(w) = &u.why {
-                s.push_str(&format!("  Grund:     {}\n", w));
+                line(&mut s, phrase("Grund"), w);
             }
             if u.changed {
-                s.push_str("  Achtung:   die Datei ist neuer, systemctl daemon-reload liest sie\n");
+                line(&mut s, phrase("Achtung"), &self.tx(&phrase("die Datei ist neuer, systemctl daemon-reload liest sie")));
             }
             for i in &u.issues {
-                s.push_str(&format!("  {}: {}\n", if i.error { "Fehler" } else { "Warnung" }, i.msg.text()));
+                let kind = if i.error { phrase("Fehler") } else { phrase("Warnung") };
+                s.push_str(&format!("  {}: {}\n", self.tx(&kind), self.tx(&i.msg)));
             }
             let log = self.journal_lines(ni, Some(n), 0);
             if !log.is_empty() && lines > 0 {
@@ -377,7 +421,8 @@ impl Engine {
                     i += 1;
                     let Some(n) = args.get(i) else {
                         self.sh_set_code(ni, 1);
-                        return self.sh_err(ni, "journalctl: -u braucht den Namen einer Einheit\n");
+                        let t = format!("{}\n", self.tx(&msg!("journalctl: -u braucht den Namen einer Einheit")));
+                        return self.sh_err(ni, &t);
                     };
                     name = Some(unit::unit_name(n));
                 }
@@ -387,7 +432,8 @@ impl Engine {
                         Some(n) => last = Some(n),
                         None => {
                             self.sh_set_code(ni, 1);
-                            return self.sh_err(ni, "journalctl: -n braucht eine Zahl\n");
+                            let t = format!("{}\n", self.tx(&msg!("journalctl: -n braucht eine Zahl")));
+                            return self.sh_err(ni, &t);
                         }
                     }
                 }
@@ -398,7 +444,8 @@ impl Engine {
                 o if o.starts_with("-u") && o.len() > 2 => name = Some(unit::unit_name(&o[2..])),
                 o => {
                     self.sh_set_code(ni, 1);
-                    return self.sh_err(ni, &format!("journalctl: {} kenne ich nicht\n", o));
+                    let t = format!("{}\n", self.tx(&msg!("{}: {} kenne ich nicht", "journalctl", o)));
+                    return self.sh_err(ni, &t);
                 }
             }
             i += 1;
@@ -423,7 +470,8 @@ impl Engine {
             }
         }
         if s.is_empty() && !follow {
-            s.push_str("Keine Zeilen.\n");
+            s.push_str(&self.tx(&phrase("Keine Zeilen.")));
+            s.push('\n');
         }
         self.out(ni, &s);
         if follow {
