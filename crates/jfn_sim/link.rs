@@ -32,7 +32,7 @@ use alloc::collections::VecDeque;
 
 use base::rng::Pcg32;
 use jfn_model::cable::{self, CableKind};
-use jfn_model::catalog::{Media, F_BRIDGE, F_HUB};
+use jfn_model::catalog::{Media, F_HUB};
 use netpkt::decode;
 
 use crate::kernel::{Engine, Ev, Frame, Ns};
@@ -436,7 +436,7 @@ impl Engine {
             }
             return;
         }
-        let member = node.model.has(F_BRIDGE) && node.bridge.as_ref().is_some_and(|b| b.ports.get(pi as usize).is_some_and(|bp| bp.member));
+        let member = node.bridge.as_ref().is_some_and(|b| b.ports.get(pi as usize).is_some_and(|bp| bp.member));
         if member {
             self.bridge_input(ni, pi, frame, hop);
         } else if frame.get(12..14) == Some(&netpkt::eth::ET_EAPOL.to_be_bytes()) && self.supp_rx(ni, pi, &frame, hop) {

@@ -1492,6 +1492,7 @@ WPA3-Enterprise	WPA3-Enterprise
 802.1X: VLAN {} von RADIUS gibt es hier nicht, {} bleibt geschlossen.	802.1X: VLAN {} from RADIUS does not exist here, {} stays closed.
 802.1X: EAP-Success für {} ohne Schlüssel, die Methode taugt nicht für WPA-Enterprise.	802.1X: EAP-Success for {} without keys, the method is no good for WPA-Enterprise.
 802.1X: {} ist nicht autorisiert, Frame verworfen.	802.1X: {} is not authorized, frame dropped.
+802.1X: EAPOL von {} weitergereicht (das Telefon lässt die Anmeldung des PCs durch).	802.1X: EAPOL from {} passed on (the phone lets its PC's sign-on through).
 Supplicant: EAPOL-Start auf {}.	Supplicant: EAPOL-Start on {}.
 Supplicant: EAP {} auf {}.	Supplicant: EAP {} on {}.
 Supplicant: {} auf {} angemeldet ({}).	Supplicant: {} logged in on {} ({}).

@@ -47,6 +47,8 @@ pub enum DNote {
     NoKeys { sta: String },
     /// a closed port dropped a frame that is not EAPOL
     Blocked { port: String },
+    /// an IP phone passed EAPOL from this port on to its other port (its PC's 802.1X)
+    PassedOn { port: String },
     /// the supplicant sent EAPOL-Start
     SuppStart { port: String },
     /// the supplicant got an EAP packet and answers
@@ -82,6 +84,7 @@ impl DNote {
             DNote::NoVlan { port, vlan } => msg!("802.1X: VLAN {} von RADIUS gibt es hier nicht, {} bleibt geschlossen.", vlan, port),
             DNote::NoKeys { sta } => msg!("802.1X: EAP-Success für {} ohne Schlüssel, die Methode taugt nicht für WPA-Enterprise.", sta),
             DNote::Blocked { port } => msg!("802.1X: {} ist nicht autorisiert, Frame verworfen.", port),
+            DNote::PassedOn { port } => msg!("802.1X: EAPOL von {} weitergereicht (das Telefon lässt die Anmeldung des PCs durch).", port),
             DNote::SuppStart { port } => msg!("Supplicant: EAPOL-Start auf {}.", port),
             DNote::SuppEap { port, what } => msg!("Supplicant: EAP {} auf {}.", what, port),
             DNote::SuppOk { port, user, method } => msg!("Supplicant: {} auf {} angemeldet ({}).", user, port, method),

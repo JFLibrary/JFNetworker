@@ -39,6 +39,10 @@
 // a" is address, "ip r" route, "ip n" neighbour); output and error messages are those of
 // iproute2 6 and iputils (the usage texts are our own).  Engine::linux_config writes the device's state as these commands
 // (the startup configuration of a Linux device is such a script).
+//
+// The ports of a bridge (home router: lan1..lan4 and wlan0, IP phone: eth0 and pc0) have no
+// interface of their own: ip link and ip addr list them after the interfaces with "master br0",
+// ip link set takes them up and down, and an address on one is refused with a pointer to the bridge.
 
 use alloc::format;
 use alloc::string::String;
@@ -376,6 +380,42 @@ impl Engine {
         st.ifaces.iter().position(|f| !f.hidden && f.name == name).map(|i| i as u16)
     }
 
+    /// the ports of the device's bridge as (port, name), in the model's order; empty without one
+    pub(super) fn bridge_ports(&self, ni: usize) -> Vec<(u16, String)> {
+        let Some(Some(n)) = self.nodes.get(ni) else {
+            return Vec::new();
+        };
+        let Some(b) = n.bridge.as_ref() else {
+            return Vec::new();
+        };
+        (0..b.ports.len() as u16).filter(|&p| b.ports[p as usize].member).map(|p| (p, String::from(n.port_name(p)))).collect()
+    }
+
+    /// the name of the bridge's own interface ("br0")
+    fn bridge_iface_name(&self, ni: usize) -> String {
+        self.stack(ni).and_then(|st| st.ifaces.iter().find(|f| matches!(f.kind, IfKind::Svi(_))).map(|f| f.name.clone())).unwrap_or_else(|| String::from("br0"))
+    }
+
+    /// a port of the bridge by its name
+    fn sh_bridge_port(&self, ni: usize, name: &str) -> Option<u16> {
+        self.bridge_ports(ni).into_iter().find(|(_, n)| n == name).map(|(p, _)| p)
+    }
+
+    /// the two lines of `ip link` for port `p` of the bridge, shown with ifindex `index`
+    fn bridge_port_line(&self, ni: usize, p: u16, index: usize) -> (String, String) {
+        let Some(Some(n)) = self.nodes.get(ni) else {
+            return (String::new(), String::new());
+        };
+        let port = &n.ports[p as usize];
+        let carrier = port.link.is_some_and(|li| self.link_up(li)) || port.spec.media == jfn_model::catalog::Media::RadioAp;
+        let (flags, state) = match (port.admin_up, carrier) {
+            (true, true) => ("BROADCAST,MULTICAST,UP,LOWER_UP", "UP"),
+            (true, false) => ("NO-CARRIER,BROADCAST,MULTICAST,UP", "DOWN"),
+            _ => ("BROADCAST,MULTICAST", "DOWN"),
+        };
+        (format!("{}: {}: <{}> mtu 1500 qdisc fq_codel master {} state {}", index, port.spec.name, flags, self.bridge_iface_name(ni), state), format!("link/ether {} brd ff:ff:ff:ff:ff:ff", port.mac))
+    }
+
     /// "dev IF" or a bare IF
     fn sh_dev<'a>(args: &[&'a str]) -> Option<&'a str> {
         let mut i = 0;
@@ -454,6 +494,10 @@ impl Engine {
             let Some(name) = args.iter().position(|a| *a == "dev").and_then(|i| args.get(i + 1)) else {
                 return self.sh_err(ni, "Not enough information: \"dev\" argument is required.\n");
             };
+            if self.sh_bridge_port(ni, name).is_some() {
+                let br = self.bridge_iface_name(ni);
+                return self.sh_err(ni, &format!("Error: {} is a port of the bridge {}; its addresses belong on {}.\n", name, br, br));
+            }
             let Some(i) = self.sh_iface(ni, name) else {
                 return self.sh_err(ni, &format!("Cannot find device \"{}\"\n", name));
             };
@@ -488,10 +532,12 @@ impl Engine {
         let only = if args.is_empty() { None } else { Self::sh_dev(&args[1..]) };
         if let Some(n) = only
             && self.sh_iface(ni, n).is_none()
+            && self.sh_bridge_port(ni, n).is_none()
         {
             return self.sh_err(ni, &format!("Device \"{}\" does not exist.\n", n));
         }
         let mut s = String::new();
+        let shown = self.stack(ni).map_or(0, |st| st.ifaces.len());
         for i in self.visible_ifaces(ni) {
             let Some(st) = self.stack(ni) else {
                 break;
@@ -523,6 +569,19 @@ impl Engine {
                 s.push_str(&self.inet6_lines(ni, i));
             }
         }
+        for (k, (p, name)) in self.bridge_ports(ni).into_iter().enumerate() {
+            if only.is_some_and(|n| n != name) {
+                continue;
+            }
+            let (head, link) = self.bridge_port_line(ni, p, shown + 1 + k);
+            if brief {
+                let state = head.rsplit_once("state ").map(|x| x.1).unwrap_or("UNKNOWN");
+                s.push_str(format!("{:<16} {}", name, state).trim_end());
+                s.push('\n');
+            } else {
+                s.push_str(&format!("{} group default qlen 1000\n    {}\n", head, link));
+            }
+        }
         self.out(ni, &s);
         Ok(())
     }
@@ -540,6 +599,16 @@ impl Engine {
             let Some(name) = name else {
                 return self.sh_err(ni, "Not enough information: \"dev\" argument is required.\n");
             };
+            if self.sh_iface(ni, name).is_none() && self.sh_bridge_port(ni, name).is_some() {
+                // a port of the bridge: only up and down
+                return match ops {
+                    [w] if *w == "up" || *w == "down" => {
+                        let _ = self.apply(Action::PortAdmin { dev, port: String::from(name), up: *w == "up" });
+                        Ok(())
+                    }
+                    _ => self.sh_err(ni, "RTNETLINK answers: Operation not supported\n"),
+                };
+            }
             if self.sh_iface(ni, name).is_none() {
                 return self.sh_err(ni, &format!("Cannot find device \"{}\"\n", name));
             }
@@ -617,16 +686,25 @@ impl Engine {
         let only = if args.is_empty() { None } else { Self::sh_dev(&args[1..]) };
         if let Some(n) = only
             && self.sh_iface(ni, n).is_none()
+            && self.sh_bridge_port(ni, n).is_none()
         {
             return self.sh_err(ni, &format!("Device \"{}\" does not exist.\n", n));
         }
         let mut s = String::new();
+        let shown = self.stack(ni).map_or(0, |st| st.ifaces.len());
+        let mut lines: Vec<(String, String)> = Vec::new();
         for i in self.visible_ifaces(ni) {
             let name = self.stack(ni).map(|st| st.ifaces[i as usize].name.clone()).unwrap_or_default();
-            if only.is_some_and(|n| n != name) {
-                continue;
+            if only.is_none_or(|n| n == name) {
+                lines.push(self.link_line(ni, i));
             }
-            let (head, link) = self.link_line(ni, i);
+        }
+        for (k, (p, name)) in self.bridge_ports(ni).into_iter().enumerate() {
+            if only.is_none_or(|n| n == name) {
+                lines.push(self.bridge_port_line(ni, p, shown + 1 + k));
+            }
+        }
+        for (head, link) in lines {
             if brief {
                 let state = head.rsplit_once("state ").map(|x| x.1).unwrap_or("UNKNOWN");
                 let shown = head.split(": ").nth(1).unwrap_or("");
@@ -1049,6 +1127,12 @@ impl Engine {
                     continue;
                 }
                 s.push_str(&format!("ip addr add {} dev {}\n", a, f.name));
+            }
+        }
+        // the ports of the bridge that are down
+        for (p, name) in self.bridge_ports(ni) {
+            if !n.ports[p as usize].admin_up {
+                s.push_str(&format!("ip link set dev {} down\n", name));
             }
         }
         for r in &st.statics {

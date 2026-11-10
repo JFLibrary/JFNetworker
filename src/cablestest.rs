@@ -3,7 +3,8 @@
 // canvas/connect.rs and paint.rs decide): every kind on every pair of media it fits and is refused
 // on, the limits per category, older files with the same kinds and link states, a round trip with
 // categories and colours, the ranking for a chosen kind and its reasons, the colours against the
-// canvas, "show interfaces" where a kind changes what it says, the same run twice
+// canvas, "show interfaces" where a kind changes what it says, the same run twice; frames through
+// the modems (ONT, cable, DSL) and the Internet cloud, which is one layer-2 network between its ports
 //
 // The file of an older version (tests/fixtures/cables_v1.jfnet) holds the eight kinds there were,
 // without "grade" and "color".
@@ -145,6 +146,63 @@ fn models(t: &mut T) {
     t.check("every medium has a name and an icon", MEDIA.iter().all(|&m| !m.name().is_empty() && crate::workspace::icons::port_icon(m) != 0));
     t.eq("the summary", catalog::model("cable-modem").map(|m| m.summary()), Some(s("1× Koax, 1× 1G")));
     t.eq("the summary of DSL", catalog::model("dsl-modem").map(|m| m.summary()), Some(s("1× RJ11, 1× 1G")));
+}
+
+// PC1 behind an ONT, PC2 behind a cable modem, PC3 behind a DSL modem, PC4 on a copper port of the
+// cloud: all in 10.0.0.0/24, the cloud and the modems carry their frames
+fn through_modems(t: &mut T) {
+    let mut p = Project::new("modems", 3);
+    let ids: Vec<u32> = ["pc", "modem-ont", "cloud", "cable-modem", "pc", "dsl-modem", "pc", "pc"].iter().enumerate().map(|(i, m)| p.add_device(m, i as i32 * 100, 0).unwrap_or(0)).collect();
+    let (pc1, ont, net, cm, pc2, dsl, pc3, pc4) = (ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6], ids[7]);
+    let links = [
+        p.connect(&pr(pc1, "eth0"), &pr(ont, "lan0"), None),
+        p.connect(&pr(ont, "wan0"), &pr(net, "wan0"), None),
+        p.connect(&pr(net, "wan1"), &pr(cm, "coax0"), None),
+        p.connect(&pr(cm, "lan0"), &pr(pc2, "eth0"), None),
+        p.connect(&pr(net, "wan2"), &pr(dsl, "dsl0"), None),
+        p.connect(&pr(dsl, "lan0"), &pr(pc3, "eth0"), None),
+        p.connect(&pr(net, "eth0"), &pr(pc4, "eth0"), None),
+    ];
+    t.check("every cable fits", links.iter().all(|l| l.is_ok()));
+    for (k, id) in [pc1, pc2, pc3, pc4].into_iter().enumerate() {
+        if let Some(d) = p.device_mut(id) {
+            d.startup_config = format!("hostname PC{}\nip addr add 10.0.0.{}/24 dev eth0\n", k + 1, k + 1);
+        }
+    }
+    let mut e = engine(&p);
+    e.run_until(SEC, BUDGET);
+    // two pings and the time they take at most, their output
+    let ping = |e: &mut Engine, to: &str| {
+        let _ = e.take_reports();
+        let _ = e.cli_line(pc1, &format!("ping -c 2 -W 1 {}", to));
+        let at = e.now() + 4 * SEC;
+        e.run_until(at, BUDGET);
+        let mut o = String::new();
+        for r in e.take_reports() {
+            if let Report::CliOut { dev, bytes, .. } = r
+                && dev == pc1
+            {
+                o.push_str(&String::from_utf8_lossy(&bytes));
+            }
+        }
+        o
+    };
+    t.check("PC1 to PC2: ONT, cloud, cable modem", ping(&mut e, "10.0.0.2").contains("2 packets transmitted, 2 received"));
+    t.check("PC1 to PC3: the DSL modem", ping(&mut e, "10.0.0.3").contains("2 packets transmitted, 2 received"));
+    t.check("PC1 to PC4: a copper port of the cloud", ping(&mut e, "10.0.0.4").contains("2 packets transmitted, 2 received"));
+    // the cloud learns where the PCs are and forwards to one port only
+    let fdb: Vec<u16> = e.bridge(net).map(|b| b.fdb.values().map(|x| x.port).collect()).unwrap_or_default();
+    t.check("the cloud learned PC1 and PC2", fdb.len() >= 4);
+    let flooded = e.trace.events().filter(|x| x.dev == net).any(|x| matches!(x.note, Note::Flooded { .. }));
+    let forwarded = e.trace.events().filter(|x| x.dev == net).any(|x| matches!(x.note, Note::Forwarded { .. }));
+    t.check("the cloud floods ARP and forwards the echoes", flooded && forwarded);
+    t.check("the ONT bridges", e.trace.events().filter(|x| x.dev == ont).any(|x| matches!(x.note, Note::Forwarded { .. })));
+    // a modem without power carries nothing
+    let _ = e.apply(Action::Power { dev: cm, on: false });
+    let at = e.now() + SEC;
+    e.run_until(at, BUDGET);
+    t.check("the cable modem off: PC2 gone", ping(&mut e, "10.0.0.2").contains("0 received"));
+    t.check("PC3 still there", ping(&mut e, "10.0.0.3").contains("2 received"));
 }
 
 // the limits per category
@@ -406,6 +464,7 @@ fn drawing(t: &mut T) {
 pub(crate) fn run(t: &mut T) {
     fits(t);
     models(t);
+    through_modems(t);
     limits(t);
     old_files(t);
     round_trip(t);

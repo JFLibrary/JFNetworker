@@ -175,6 +175,14 @@ impl Media {
     pub fn is_radio(self) -> bool {
         matches!(self, Media::RadioAp | Media::RadioClient)
     }
+    /// the line of a modem or the cloud (fibre/coax/DSL): the frames ride inside it
+    pub fn is_wan_line(self) -> bool {
+        matches!(self, Media::Wan | Media::Rj11 | Media::Coax)
+    }
+    /// a bridge forwards frames between such ports: Ethernet and the lines of modems and the cloud
+    pub fn is_bridged(self) -> bool {
+        self.is_ethernet() || self.is_wan_line()
+    }
 }
 
 /// Power over Ethernet role of a port
@@ -202,7 +210,8 @@ pub const F_FIREWALL: u32 = 8;
 pub const F_AP: u32 = 16;
 /// repeats every frame to every other port
 pub const F_HUB: u32 = 32;
-/// the provider network / Internet
+/// the provider network / Internet: one transparent layer-2 network between all its ports (a
+/// learning bridge without spanning tree or VLANs of its own)
 pub const F_CLOUD: u32 = 64;
 /// a model made for address translation (home router, firewall); nothing reads it: NAT comes from
 /// the device's configuration

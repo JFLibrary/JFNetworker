@@ -32,7 +32,9 @@
 // a station of it has finished its handshake.
 //
 // 802.1X (dot1x.rs): a closed port (BridgePort::closed) lets only EAPOL through, which goes to the
-// authenticator: nothing else comes in, learns or goes out there.  assign_vlan puts a port in the
+// authenticator: nothing else comes in, learns or goes out there.  An IP phone is no 802.1D
+// bridge in this: it passes EAPOL between its PC port and its uplink, so the PC behind it signs
+// on at the switch (the phone itself does not).  assign_vlan puts a port in the
 // VLAN RADIUS named while its session lasts, its settings stay as they are.
 
 use alloc::collections::BTreeMap;
@@ -41,7 +43,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use jfn_model::catalog::{Media, PortSpec};
+use jfn_model::catalog::{DeviceKind, PortSpec};
 use netpkt::eth::{self, VlanTag, L2};
 use netpkt::Mac;
 
@@ -231,7 +233,7 @@ impl Bridge {
         let mut vlans = BTreeMap::new();
         vlans.insert(1, String::from("default"));
         Bridge {
-            ports: ports.iter().map(|p| BridgePort::new(p.media.is_ethernet())).collect(),
+            ports: ports.iter().map(|p| BridgePort::new(p.media.is_bridged())).collect(),
             fdb: BTreeMap::new(),
             aging: 300 * SEC,
             max_entries: 16_384,
@@ -449,6 +451,7 @@ impl Engine {
             return;
         };
         let dev = node.dev;
+        let phone = node.model.kind == DeviceKind::IpPhone;
         let Some(l2) = L2::parse(&frame) else {
             self.note(dev, Some(hop), Note::DropMalformed { port: pi });
             return;
@@ -468,8 +471,18 @@ impl Engine {
             }
         };
         if link_local(l2.dst) {
+            // an IP phone passes EAPOL on between its ports (to the switch and back)
+            let pass: Vec<u16> = if phone && l2.ethertype == eth::ET_EAPOL { (0..br.ports.len() as u16).filter(|&p| p != pi && br.ports[p as usize].member && live[p as usize]).collect() } else { Vec::new() };
             // EAPOL goes to the authenticator (dot1x.rs)
             if l2.ethertype == eth::ET_EAPOL && self.dot1x_rx(ni, pi, &frame, hop) {
+                return;
+            }
+            if !pass.is_empty() {
+                let port = self.nodes.get(ni).and_then(|n| n.as_ref()).map(|n| jfn_model::ifname::short(n.port_name(pi))).unwrap_or_default();
+                self.note(dev, Some(hop), Note::Dot1x(crate::dot1xtrace::DNote::PassedOn { port }));
+                for p in pass {
+                    self.send(ni, p, frame.clone(), Some(hop));
+                }
                 return;
             }
             // BPDUs go to spanning tree or BPDU guard (stp.rs); the rest stays here
@@ -610,7 +623,3 @@ impl Engine {
     }
 }
 
-/// true for media a bridge forwards between
-pub fn bridged(m: Media) -> bool {
-    m.is_ethernet()
-}
