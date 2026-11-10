@@ -917,9 +917,9 @@ pub fn best_access(t: &Table, cs: &[RCond], order: Option<usize>) -> (Access, &'
     let rows = t.spec.rows.max(1);
     if order == Some(0) || (on_key && order.is_none()) {
         if on_key {
-            return (Access::Key { lo, hi }, if lo == hi { "Gleichheit auf dem Schlüssel: der Baum führt zur Zeile." } else { "Bereich auf dem Schlüssel: der Baum führt zum Anfang, dann der Reihe nach." });
+            return (Access::Key { lo, hi }, if lo == hi { "Gleichheit auf dem Schlüssel: der Baum führt zur Zeile." } else { "Bereich auf dem Schlüssel: der Baum führt zum Anfang, dann der Reihe nach." }); // i18n
         }
-        return (Access::Key { lo: 1, hi: u64::MAX }, "ORDER BY über den Schlüssel: die Zeilen liegen in seiner Reihenfolge.");
+        return (Access::Key { lo: 1, hi: u64::MAX }, "ORDER BY über den Schlüssel: die Zeilen liegen in seiner Reihenfolge."); // i18n
     }
     let mut best: Option<(u64, &RCond)> = None;
     for c in cs {
@@ -939,15 +939,15 @@ pub fn best_access(t: &Table, cs: &[RCond], order: Option<usize>) -> (Access, &'
         }
     }
     if let Some((_, c)) = best {
-        return (Access::Index { cond: c.clone() }, "Es gibt einen Index auf dieser Spalte: Baum, dann die Zeilen.");
+        return (Access::Index { cond: c.clone() }, "Es gibt einen Index auf dieser Spalte: Baum, dann die Zeilen."); // i18n
     }
     if let Some(o) = order
         && t.indexes.contains(&o)
     {
         let cond = if t.spec.is_text(o) { RCond::Int { col: o, lo: 0, hi: i64::MAX } } else { RCond::Int { col: o, lo: i64::MIN, hi: i64::MAX } };
-        return (Access::Index { cond }, "ORDER BY über diesen Index: er liefert die Zeilen in seiner Reihenfolge.");
+        return (Access::Index { cond }, "ORDER BY über diesen Index: er liefert die Zeilen in seiner Reihenfolge."); // i18n
     }
-    (Access::Scan, if cs.is_empty() { "Keine Bedingung: alle Seiten der Tabelle." } else { "Auf diesen Spalten liegt kein Index: alle Seiten der Tabelle." })
+    (Access::Scan, if cs.is_empty() { "Keine Bedingung: alle Seiten der Tabelle." } else { "Auf diesen Spalten liegt kein Index: alle Seiten der Tabelle." }) // i18n
 }
 
 /// what a way touches when it looked at so many rows and found so many

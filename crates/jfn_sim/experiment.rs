@@ -53,9 +53,9 @@ use agent_core::jmap::{empty_object, Value};
 use agent_core::json;
 use base::metrics::Hist;
 use jfn_model::catalog::Prices;
-use jfn_model::experiment::{patch_clones, patch_config, patch_hw, patch_load, patch_pool, Config, Experiment, Level, SloLimits};
+use jfn_model::experiment::{patch_clones, patch_config, patch_hw, patch_load, patch_pool, words_in, Config, Experiment, Level, SloLimits};
 use jfn_model::msg;
-use jfn_model::msg::Msg;
+use jfn_model::msg::{phrase, Lang, Msg};
 use jfn_model::project::Project;
 use jfn_model::scenario::Agg;
 
@@ -921,20 +921,42 @@ impl Sweep {
     }
 
     /// the results as a plain table: the same bytes on every machine, whatever the threads
+    /// (German, as the goldens have it)
     pub fn table(&self) -> String {
+        self.table_in(Lang::De)
+    }
+
+    /// the table in `lang` (jfn-sim sweep --lang en): its words, the configurations' names and the
+    /// bottlenecks (jfn_model::experiment::words_in); the numbers have decimal points in both
+    pub fn table_in(&self, lang: Lang) -> String {
+        let tx = |m: Msg| m.text_in(lang);
+        let words = |w: &str| if lang == Lang::De { String::from(w) } else { words_in(w, &jfn_model::msg::en) };
+        let head = |m: Msg| -> Vec<String> { tx(m).split('|').map(String::from).collect() };
+        let level = |l: Option<&Level>| l.map_or(String::new(), |l| tx(l.msg()));
         let mut s = String::new();
-        let t = if self.title.is_empty() { String::new() } else { format!(": \u{201e}{}\u{201c}", self.title) };
-        s.push_str(&format!("# JFNetworker-Experiment {}{}\n", self.name, t));
-        s.push_str(&format!("# Konfigurationen: {}, Laststufen: {}, Seeds: {}; {} s Warmlauf, je Stufe {} s Übergang und {} s Messung (virtuelle Zeit)\n", self.configs.len(), self.levels.len(), self.seeds.len(), self.warmup_s, self.settle_s, self.measure_s));
-        s.push_str(&format!("# SLO: {}\n", self.slo.text()));
-        s.push_str("# Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote\n");
+        let t = if self.title.is_empty() { msg!("JFNetworker-Experiment {}", self.name) } else { msg!("JFNetworker-Experiment {}: „{}“", self.name, self.title) };
+        s.push_str(&format!("# {}\n", tx(t)));
+        s.push_str(&format!("# {}\n", tx(msg!("Konfigurationen: {}, Laststufen: {}, Seeds: {}; {} s Warmlauf, je Stufe {} s Übergang und {} s Messung (virtuelle Zeit)", self.configs.len(), self.levels.len(), self.seeds.len(), self.warmup_s, self.settle_s, self.measure_s))));
+        s.push_str(&format!("# SLO: {}\n", tx(self.slo.msg())));
+        s.push_str(&format!("# {}\n", tx(phrase("Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote"))));
         for (c, cfg) in self.configs.iter().enumerate() {
             s.push('\n');
-            s.push_str(&format!("{} ({} \u{20ac}/h)\n", cfg.label, euro3(cfg.cost_uh)));
-            let mut rows = alloc::vec![["Last", "erreicht/s", "p50 ms", "p95 ms", "p99 ms", "p99.9 ms", "Fehler %", "CPU %", "\u{20ac}/1000", "SLO", "Engpass"].iter().map(|x| String::from(*x)).collect::<Vec<String>>()];
+            s.push_str(&format!("{} ({} \u{20ac}/h)\n", words(&cfg.label), euro3(cfg.cost_uh)));
+            let mut rows = alloc::vec![head(phrase("Last|erreicht/s|p50 ms|p95 ms|p99 ms|p99.9 ms|Fehler %|CPU %|€/1000|SLO|Engpass"))];
             for p in self.points_of(c) {
+                let verdict = if p.status == Status::Memory {
+                    phrase("speicher")
+                } else if p.status == Status::Failed {
+                    phrase("fehler")
+                } else if p.knee {
+                    phrase("Knie")
+                } else if p.slo_ok {
+                    Msg::plain("ok")
+                } else {
+                    phrase("nein")
+                };
                 rows.push(alloc::vec![
-                    self.levels.get(p.level).map_or(String::new(), |l| l.text()),
+                    level(self.levels.get(p.level)),
                     milli(p.achieved_m),
                     ms1(p.p50),
                     ms1(p.p95),
@@ -943,24 +965,25 @@ impl Sweep {
                     format!("{}.{:02}", p.err_ppm / 10_000, p.err_ppm % 10_000 / 100),
                     format!("{}.{}", p.cpu_max_pm / 10, p.cpu_max_pm % 10),
                     euro(p.cost_per_1000_u),
-                    String::from(if p.status != Status::Ok { p.status.as_str() } else if p.knee { "Knie" } else if p.slo_ok { "ok" } else { "nein" }),
-                    p.bottleneck.clone(),
+                    tx(verdict),
+                    words(&p.bottleneck),
                 ]);
             }
             aligned(&rows, &mut s);
         }
         s.push('\n');
-        s.push_str("Zusammenfassung\n");
-        let mut rows = alloc::vec![["Konfiguration", "\u{20ac}/h", "Knie", "Maximum/s", "\u{20ac}/1000 am Knie", "begrenzt durch"].iter().map(|x| String::from(*x)).collect::<Vec<String>>()];
+        s.push_str(&tx(phrase("Zusammenfassung")));
+        s.push('\n');
+        let mut rows = alloc::vec![head(phrase("Konfiguration|€/h|Knie|Maximum/s|€/1000 am Knie|begrenzt durch"))];
         for (c, cfg) in self.configs.iter().enumerate() {
             let at_knee = cfg.knee.and_then(|k| self.points_of(c).nth(k));
             rows.push(alloc::vec![
-                cfg.label.clone(),
+                words(&cfg.label),
                 euro3(cfg.cost_uh),
-                cfg.knee.and_then(|k| self.levels.get(k)).map_or(String::from("-"), |l| l.text()),
+                cfg.knee.and_then(|k| self.levels.get(k)).map_or(String::from("-"), |l| tx(l.msg())),
                 milli(cfg.max_achieved_m),
                 at_knee.map_or(String::from("-"), |p| euro(p.cost_per_1000_u)),
-                cfg.limit.clone(),
+                words(&cfg.limit),
             ]);
         }
         aligned(&rows, &mut s);

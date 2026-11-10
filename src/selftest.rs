@@ -95,6 +95,9 @@
 // a diagnosis, the check that something must fail, the sample course's fault hunt with and without its fix).
 // installtest.rs: installing courses (group install: jfn_run::install, the list and its refusals, a source that
 // fails, cancels and resumes, updates and uninstalling, every file of --academy-dir against its index).
+// consolelangtest.rs: the console's language (group consolelang: the Linux shell's own tools --
+// lbctl, kvctl, dbctl, cachectl, mqctl, workerctl, systemctl, journalctl -- in English and German,
+// IOS output English in both, a scenario in English).
 // coursetest.rs: the courses can be done (group courses: per step of every course that is no sample, a lab solved
 // at the console, a fault hunt repaired and diagnosed, a quiz answered, what a lesson shows typed and compared).
 
@@ -224,9 +227,11 @@ mod installtest;
 mod expguitest;
 #[path = "coursetest.rs"]
 mod coursetest;
+#[path = "consolelangtest.rs"]
+mod consolelangtest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 68] = [
+    let groups: [(&'static str, fn(&mut T)); 69] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
@@ -294,6 +299,7 @@ pub fn run() -> i32 {
         ("install", installtest::run),
         ("expgui", expguitest::run),
         ("db", dbtest::run),
+        ("consolelang", consolelangtest::run),
         ("courses", coursetest::run),
     ];
     let (mut total, mut failed) = (0, 0);

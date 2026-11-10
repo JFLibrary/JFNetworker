@@ -241,6 +241,7 @@ Relay: {} Helper-Adressen	Relay: {} helper addresses
 {} Anfrage	{} request
 {} Anfragen	{} requests
 {} Antwort	{} answer
+{} Antworten	{} answers
 {} Verbindung	{} connection
 {} Verbindungen	{} connections
 {} Sitzung	{} session
@@ -573,6 +574,170 @@ Dienst {} auf {} gestoppt	Service {} on {} stopped
 Disk von {} langsam: {}	Disk of {} slow: {}
 Partition: {} | alle anderen	Partition: {} | all others
 Partition: {} | {}	Partition: {} | {}
+
+# jfn_sim: the console's own tools in the console's language (Engine::console_lang, Action::ConsoleLang): lbctl, kvctl, dbctl, cachectl, mqctl, workerctl (cli/lab.rs), the reasons of dbctl explain (dbstore.rs), systemctl, journalctl and the unit manager's lines in the log (cli/units.rs, units.rs); the table of jfn-sim sweep --lang en (experiment.rs: Sweep::table_in, jfn_model experiment.rs: Slo, words_in); words of ui.tsv again for the simulator's own lookup (jfn_model::msg::en)
+{} (nicht offen)	{} (not open)
+{},{} %	{}.{} %
+{}: {} kenne ich nicht	{}: {} is unknown
+lbctl [status] [-s DIENST]	lbctl [status] [-s SERVICE]
+zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend	shows the load balancer: settings, figures and every backend
+kvctl [status] [-s DIENST]	kvctl [status] [-s SERVICE]
+zeigt den KV-Knoten: Mitglieder, wie er sie sieht, und seine Zahlen	shows the KV node: the members as it sees them, and its figures
+die Tokens des Rings und ihre Knoten	the tokens of the ring and their nodes
+kvctl where SCHLÜSSEL	kvctl where KEY
+die Replikate eines Schlüssels und was jedes davon hält	the replicas of a key and what each of them holds
+kvctl get SCHLÜSSEL	kvctl get KEY
+der Eintrag dieses Knotens	this node's entry
+die Schlüssel dieses Knotens	this node's keys
+dbctl [status] [-s DIENST]	dbctl [status] [-s SERVICE]
+zeigt die Datenbank: Zustand, Puffer, Log und Zahlen	shows the database: state, buffer pool, log and figures
+ihre Tabellen: Zeilen, geänderte Zeilen, Seiten, Indizes	its tables: rows, changed rows, pages, indexes
+die Zeilensperren, wer sie hält und wie viele warten	the row locks, who holds them and how many wait
+dbctl explain ANWEISUNG	dbctl explain STATEMENT
+wie eine Anweisung liefe: Index oder alle Seiten, Zeilen, Seiten, warum	how a statement would run: index or all pages, rows, pages, why
+cachectl [status|keys] [-s DIENST]	cachectl [status|keys] [-s SERVICE]
+zeigt den Cache: Treffer, Fehlschläge, Einträge	shows the cache: hits, misses, entries
+mqctl [status] [-s DIENST]	mqctl [status] [-s SERVICE]
+zeigt die Queue mit ihren Topics	shows the queue with its topics
+workerctl [status] [-s DIENST]	workerctl [status] [-s SERVICE]
+zeigt den Worker und seine Plätze	shows the worker and its slots
+lbctl: auf diesem Gerät läuft kein Loadbalancer	lbctl: no load balancer runs on this device
+Loadbalancer {}: {} auf Port {}, Verfahren {}, {}	Load balancer {}: {} on port {}, algorithm {}, {}
+Health Checks {} alle {} (Timeout {}, verfügbar nach {}, ausgefallen nach {} Prüfungen)	health checks {} every {} (timeout {}, available after {}, down after {} checks)
+ohne Health Checks	no health checks
+Anfragen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}	Requests {}, finished {}, open {}, errors {} (no backend {}), retries {}
+Verbindungen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}	Connections {}, finished {}, open {}, errors {} (no backend {}), retries {}
+Antwortzeit p50 {}, p95 {}, p99 {}	Response time p50 {}, p95 {}, p99 {}
+Verbindungsaufbau p50 {}, p95 {}, p99 {}	Connection setup p50 {}, p95 {}, p99 {}
+Backend|Adresse|Gewicht|Zustand|seit|offen|gesamt|Fehler|p99	Backend|Address|Weight|State|since|open|total|errors|p99
+verfügbar	available
+ausgefallen	down
+leert sich	draining
+abgeschaltet	shut down
+entfernt	removed
+kvctl: auf diesem Gerät läuft kein KV-Knoten	kvctl: no KV node runs on this device
+Token|Knoten	Token|Node
+{}: gelöscht (Version {})	{}: deleted (version {})
+{} = {} (Version {})	{} = {} (version {})
+{}: nicht auf diesem Knoten	{}: not on this node
+Schlüssel|Version|Bytes	Key|Version|Bytes
+{} gelöscht	{} deleted
+... und {} weitere	... and {} more
+KV-Knoten {}: {}, Port {}, Heartbeats UDP {} alle {} (ausgefallen nach {})	KV node {}: {}, port {}, heartbeats UDP {} every {} (down after {})
+Ring: {} Knoten mit je {} vnodes, RF {}, Konsistenz {} (W {}, R {}{}), Read Repair {}	Ring: {} nodes with {} vnodes each, RF {}, consistency {} (W {}, R {}{}), read repair {}
+an	on
+aus	off
+Knoten|Zustand|seit|Ring-Anteil	Node|State|since|Ring share
+dieser Knoten	this node
+erreichbar	reachable
+Schlüssel {} ({}), Disk {}	Keys {} ({}), disk {}
+Anfragen {}: gelesen {}, geschrieben {}, nicht gefunden {}, nicht verfügbar {}, Disk voll {}	Requests {}: read {}, written {}, not found {}, unavailable {}, disk full {}
+Weitergereicht {}, selbst geführt {}; Replikate geschrieben {}, gelesen {}	Forwarded {}, led itself {}; replicas written {}, read {}
+Veraltete Antworten {}, Read Repair gesendet {}, erhalten {}; Ausfälle erkannt {}	Stale answers {}, read repairs sent {}, received {}; failures detected {}
+Schlüssel {}: Hash {}, Replikate (RF {}):	Key {}: hash {}, replicas (RF {}):
+gelöscht, Version {}	deleted, version {}
+Version {}, {} Bytes	version {}, {} bytes
+kein KV-Knoten unter der Adresse	no KV node at the address
+nichts gespeichert	nothing stored
+dbctl: auf diesem Gerät läuft keine Datenbank	dbctl: no database runs on this device
+Tabelle|Schlüssel|Zeilen|geändert|Seiten|im Puffer|Baumtiefe|Indizes|Spalten	Table|Key|Rows|changed|Pages|in the pool|Tree depth|Indexes|Columns
+keine Zeilensperren	no row locks
+Tabelle|Zeile|Transaktion|wartend	Table|Row|Transaction|waiting
+Datenbank {}: Port {}, {} von höchstens {} Verbindungen, {} Transaktionen offen, {} Anweisungen in Arbeit	Database {}: port {}, {} of at most {} connections, {} transactions open, {} statements in progress
+Dieses Gerät simuliert keine Hardware: die CPU kostet nichts, Platte und Sperren kosten weiter Zeit.	This device simulates no hardware: the CPU costs nothing, disk and locks still cost time.
+Liest das Log seit dem letzten Prüfpunkt: nimmt noch keine Anweisungen an.	Reading the log since the last checkpoint: takes no statements yet.
+Die Tabellen brauchen {}, die Platte hat {}.	The tables need {}, the disk has {}.
+Puffer: {} von {}, Treffer {}, zählt jede {}. Seite	Buffer pool: {} of {}, hits {}, counts one page in {}
+Puffer: {} von {}, Treffer {}	Buffer pool: {} of {}, hits {}
+Log: Stand {}, auf der Platte {}, Prüfpunkt {}; Schreiben {}, Durability {}, Isolation {}	Log: at {}, on disk {}, checkpoint {}; flushes {}, durability {}, isolation {}
+Anweisungen {}: gelesen {}, eingefügt {}, geändert {}, gelöscht {}; Commits {}, Rollbacks {}	Statements {}: read {}, inserted {}, updated {}, deleted {}; commits {}, rollbacks {}
+Fehler {}: Syntax {}, Konflikte {}, Verklemmungen {}, Sperren zu spät {}, still abgebrochen {}, abgewiesen {}	Errors {}: syntax {}, conflicts {}, deadlocks {}, lock timeouts {}, idle aborts {}, refused {}
+Sperren gewartet {}; Zeilen angesehen {}, Seiten gelesen {}; geänderte Zeilen {}, vergessen {}	Lock waits {}; rows examined {}, pages read {}; changed rows {}, forgotten {}
+Nach Abstürzen: {} Mal, zuletzt {} ms, verlorene Commits {}	After crashes: {} times, last {} ms, lost commits {}
+Gleichheit auf dem Schlüssel: der Baum führt zur Zeile.	Equality on the key: the tree leads to the row.
+Bereich auf dem Schlüssel: der Baum führt zum Anfang, dann der Reihe nach.	Range on the key: the tree leads to its start, then row by row.
+ORDER BY über den Schlüssel: die Zeilen liegen in seiner Reihenfolge.	ORDER BY on the key: the rows lie in its order.
+Es gibt einen Index auf dieser Spalte: Baum, dann die Zeilen.	There is an index on this column: the tree, then the rows.
+ORDER BY über diesen Index: er liefert die Zeilen in seiner Reihenfolge.	ORDER BY on this index: it delivers the rows in its order.
+Keine Bedingung: alle Seiten der Tabelle.	No condition: every page of the table.
+Auf diesen Spalten liegt kein Index: alle Seiten der Tabelle.	No index on these columns: every page of the table.
+cachectl: auf diesem Gerät läuft kein Cache	cachectl: no cache runs on this device
+Cache {}: Port {} vor {}, Lebensdauer {}, höchstens {} Einträge und {}	Cache {}: port {} in front of {}, lifetime {}, at most {} entries and {}
+Einträge {} ({}), Anfragen {}: Treffer {}, Fehlschläge {} ({} Treffer)	Entries {} ({}), requests {}: hits {}, misses {} ({} hits)
+Zusammengelegt {}, abgelaufen {}, verdrängt {}, ungültig gemacht {}	Collapsed {}, expired {}, evicted {}, invalidated {}
+Backend: {} Anfragen, {} Fehler; Antwortzeit p50 {} (Treffer {}, Fehlschlag {}), p99 {}	Backend: {} requests, {} errors; response time p50 {} (hit {}, miss {}), p99 {}
+Ziel|Status|Bytes|Alter|frisch bis	Target|Status|Bytes|Age|fresh until
+mqctl: auf diesem Gerät läuft keine Queue	mqctl: no queue runs on this device
+Queue {}: Port {}, Sichtbarkeit {}, höchstens {} Zustellungen, {}	Queue {}: port {}, visibility {}, at most {} deliveries, {}
+auf der Disk	on disk
+nur im Speicher	in memory only
+Angenommen bis bestätigt: p50 {}, p99 {}	Published to acknowledged: p50 {}, p99 {}
+Topic|wartend|unterwegs|angenommen|ausgeliefert|erneut|bestätigt|zurück|aussortiert|älteste	Topic|waiting|in flight|published|delivered|redelivered|acknowledged|returned|dead|oldest
+workerctl: auf diesem Gerät läuft kein Worker	workerctl: no worker runs on this device
+Worker {}: {} Topic {}, {} Plätze, {} je Nachricht, Fehlerquote {}	Worker {}: {} topic {}, {} slots, {} per message, error rate {}
+Genommen {}, erledigt {}, zurückgegeben {}, Abfragen {} (leer {}), Fehler {}; Arbeit p50 {}, p99 {}	Taken {}, done {}, returned {}, polls {} (empty {}), errors {}; work p50 {}, p99 {}
+Platz|Zustand	Slot|State
+pausiert	paused
+wartet auf eine Nachricht	waiting for a message
+arbeitet an Nachricht {} bis {}	working on message {} until {}
+meldet Nachricht {} zurück	reporting message {} back
+systemctl: die Option {} kenne ich nicht	systemctl: the option {} is unknown
+systemctl: den Befehl {} kenne ich nicht (systemctl --help)	systemctl: the command {} is unknown (systemctl --help)
+systemctl {}: welche Einheit? (systemctl {} NAME)	systemctl {}: which unit? (systemctl {} NAME)
+Einheiten neu gelesen	units read again
+{} hat kein [Install] mit WantedBy=: nichts einzuschalten.	{} has no [Install] with WantedBy=: nothing to enable.
+eingeschaltet: {}	enabled: {}
+ausgeschaltet: {}	disabled: {}
+erzeugt: ein Dienst des Projekts	generated: a service of the project
+Keine Einheiten in diesem Zustand (--all zeigt alle).	No units in this state (--all shows all).
+Einheit|Quelle|Aktiv|Im Detail|Beschreibung	Unit|Source|Active|Sub|Description
+Datei	File
+Projekt	Project
+1 Einheit	1 unit
+{} Einheiten	{} units
+Einheit|Beim Start|Datei	Unit|At boot|File
+aus dem Projekt	from the project
+{}: {} Einheiten, {} laufen, {} mit Fehler	{}: {} units, {} running, {} failed
+wartet auf den Neustart	waiting for the restart
+{} ({}/{}) seit {}	{} ({}/{}) since {}
+{} (beim Start: {})	{} (at boot: {})
+{} nach {}, bisher {}	{} after {}, {} so far
+Zustand	State
+Quelle	Source
+Programm	Program
+Neustart	Restart
+Art	Kind
+Braucht	Requires
+PID	PID
+Status	Status
+Grund	Reason
+Achtung	Note
+die Datei ist neuer, systemctl daemon-reload liest sie	the file is newer, systemctl daemon-reload reads it
+journalctl: -u braucht den Namen einer Einheit	journalctl: -u needs the name of a unit
+journalctl: -n braucht eine Zahl	journalctl: -n needs a number
+Keine Zeilen.	No lines.
+Dieses Gerät hat keine Dateien.	This device has no files.
+{} bis {} ms	{} up to {} ms
+Fehler bis {} %	errors up to {} %
+kein SLO	no SLO
+JFNetworker-Experiment {}	JFNetworker experiment {}
+JFNetworker-Experiment {}: „{}“	JFNetworker experiment {}: “{}”
+Konfigurationen: {}, Laststufen: {}, Seeds: {}; {} s Warmlauf, je Stufe {} s Übergang und {} s Messung (virtuelle Zeit)	Configurations: {}, load levels: {}, seeds: {}; {} s warm-up, per level {} s settling and {} s measuring (virtual time)
+Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote	Result of the model with its assumptions; the costs are assumed prices (catalog::Prices), no offers
+Last|erreicht/s|p50 ms|p95 ms|p99 ms|p99.9 ms|Fehler %|CPU %|€/1000|SLO|Engpass	Load|reached/s|p50 ms|p95 ms|p99 ms|p99.9 ms|Errors %|CPU %|€/1000|SLO|Bottleneck
+speicher	memory
+fehler	failed
+nein	no
+Knie	Knee
+Zusammenfassung	Summary
+Konfiguration|€/h|Knie|Maximum/s|€/1000 am Knie|begrenzt durch	Configuration|€/h|Knee|Maximum/s|€/1000 at the knee|limited by
+größer	bigger
+mehr	more
+Kerne	Cores
+Kern	Core
+Platte	Disk
+Sperre	Lock
+Kabel	Cable
 
 # jfn_sim: spanning tree (stp.rs, stp98.rs, rstp.rs; its notes in trace.rs, its loops in problems.rs)
 deaktiviert	disabled

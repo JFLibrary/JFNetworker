@@ -1,0 +1,82 @@
+# JFNetworker-Szenario lab_en.scn: „Geshardeter KV-Speicher hinter einem Loadbalancer“, 10 Geräte, 9 Verbindungen, Seed 11
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/2 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/1 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/1 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/2 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/2 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/3 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/3 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/4 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/4 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/5 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/5 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/6 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/6 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: GigabitEthernet1/0/7 is up
+   0.000000000  SW2     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/7 is up
+   0.000000000  --      run 1500ms
+   1.500000000  ok      expect LB1 svc lb metric backends_up == 3 (3)
+   1.500000000  LB1     root@LB1:~# lbctl
+   1.500000000  LB1     Load balancer lb: HTTP on port 80, algorithm round-robin, health checks http GET /health every 1.000 s (timeout 500.000 ms, available after 2, down after 3 checks)
+   1.500000000  LB1     Requests 200, finished 200, open 0, errors 0 (no backend 0), retries 0
+   1.500000000  LB1     Response time p50 1.134 ms, p95 1.134 ms, p99 1.134 ms
+   1.500000000  LB1     
+   1.500000000  LB1     Backend  Address       Weight  State      since  open  total  errors  p99
+   1.500000000  LB1     web1     10.0.2.11:80  1       available  0 ns   0     67     0       1.149 ms
+   1.500000000  LB1     web2     10.0.2.12:80  1       available  0 ns   0     67     0       1.145 ms
+   1.500000000  LB1     web3     10.0.2.13:80  1       available  0 ns   0     66     0       1.145 ms
+   1.500000000  ok      expect LB1 output contains "Load balancer lb: HTTP on port 80"
+   1.500000000  KV1     root@KV1:~# kvctl
+   1.500000000  KV1     KV node kv: 10.0.2.21, port 7000, heartbeats UDP 7946 every 500.000 ms (down after 1.500 s)
+   1.500000000  KV1     Ring: 3 nodes with 16 vnodes each, RF 2, consistency eventual (W 1, R 1, W + R ≤ RF), read repair on
+   1.500000000  KV1     
+   1.500000000  KV1     Node       State      since  Ring share
+   1.500000000  KV1     10.0.2.21  this node  -      20.0 %
+   1.500000000  KV1     10.0.2.22  reachable  0 ns   47.3 %
+   1.500000000  KV1     10.0.2.23  reachable  0 ns   32.5 %
+   1.500000000  KV1     
+   1.500000000  KV1     Keys 138 (3 KiB), disk 3 KiB of 1 GiB, 100 µs
+   1.500000000  KV1     Requests 33: read 0, written 33, not found 0, unavailable 0, disk full 0
+   1.500000000  KV1     Forwarded 0, led itself 33; replicas written 105, read 0
+   1.500000000  KV1     Stale answers 0, read repairs sent 0, received 0; failures detected 0
+   1.500000000  KV1     Response time p50 120 µs, p95 120 µs, p99 120 µs
+   1.500000000  ok      expect KV1 output contains "every 500.000 ms (down after 1.500 s)"
+   1.500000000  KV1     root@KV1:~# kvctl where k7
+   1.500000000  KV1     Key k7: hash 0x83a57e6fcb6b0c94, replicas (RF 2):
+   1.500000000  KV1       10.0.2.22  Leader    reachable  version 5.2, 2 bytes
+   1.500000000  KV1       10.0.2.21  Follower  reachable  version 5.2, 2 bytes
+   1.500000000  KV1     root@KV1:~# kvctl get k7
+   1.500000000  KV1     k7 = v7 (version 5.2)
+   1.500000000  KV1     root@KV1:~# kvctl nix
+   1.500000000  KV1     kvctl: nix is unknown
+   1.500000000  KV1     kvctl [status] [-s SERVICE]   shows the KV node: the members as it sees them, and its figures
+   1.500000000  KV1     kvctl ring                    the tokens of the ring and their nodes
+   1.500000000  KV1     kvctl where KEY               the replicas of a key and what each of them holds
+   1.500000000  KV1     kvctl get KEY                 this node's entry
+   1.500000000  KV1     kvctl keys                    this node's keys
+   6.000000000  --      fault 1: KV2 ausgeschaltet
+   6.000000000  SW2     *Mar  1 00:00:06.000: %LINK-3-UPDOWN: GigabitEthernet1/0/6 is down
+   6.000000000  SW2     *Mar  1 00:00:06.000: %LINEPROTO-5-UPDOWN: line protocol on GigabitEthernet1/0/6 is down
+   6.000000000  --      run 5s
+  11.000000000  KV1     root@KV1:~# kvctl
+  11.000000000  KV1     KV node kv: 10.0.2.21, port 7000, heartbeats UDP 7946 every 500.000 ms (down after 1.500 s)
+  11.000000000  KV1     Ring: 3 nodes with 16 vnodes each, RF 2, consistency eventual (W 1, R 1, W + R ≤ RF), read repair on
+  11.000000000  KV1     
+  11.000000000  KV1     Node       State      since    Ring share
+  11.000000000  KV1     10.0.2.21  this node  -        20.0 %
+  11.000000000  KV1     10.0.2.22  down       6.551 s  47.3 %
+  11.000000000  KV1     10.0.2.23  reachable  0 ns     32.5 %
+  11.000000000  KV1     
+  11.000000000  KV1     Keys 138 (3 KiB), disk 3 KiB of 1 GiB, 100 µs
+  11.000000000  KV1     Requests 442: read 345, written 97, not found 0, unavailable 0, disk full 0
+  11.000000000  KV1     Forwarded 5, led itself 97; replicas written 162, read 217
+  11.000000000  KV1     Stale answers 0, read repairs sent 0, received 0; failures detected 1
+  11.000000000  KV1     Response time p50 120 µs, p95 120 µs, p99 249.561 ms
+  11.000000000  ok      expect KV1 output contains "10.0.2.22  down"
+  11.000000000  LB1     root@LB1:~# lbctl -h
+  11.000000000  LB1     lbctl [status] [-s SERVICE]   shows the load balancer: settings, figures and every backend
+  11.000000000  --      run 10ms
+# 4 von 4 Erwartungen erfüllt

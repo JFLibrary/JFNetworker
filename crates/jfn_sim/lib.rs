@@ -341,7 +341,7 @@ pub use syslogd::{SyslogMsg, SyslogServer};
 pub use trace::{fmt_ns, DhcpReq, RelayDrop};
 pub use bridge::{SwMode, SwSet};
 pub use driver::Report;
-pub use runner::{run_scenario, Outcome};
+pub use runner::{run_scenario, run_scenario_in, Outcome};
 pub use tcp::{RstWhy, SockOpts, TcpCfg, TcpCounters, TcpEnd, TcpRow, TcpState, TcpStats, TcpTimer};
 pub use tcpsvc::{CloseMode, TcpClient, TcpDiscard, TcpEcho};
 pub use os::ConsoleEv;

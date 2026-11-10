@@ -2,6 +2,10 @@
 //
 //   Engine::new(seed)                      empty; Engine::from_project in load.rs
 //   now() / pending() / next_time()
+//   console_lang                           the language of the console's own tools (lbctl,
+//                                          kvctl, dbctl, cachectl, mqctl, workerctl, systemctl,
+//                                          journalctl): German (the default) or English; IOS
+//                                          output is English in both (Action::ConsoleLang)
 //   step() -> Option<Ns>                   runs one event
 //   run_until(t, budget) -> RunOut         every event up to t (then the clock stands at t)
 //   run_idle(budget) -> RunOut             until nothing is left
@@ -102,6 +106,8 @@ pub struct Engine {
     pub(crate) phys: crate::phys::PhysState,
     /// the last run of `jfs --test` per device (cli/jfstest.rs)
     pub(crate) jfs_tests: BTreeMap<u32, crate::cli::jfstest::TestRun>,
+    /// the language of the texts the console's own tools write (Action::ConsoleLang)
+    pub console_lang: jfn_model::msg::Lang,
 }
 
 impl Engine {
@@ -129,7 +135,12 @@ impl Engine {
             wlan: crate::wlan::WlanState::default(),
             phys: crate::phys::PhysState::default(),
             jfs_tests: BTreeMap::new(),
+            console_lang: jfn_model::msg::Lang::De,
         }
+    }
+    /// a text of the console's own tools in the console's language
+    pub(crate) fn tx(&self, m: &jfn_model::Msg) -> alloc::string::String {
+        m.text_in(self.console_lang)
     }
     /// the virtual time
     pub fn now(&self) -> Ns {

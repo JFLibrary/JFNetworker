@@ -85,6 +85,12 @@
 //                                 project as it is now (what the engine was told then comes back
 //                                 first, so a change of the project after that moment takes
 //                                 effect at it); the project and its undo list stay
+//   follow_lang()                 the console's own tools (lbctl, systemctl ...) write in the
+//                                 window's language: a new engine starts in it, the window calls
+//                                 this at its start and after a change of language, resume after
+//                                 its move (Action::ConsoleLang, an input: replays keep it; the
+//                                 view stays where it is)
+//
 // A short replay runs at once (RESTORE_NOW events), a longer one in slices of RESTORE_TICK per
 // timer tick, meanwhile the state shown before stays.  A change that goes to the engine (an
 // edit, a setting, a console line of a form, a fault, a PDU) brings the view back to the
@@ -109,6 +115,11 @@ const SHOT_US: u64 = 50_000;
 /// events a replay to a past moment runs at once, and per timer tick after that (K1)
 const RESTORE_NOW: usize = 50_000;
 const RESTORE_TICK: usize = 20_000;
+
+/// the window's language as the console's (German or English)
+fn window_lang() -> jfn_model::msg::Lang {
+    if crate::app::tr::en() { jfn_model::msg::Lang::En } else { jfn_model::msg::Lang::De }
+}
 
 /// what the engine was told of a device
 #[derive(Clone, PartialEq)]
@@ -386,12 +397,13 @@ impl Sim {
     }
 
     fn build(p: &Project, born: Option<&[u32]>) -> Sim {
-        let (eng, whole) = match Engine::from_project(p) {
+        let (eng, whole) = match Engine::from_project_in(p, window_lang()) {
             Ok(e) => (e, true),
             Err(_) => {
                 let mut e = Engine::new(p.seed);
                 e.strict_mdix = p.strict_mdix;
                 e.metered = p.metered;
+                e.console_lang = window_lang();
                 (e, false)
             }
         };
@@ -451,6 +463,14 @@ impl Sim {
         s.note_told();
         s.snapshot();
         s
+    }
+
+    /// the console's own tools write in the window's language from now on
+    pub(crate) fn follow_lang(&mut self) {
+        let lang = window_lang();
+        if self.drv.eng.console_lang != lang {
+            let _ = self.drv.send(Cmd::Apply(Action::ConsoleLang { lang }), plat::task::now_us());
+        }
     }
 
     /// the clock runs in real time from now on
@@ -1047,6 +1067,8 @@ impl Sim {
         self.problems = None;
         self.topo = self.topo.wrapping_add(1);
         self.sync(proj);
+        // (the language may have changed since that moment)
+        self.follow_lang();
         self.changed();
         true
     }

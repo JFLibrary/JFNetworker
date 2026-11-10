@@ -587,7 +587,7 @@ pub fn digest(e: &Engine) -> u64 {
             }
         }
     }
-    let _ = write!(w, "|{:?}|{:?} {:?}|{:?} {:?}|{} {}", e.links, e.dev_idx, e.link_idx, e.jobs, e.next_job, e.seed, e.strict_mdix);
+    let _ = write!(w, "|{:?}|{:?} {:?}|{:?} {:?}|{} {} {:?}", e.links, e.dev_idx, e.link_idx, e.jobs, e.next_job, e.seed, e.strict_mdix, e.console_lang);
     let _ = write!(w, "|{}", e.metered);
     let _ = write!(w, "|{} {:?}|{:?}|{:?}|{:?}|", e.cli.debug, e.cli.jobs, e.faults, e.series, e.wlan);
     let _ = e.trace.counters(&mut w);

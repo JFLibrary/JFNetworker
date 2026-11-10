@@ -1,0 +1,4 @@
+#!args tests/experiments/scale_up_vs_out.jfnet --sweep tests/experiments/sweep_small.jfnex --threads 2 --golden tests/experiments/sweep_small_en.report --lang en
+# the short parameter sweep of sweep_small.uis with --lang en: the same figures, the table's words, the
+# configurations' names and the bottlenecks in English (Sweep::table_in).  The table must equal
+# tests/experiments/sweep_small_en.report byte for byte on every target (the script itself is not run)

@@ -948,7 +948,10 @@ prüfen Zeiträume (siehe [Szenarien](#szenarien-scn)).
   (`status_msg`), die Zeile der Disk (`Disk::msg`) und die Texte der Fehler in Markierungen und
   Ereignissen (`FaultMark::msg`, `Note::FaultStart` / `FaultEnd`) sind Meldungen mit englischer
   Zeile in `engine.tsv`; die Berichte der Szenarien behalten ihren deutschen Text, die
-  Golden-Berichte sind unverändert.
+  Golden-Berichte sind unverändert. `lbctl`, `kvctl`, `dbctl`, `cachectl`, `mqctl` und
+  `workerctl` schreiben in der Sprache der Konsole (siehe [Befehlszeilen](#befehlszeilen)):
+  im englischen Fenster englisch, mit Dezimalpunkt („6.512 s“, „80.0 %“) und ausgerichteten
+  Tabellen.
 
 ### Befehlszeilen
 
@@ -1032,7 +1035,7 @@ Router und Switches zeigen `show tcp brief [all]`, `show tcp statistics` und
 `show control-plane host open-ports`. Die Dienste des Labors zeigen `lbctl` (Backends mit
 Zustand und Zahlen), `dbctl` (Zustand, `tables`, `locks`, `explain ANWEISUNG`: [Datenbank](#datenbank-der-dienst-db)), `kvctl` (Mitglieder, `ring`, `where SCHLÜSSEL` mit den Replikaten und
 ihren Versionen, `get`, `keys`), `cachectl`, `mqctl` und `workerctl`, mit `-s NAME` für einen
-bestimmten Dienst; ihre Texte sind eigene Worte. Die Skripte eines Hosts zeigt und steuert
+bestimmten Dienst; ihre Texte sind eigene Worte in der Sprache der Konsole (unten). Die Skripte eines Hosts zeigt und steuert
 `script` (siehe [Skripte in Hosts](#skripte-in-hosts)).
 Spanning Tree stellen `spanning-tree …`, `show spanning-tree`, `debug spanning-tree events`
 und `clear spanning-tree detected-protocols` ein und zeigen ihn (siehe
@@ -1065,6 +1068,22 @@ Hilfetexte (`?`, `ip … help`), Modus-Titel, Statuszeilen wie die ersten Zeilen
 die Befehlswörter und ihre Syntax, Interface-Namen, Konfigurationszeilen, kurze
 `%`-Fehlermeldungen, die Tabellen der `show`-Befehle und die Ergebniszeilen von `ping`
 (`!!!!!`, `Success rate is …`), iproute2 und iputils.
+
+**Die Sprache der Konsole** (`Engine::console_lang`, `Action::ConsoleLang`): Die IOS-artige
+Befehlszeile ist in beiden Sprachen englisch, wie das Vorbild; `show version` nennt das Modell
+mit seinem englischen Titel aus `engine.tsv`, `show interfaces Dot11RadioN` eines Access Points
+das Band des Funkteils („media type is WLAN radio 5 GHz“, `jfn_model::wlan::radio_bands`). Die
+eigenen Werkzeuge der Linux-Shell folgen der Sprache wie unter Linux dem Locale: `lbctl`, `kvctl`,
+`dbctl` (mit den Gründen von `explain`; die SQL-Fehler bleiben die Antwort der Datenbank, deutsch),
+`cachectl`, `mqctl`, `workerctl`, `systemctl` und `journalctl`, dazu die Zeilen, die der
+Einheiten-Verwalter ins Log schreibt (in der Sprache zur Zeit des Schreibens). Ihre Texte sind
+Meldungen (`msg!`) mit englischer Zeile in `engine.tsv`; `jfn_model` bettet die Datei ein
+(`msg::en`, `Msg::text_in`), der Simulator braucht keinen Katalog der App. Ein Tabellenkopf ist
+eine Meldung, deren Zellen `|` trennt; die Spalten richten sich in beiden Sprachen nach der
+breitesten Zelle. Deutsch ist der Normalfall, so bleiben alle Golden-Berichte gleich; das Fenster
+stellt die Sprache bei jedem neuen Simulator, beim Start, bei jedem Wechsel der Sprache und nach
+„Von hier fortsetzen“ ein (`Sim::follow_lang`), `jfn-sim run --lang en` ebenso. Die Hilfe
+(`man`, `help`) und andere eigene Werkzeuge wie `script` bleiben deutsch.
 
 Die Konfiguration steckt in den Teilen des Geräts (Ports, Bridge, IPv4). `show running-config`
 schreibt sie als IOS-artige Konfiguration, `Engine::running_config` bei Linux-Geräten als
@@ -1107,7 +1126,9 @@ Jede Zeile trägt die Zeit, das Gerät (mit seiner Konsolenausgabe und den getip
 Prompt) oder `--` für einen Schritt und `ok` / `FEHLER` für eine Erwartung. `expect … output
 contains` prüft, was das Gerät seit seinem letzten Befehl ausgegeben hat. `--report F` schreibt
 den Bericht in eine Datei, `--golden F` vergleicht ihn mit einer gespeicherten Fassung,
-`--pcap F` schreibt die Aufzeichnung als pcapng. Die GUI-Exe nimmt dieselben Argumente
+`--pcap F` schreibt die Aufzeichnung als pcapng, `--lang en` lässt die eigenen Werkzeuge der
+Linux-Shell englisch antworten (die Wörter des Berichts selbst bleiben deutsch; ohne die Option
+deutsch). Die GUI-Exe nimmt dieselben Argumente
 (`JFNetworker.exe PROJEKT --scenario S`). Weil die App nur Dateien öffnen darf, die auf der
 Befehlszeile stehen (`fs.user`), gehören Projekt, Vergleichsdatei und pcap-Datei dorthin.
 
@@ -1599,7 +1620,9 @@ WantedBy=multi-user.target
 | `systemctl daemon-reload`, `reset-failed [EINHEIT]`, `cat EINHEIT` | neu lesen, Fehler vergessen, die Datei zeigen |
 | `journalctl [-u EINHEIT] [-n N] [-f] [-r]` | das Log des Geräts (die letzten 1000 Zeilen, `Monat Tag Zeit HOST TAG: TEXT`), mit `-u` die Zeilen einer Einheit: was ihr Dienst schrieb, bei Skripten auch `print`, und ihr Starten und Enden; `-f` folgt, bis Strg+C (130), in jeder Sitzung und im Hintergrund |
 
-`man systemctl`, `man journalctl` und `--help` antworten in eigenen Worten; `Engine::units(dev)`,
+Die Texte von `systemctl` und `journalctl` folgen der Sprache der Konsole (siehe
+[Befehlszeilen](#befehlszeilen)), die Wörter des Originals (`active`, `running`, `disabled`,
+`on-failure`) bleiben. `man systemctl`, `man journalctl` und `--help` antworten in eigenen Worten; `Engine::units(dev)`,
 `Engine::unit(dev, name)` und `Action::Unit { dev, name, op }` bedienen die Oberfläche. Die
 Szenarien prüfen mit `expect WEB1 unit web active|inactive|failed|enabled|disabled`.
 
@@ -4089,7 +4112,9 @@ jfn-sim sweep tests/experiments/scale_up_vs_out.jfnex tests/experiments/scale_up
 Das Projekt steht mit auf der Befehlszeile, denn das Programm liest nur Dateien, die dort genannt sind. Ein Projekt kann seine Experimente
 auch selbst tragen (Abschnitt `experiments`, ohne dass sich an Dateien ohne Experimente etwas ändert), dann reicht
 `jfn-sim sweep PROJEKT [--name N]`. `--detail F` schreibt je Lauf eine Zeile für jeden Host, jedes Kabel und jeden Dienst, `--report F` die Tabelle,
-`--golden F` vergleicht sie mit einer gespeicherten, `--timing` nennt auf stderr, wie lange es gedauert hat. Die GUI-Fassung heißt
+`--golden F` vergleicht sie mit einer gespeicherten, `--timing` nennt auf stderr, wie lange es gedauert hat, `--lang en` schreibt die
+Tabelle englisch (Köpfe, Namen der Konfigurationen und Engpässe Wort für Wort wie im Fenster: `jfn_model::experiment::words_in`;
+die Zahlen haben in beiden Sprachen den Dezimalpunkt, `Sweep::table_in`). Die GUI-Fassung heißt
 `JFNetworker PROJEKT --sweep DATEI ...` und läuft ohne Fenster.
 
 **Die Datei** (`.jfnex`, JSON):
