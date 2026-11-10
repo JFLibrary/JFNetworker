@@ -1,8 +1,9 @@
 #!args --verify-dirty --open assets/templates/buero-vlans.jfnet
 # "Erklärung öffnen" (workspace/docs.rs): the context menus of a device, a cable and a palette tile
 # have the entry; it asks first and shows the address of the page for this version of the app
-# (German: /de/docs/...). A model or cable without a page yet has it greyed out; "Abbrechen"
-# leaves nothing open. (Headless, "Im Browser öffnen" only prints the address.)
+# (German: /de/docs/..., the newest version this build knows: tools/docs_pages.py). Every model and
+# cable kind has a page; the note on the canvas has none, so its tile has the entry greyed out.
+# "Abbrechen" leaves nothing open. (Headless, "Im Browser öffnen" only prints the address.)
 size 1280 800
 wait 500
 # a device with a page: SW1, a JF-S24P
@@ -10,15 +11,17 @@ rclick listitem:"SW1"
 expect menuitem:"Erklärung öffnen …" enabled
 click menuitem:"Erklärung öffnen …"
 expect dialog:"Erklärung im Browser öffnen?" exists
-expect text:"https://networker.jfreund.org/de/docs/devices/jf-s24p/v1" exists
+expect text:"https://networker.jfreund.org/de/docs/devices/jf-s24p/v1.1" exists
 expect text:"Die Erklärung zu JF-S24P steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:" exists
 shot build/jfnetworker/docs_question.png
 click button:"Abbrechen"
 expect dialog:"Erklärung im Browser öffnen?" missing
-# a device without one yet: R1, a JF-R4
+# R1, a JF-R4
 rclick listitem:"R1"
-expect menuitem:"Erklärung öffnen …" disabled
-key esc
+expect menuitem:"Erklärung öffnen …" enabled
+click menuitem:"Erklärung öffnen …"
+expect text:"https://networker.jfreund.org/de/docs/devices/jf-r4/v1" exists
+click button:"Abbrechen"
 # a cable: PC1's straight copper cable has a page
 rclick listitem:"Kabel PC1 eth0 – SW1 Gi1/0/1, Kupfer, gerade, aktiv"
 expect menuitem:"Erklärung öffnen …" enabled
@@ -26,14 +29,19 @@ click menuitem:"Erklärung öffnen …"
 expect text:"https://networker.jfreund.org/de/docs/cables/copper/v1" exists
 click button:"Im Browser öffnen"
 expect dialog:"Erklärung im Browser öffnen?" missing
-# a palette tile: the JF-S24P's has the entry, the PC's not yet; the menu is about the tile, not
-# the selection
+# a palette tile: the JF-S24P's has the entry, the note's is greyed out; the menu is about the
+# tile, not the selection
 rclick button:"JF-S24P"
 expect menuitem:"Erklärung öffnen …" enabled
 click menuitem:"Erklärung öffnen …"
-expect text:"https://networker.jfreund.org/de/docs/devices/jf-s24p/v1" exists
+expect text:"https://networker.jfreund.org/de/docs/devices/jf-s24p/v1.1" exists
 click button:"Abbrechen"
-rclick button:"PC"
+# (the note's tile is #16682, ID_TILE + its index 42; the search brings it into view, and the
+# toolbar's tool has the same name)
+click #16385
+type "Notiz"
+wait 300
+rclick #16682
 expect menuitem:"Erklärung öffnen …" disabled
 key esc
 expect_nowarn
