@@ -38,7 +38,7 @@ use ui::*;
 
 use super::firewall::{heading, icon_button, key_of, note, offer, remove_button, Form, Plan, Snap, Told, ROWS_MAX};
 use crate::app::constants::*;
-use crate::app::tr::{t, tf};
+use crate::app::tr::{t, tc, tf};
 
 /// the fields of the two parts
 pub(crate) struct ZForm {
@@ -400,7 +400,7 @@ pub(super) fn part_zones(ui: &mut Ui, id: u32, k: usize, f: &mut Form, s: &Snap,
             }
         }
     }
-    let conds = [t("Protokoll"), t("Zugriffsliste")];
+    let conds = [tc("Protokoll|PDU"), t("Zugriffsliste")];
     let protos: Vec<&str> = FW_PROTOCOLS.iter().map(|x| x.0).collect();
     let lists = s.acls.names();
     let refs: Vec<&str> = lists.iter().map(String::as_str).collect();
@@ -546,7 +546,7 @@ pub(crate) fn session_rows(rows: &[FwRow], now: Ns) -> Vec<[String; 9]> {
 }
 
 fn session_cols(wide: bool) -> Vec<GridCol<'static>> {
-    let mut v = alloc::vec![GridCol::new(t("Nr."), 44).flags(GC_NOSORT | GC_RIGHT), GridCol::new(t("Protokoll"), 78).flags(GC_NOSORT), GridCol::new(t("Von"), 150).flags(GC_NOSORT | GC_FILL), GridCol::new(t("Nach"), 150).flags(GC_NOSORT | GC_FILL)];
+    let mut v = alloc::vec![GridCol::new(t("Nr."), 44).flags(GC_NOSORT | GC_RIGHT), GridCol::new(tc("Protokoll|PDU"), 78).flags(GC_NOSORT), GridCol::new(t("Von"), 150).flags(GC_NOSORT | GC_FILL), GridCol::new(t("Nach"), 150).flags(GC_NOSORT | GC_FILL)];
     if wide {
         v.push(GridCol::new(t("Zustand"), 92).flags(GC_NOSORT));
         v.push(GridCol::new(t("Paar"), 90).flags(GC_NOSORT));

@@ -76,7 +76,7 @@ use netpkt::{Ipv4, Prefix4};
 use ui::*;
 
 use crate::app::constants::*;
-use crate::app::tr::{t, tf};
+use crate::app::tr::{t, tc, tf};
 use crate::app::Net;
 use super::fwzones::{self, ZForm};
 use crate::doc::console;
@@ -956,7 +956,7 @@ fn snap(n: &Net, dev: u32) -> Option<Snap> {
 pub(super) fn field(ui: &mut Ui, label: &'static str) {
     ui.box_begin(0, BOX_H | BOX_XCENTER | BOX_WRAP, 8);
     ui.next_size(120, 0);
-    ui.text(TS_BODY | TX_SECONDARY, t(label));
+    ui.text(TS_BODY | TX_SECONDARY, tc(label));
 }
 
 // a section's heading
@@ -1140,7 +1140,7 @@ fn rule_cols(wide: bool) -> Vec<GridCol<'static>> {
         alloc::vec![
             GridCol::new(t("Pos."), 52).flags(GC_NOSORT | GC_RIGHT),
             GridCol::new(t("Aktion"), 62).flags(GC_NOSORT),
-            GridCol::new(t("Protokoll"), 72).flags(GC_NOSORT),
+            GridCol::new(tc("Protokoll|PDU"), 72).flags(GC_NOSORT),
             GridCol::new(t("Quelle"), 130).flags(GC_NOSORT),
             GridCol::new(t("Ziel"), 130).flags(GC_NOSORT),
             GridCol::new(t("Port"), 110).flags(GC_NOSORT),
@@ -1446,7 +1446,7 @@ fn part_rules(ui: &mut Ui, id: u32, f: &mut Form, s: &Snap, lock: u32, plan: &mu
 fn group(ui: &mut Ui, label: &'static str, w: i32) {
     ui.box_begin(0, BOX_H | BOX_XCENTER, 6);
     ui.next_size(w, 0);
-    ui.text(TS_BODY | TX_SECONDARY, t(label));
+    ui.text(TS_BODY | TX_SECONDARY, tc(label));
 }
 
 // the form of a rule (extended lists: everything, standard lists: the source); rows of labelled fields
@@ -1504,7 +1504,7 @@ fn rule_form(ui: &mut Ui, id: u32, f: &mut Form, s: &Snap, a: &Acl, lock: u32, t
         ui.combobox(id + 0x20, &mut fl.act, &items);
         ui.box_end();
         if ext {
-            group(ui, "Protokoll", 70);
+            group(ui, "Protokoll|PDU", 70);
             ui.next_size(100, 0);
             let items: Vec<&str> = plist.iter().map(|p| p.0).collect();
             if ui.combobox(id + 0x21, &mut fl.proto, &items) & EV_ACT != 0 {
@@ -1602,7 +1602,7 @@ fn port_row(ui: &mut Ui, id: u32, ops: &[&str], op: &mut i32, a: &mut String, b:
 
 // the columns of the translations (narrow: without the outside and the kind)
 fn xlate_cols(wide: bool) -> Vec<GridCol<'static>> {
-    let mut v = alloc::vec![GridCol::new(t("Protokoll"), 72).flags(GC_NOSORT), GridCol::new(t("Innen global"), 150).flags(GC_NOSORT), GridCol::new(t("Innen lokal"), 150).flags(GC_NOSORT | GC_FILL)];
+    let mut v = alloc::vec![GridCol::new(tc("Protokoll|PDU"), 72).flags(GC_NOSORT), GridCol::new(t("Innen global"), 150).flags(GC_NOSORT), GridCol::new(t("Innen lokal"), 150).flags(GC_NOSORT | GC_FILL)];
     if wide {
         v.push(GridCol::new(t("Außen"), 150).flags(GC_NOSORT));
         v.push(GridCol::new(t("Art"), 84).flags(GC_NOSORT));
@@ -1859,7 +1859,7 @@ fn part_test(ui: &mut Ui, id: u32, f: &mut Form, s: &Snap, zones: Option<&FwTest
     ui.box_end();
     let plist = test_protos();
     let proto = plist.get(f.test.proto as usize).map_or(PROTO_TCP, |p| p.1);
-    field(ui, "Protokoll");
+    field(ui, "Protokoll|PDU");
     ui.next_size(150, 0);
     let items: Vec<&str> = plist.iter().map(|p| p.0).collect();
     if ui.combobox(id + 0x62, &mut f.test.proto, &items) & EV_ACT != 0 {
