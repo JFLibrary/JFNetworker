@@ -73,7 +73,7 @@ expect text:"Antworten/s: 25" exists
 shot build/jfnetworker/metrics_hover.png
 move 630,236
 # ---- a device chosen on the canvas comes into the panel: KV2's node, its load and its disk
-click 930,204
+click 935,204
 expect text:"KV2 · KV-Knoten kv" exists
 expect text:"Lastanteil" exists
 expect text:"Schlüssel" exists

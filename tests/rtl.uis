@@ -7,8 +7,8 @@ theme light
 expect tab:"Geräte" rect 1192 70 84 26
 expect tab:"Eigenschaften" rect 146 70 130 26
 expect button:"Auswahl" rect 1248 38 28 28
-expect canvas:"Topologie" rect 286 70 728 500
-expect listitem:"PC1" rect 650 320 64 48
+expect canvas:"Topologie" rect 286 70 718 500
+expect listitem:"PC1" rect 645 320 64 48
 expect listitem:"Kabel PC1 eth0 – SW1 Gi1/0/1, Kupfer, gerade, aktiv" exists
 # the canvas as drawn: a click selects, Right moves to the right on the screen
 click listitem:"PC1"
@@ -16,7 +16,7 @@ expect listitem:"PC1" selected
 expect text:"0, 0" exists
 key right
 expect text:"20, 0" exists
-expect listitem:"PC1" rect 670 320 64 48
+expect listitem:"PC1" rect 665 320 64 48
 wait 600
 drag listitem:"PC1" 742,404
 expect text:"60, 60" exists

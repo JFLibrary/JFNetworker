@@ -143,11 +143,11 @@ pub(crate) fn panel(n: &mut Net, ui: &mut Ui) {
         ui.repass();
     }
     ui.tooltip(t("Schwere: 0 Notfall bis 7 Debug"));
-    ui.next_size(200, 0);
+    // the search takes what the others leave (a narrow panel still shows "Leeren")
+    ui.next_size(-1, 0);
     if ui.textbox(ID_LOG_FIND, Some(t("Meldungen durchsuchen")), &mut n.log.find, 80) & EV_ACT != 0 {
         ui.repass();
     }
-    ui.spacer(-1);
     ui.next_flags(ST_COMPACT);
     ui.checkbox(ID_LOG_FOLLOW, t("Neueste zeigen"), &mut n.log.follow);
     ui.cmd_button(CMD_LOG_CLEAR, ST_ICON_ONLY | ST_SUBTLE);

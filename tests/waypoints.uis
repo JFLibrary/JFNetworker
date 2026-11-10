@@ -7,37 +7,37 @@
 theme light
 # PC1 (-140, -120), SW1 (160, 80), joined at once; the new cable is selected
 click button:"PC"
-click 530,220
+click 535,220
 click button:"JF-S24P"
-click 830,420
+click 835,420
 key c
 drag listitem:"PC1" listitem:"SW1" 8 shift
 key v
 expect text:"PC1 eth0 – SW1 Gi1/0/1" exists
 expect text:"Wegpunkte" missing
 # the "+" in the middle: a drag inserts a waypoint at (40, 100)
-drag 672,324 672,424
+drag 677,324 677,424
 expect text:"40, 100" exists
 shot build/jfnetworker/waypoints_one.png
 # the waypoint moves to (40, 160); undo puts it back
-drag 670,420 670,480
+drag 675,420 675,480
 expect text:"40, 160" exists
 key ctrl+z
 expect text:"40, 100" exists
 key ctrl+y
 expect text:"40, 160" exists
 # a second one in the stretch to the switch (its "+" at 730,458) at (100, 220)
-drag 730,458 730,540
+drag 735,458 735,540
 expect text:"40, 160; 100, 220" exists
 # Esc during a drag from a "+" takes the new waypoint back (no undo step)
-down 605,364
-move 560,420
-move 540,450
+down 610,364
+move 565,420
+move 545,450
 key esc
 up
 expect text:"40, 160; 100, 220" exists
 # right angles through the waypoints, from the context menu
-rclick 660,470
+rclick 665,470
 expect menuitem:"Gerade" checked
 click menuitem:"Rechtwinklig"
 expect tab:"Rechtwinklig" selected
@@ -52,7 +52,7 @@ key ctrl+z
 expect tab:"Gerade" selected
 # a double click on a waypoint removes it
 wait 600
-dblclick 730,540
+dblclick 735,540
 expect text:"40, 160" exists
 expect text:"40, 160; 100, 220" missing
 key ctrl+z

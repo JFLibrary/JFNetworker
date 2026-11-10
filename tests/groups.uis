@@ -19,7 +19,7 @@ drag listitem:"SRV2" listitem:"SRV2" 1 shift
 expect text:"2 ausgewählt" exists
 key ctrl+g
 expect listitem:"Gruppe „Gruppe 1“, 2 Geräte" selected
-expect listitem:"Gruppe „Gruppe 1“, 2 Geräte" rect 740 200 204 22
+expect listitem:"Gruppe „Gruppe 1“, 2 Geräte" rect 745 200 204 22
 expect text:"1 ausgewählt" exists
 expect text:"Gruppe „Gruppe 1“" exists
 expect #65536 text "Gruppe 1"
@@ -49,7 +49,7 @@ key ctrl+y
 expect listitem:"Gruppe „Serverraum“, 2 Geräte" exists
 # its button collapses it: the cluster at the middle, one line for both cables to SW1
 click 933,211
-expect listitem:"Gruppe „Serverraum“, 2 Geräte, zugeklappt" rect 810 240 64 48
+expect listitem:"Gruppe „Serverraum“, 2 Geräte, zugeklappt" rect 815 240 64 48
 expect listitem:"Gruppe „Serverraum“, 2 Geräte, zugeklappt" selected
 expect listitem:"SRV1" missing
 expect listitem:"SRV2" missing
@@ -66,17 +66,17 @@ expect listitem:"SRV1" missing
 wait 600
 dblclick listitem:"Gruppe „Serverraum“, 2 Geräte, zugeklappt"
 expect listitem:"Gruppe „Serverraum“, 2 Geräte" selected
-expect listitem:"SRV1" rect 750 240 64 48
+expect listitem:"SRV1" rect 755 240 64 48
 expect listitem:"Kabel SRV1 eth1 – SRV2 eth1, Kupfer, gekreuzt, aktiv" exists
 # a drag of the title moves its members by grid steps, one undo step
 wait 600
 drag listitem:"Gruppe „Serverraum“, 2 Geräte" 882,231
-expect listitem:"SRV1" rect 790 260 64 48
-expect listitem:"SRV2" rect 910 260 64 48
-expect listitem:"Gruppe „Serverraum“, 2 Geräte" rect 780 220 204 22
+expect listitem:"SRV1" rect 795 260 64 48
+expect listitem:"SRV2" rect 915 260 64 48
+expect listitem:"Gruppe „Serverraum“, 2 Geräte" rect 785 220 204 22
 key ctrl+z
-expect listitem:"SRV1" rect 750 240 64 48
-expect listitem:"SRV2" rect 870 240 64 48
+expect listitem:"SRV1" rect 755 240 64 48
+expect listitem:"SRV2" rect 875 240 64 48
 # the inspector: its colour, Zuklappen and Aufklappen
 click listitem:"Gruppe „Serverraum“, 2 Geräte"
 expect #65544 value 1

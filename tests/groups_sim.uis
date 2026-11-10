@@ -32,16 +32,16 @@ key f7
 wait 1200
 expect text:"t = 0,666 000 722 s" exists
 expect #37890 exists
-expect #37891 rect 681 344 16 12
-expect #37892 rect 681 344 16 12
+expect #37891 rect 686 344 16 12
+expect #37892 rect 686 344 16 12
 key f7
 wait 1200
 cmd 176 666001083
 wait 100
 expect text:"Ansicht bei t = 0,666 001 083 s" exists
-expect #37891 rect 744 316 16 12
-expect #37892 rect 744 316 16 12
-expect #37890 rect 594 316 16 12
+expect #37891 rect 749 316 16 12
+expect #37892 rect 749 316 16 12
+expect #37890 rect 599 316 16 12
 shot build/jfnetworker/groups_sim.png
 click tab:"Echtzeit"
 wait 200

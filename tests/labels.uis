@@ -261,7 +261,7 @@ expect text:"0 Geräte · 0 Kabel" exists
 expect listitem:"Beschriftung: Vor dem Speichern" missing
 cmd 70
 expect listitem:"Beschriftung: Vor dem Speichern" exists
-expect listitem:"Beschriftung: Stock 2" rect 470 360 * 22
+expect listitem:"Beschriftung: Stock 2" rect 475 360 * 22
 expect listitem:"Beschriftung: Zeile 1" rect 880 470 * 42
 expect listitem:"Notiz: Karte" rect * * 200 80
 expect text:"gespeichert" exists
@@ -322,7 +322,7 @@ cmd 21
 cmd 21
 expect text:"10 %" exists
 shot build/jfnetworker/labels_zoom.png
-expect listitem:"Beschriftung: Serverraum" rect 637 303 8 2
+expect listitem:"Beschriftung: Serverraum" rect 642 303 7 2
 wait 600
 click listitem:"Beschriftung: Serverraum"
 expect listitem:"Beschriftung: Serverraum" selected

@@ -13,19 +13,19 @@ click 730,220
 click button:"JF-S24P"
 click 630,420
 expect text:"3 Geräte · 0 Kabel" exists
-expect listitem:"PC2" rect 690 200 64 48
-expect listitem:"SW1" rect 590 400 64 48
+expect listitem:"PC2" rect 695 200 64 48
+expect listitem:"SW1" rect 595 400 64 48
 # move: a drag by (100, 60), snapped
 click listitem:"PC1"
 expect text:"-140, -120" exists
 wait 600
 drag listitem:"PC1" 622,284
-expect listitem:"PC1" rect 590 260 64 48
+expect listitem:"PC1" rect 595 260 64 48
 expect text:"-40, -60" exists
 key ctrl+z
-expect listitem:"PC1" rect 490 200 64 48
+expect listitem:"PC1" rect 495 200 64 48
 key ctrl+y
-expect listitem:"PC1" rect 590 260 64 48
+expect listitem:"PC1" rect 595 260 64 48
 # the arrows move a grid step (one undo step each)
 key right
 expect text:"-20, -60" exists
@@ -40,7 +40,7 @@ down 622,284
 move 700,330
 key esc
 up
-expect listitem:"PC1" rect 590 260 64 48
+expect listitem:"PC1" rect 595 260 64 48
 # the marquee takes what lies fully inside
 drag 460,180 800,470
 expect text:"3 ausgewählt" exists
@@ -57,7 +57,7 @@ expect text:"1 Gerät · 0 Kabel" exists
 expect listitem:"PC2" exists
 click button:"Rückgängig"
 expect text:"3 Geräte · 0 Kabel" exists
-expect listitem:"SW1" rect 590 400 64 48
+expect listitem:"SW1" rect 595 400 64 48
 # Ctrl+A, then a click on the background clears
 click 900,520
 key ctrl+a
@@ -146,7 +146,7 @@ expect #12305 exists
 type "Erster Stock"
 click button:"Übernehmen"
 expect listitem:"Notiz: Erster Stock" exists
-expect listitem:"Notiz: Erster Stock" rect 410 480 200 80
+expect listitem:"Notiz: Erster Stock" rect 395 480 200 80
 expect #43 unchecked
 key ctrl+z
 expect listitem:"Notiz" exists
@@ -158,11 +158,11 @@ expect listitem:"Notiz: Erster Stock" exists
 # a note moves and deletes like a device
 wait 600
 drag listitem:"Notiz: Erster Stock" 530,500
-expect listitem:"Notiz: Erster Stock" rect 430 460 200 80
+expect listitem:"Notiz: Erster Stock" rect 435 460 200 80
 key delete
 expect listitem:"Notiz: Erster Stock" missing
 key ctrl+z
-expect listitem:"Notiz: Erster Stock" rect 430 460 200 80
+expect listitem:"Notiz: Erster Stock" rect 435 460 200 80
 # the inspector edits the text as well
 click #20483
 key ctrl+a
@@ -175,7 +175,7 @@ expect listitem:"Notiz: Erster Stock" exists
 click #41
 expect #41 checked
 drag 900,500 800,450
-expect listitem:"Core-1" rect 490 350 64 48
+expect listitem:"Core-1" rect 495 350 64 48
 key v
 expect #40 checked
 expect_nowarn

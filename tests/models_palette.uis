@@ -37,7 +37,7 @@ scale 100
 # a drag from the palette: SW1 at world (-100, -100), its box at (-140, -120)
 drag button:"JF-S8" 530,220
 expect listitem:"SW1" exists
-expect listitem:"SW1" rect 490 200 64 48
+expect listitem:"SW1" rect 495 200 64 48
 expect listitem:"SW1" selected
 expect text:"1 Gerät · 0 Kabel" exists
 expect text:"Tisch-Switch 8× 1G, unmanaged (ohne Befehlszeile)" exists

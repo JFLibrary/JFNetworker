@@ -37,7 +37,7 @@ bench 10 wheel 900,420 120 ctrl 33000
 # 100 % over two pods
 cmd 23
 wait 100
-wheel 616,512 720 ctrl
+wheel 616,512 840 ctrl
 wait 300
 expect text:"100 %" exists
 shot build/jfnetworker/perf_100.png

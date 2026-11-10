@@ -53,9 +53,15 @@ pub(crate) struct Shell {
     prob_sel: i32,
 }
 
+/// the width of the left side (Geräte, DIP): three tiles a row beside the scroll bar, whose room
+/// netlab keeps free (the library's default is 260)
+pub(crate) const LEFT_W: i32 = 270;
+
 impl Shell {
     pub(crate) fn new() -> Shell {
-        Shell { dock: DockState::new(), about: Shared::new(0), start: false, page: crate::workspace::startpage::Page::new(), title: String::new(), prob_sel: -1 }
+        let mut dock = DockState::new();
+        dock.set_size(DOCK_LEFT, LEFT_W);
+        Shell { dock, about: Shared::new(0), start: false, page: crate::workspace::startpage::Page::new(), title: String::new(), prob_sel: -1 }
     }
 }
 

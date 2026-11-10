@@ -4,7 +4,7 @@
 # in the input stays there, a click beside it takes the text.  Shots light.  (--rtl is an argument
 # of the start, so this is a script of its own beside labels.uis.)
 theme light
-expect canvas:"Topologie" rect 286 70 728 500
+expect canvas:"Topologie" rect 286 70 718 500
 # ---- at the point clicked, text from left to right as drawn
 dblclick 500,180
 expect #128000 exists

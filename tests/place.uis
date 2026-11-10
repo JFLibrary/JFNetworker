@@ -9,7 +9,7 @@ expect button:"Rückgängig" disabled
 # drag the PC tile onto the canvas: world (-100, -100) -> box at (-140, -120)
 drag button:"PC" 530,220
 expect listitem:"PC1" exists
-expect listitem:"PC1" rect 490 200 64 48
+expect listitem:"PC1" rect 495 200 64 48
 expect listitem:"PC1" selected
 expect text:"1 Gerät · 0 Kabel" exists
 expect text:"1 ausgewählt" exists
@@ -25,7 +25,7 @@ expect text:"Platzieren: JF-S24P" exists
 move 735,430
 shot build/jfnetworker/place_preview.png
 click 730,420
-expect listitem:"SW1" rect 690 400 64 48
+expect listitem:"SW1" rect 695 400 64 48
 expect button:"JF-S24P" unchecked
 expect text:"2 Geräte · 0 Kabel" exists
 expect button:"Auswahl" checked
@@ -58,7 +58,7 @@ key ctrl+z
 expect listitem:"SW1" missing
 key ctrl+y
 expect listitem:"SW1" exists
-expect listitem:"SW1" rect 690 400 64 48
+expect listitem:"SW1" rect 695 400 64 48
 click button:"Wiederholen"
 expect listitem:"Laptop1" exists
 expect text:"3 Geräte · 0 Kabel" exists
@@ -71,9 +71,9 @@ expect button:"Wiederholen" disabled
 # Enter on a tile puts the device into the middle of the view, the next one beside it
 focus button:"Drucker"
 key enter
-expect listitem:"Printer1" rect 590 300 64 48
+expect listitem:"Printer1" rect 595 300 64 48
 key enter
-expect listitem:"Printer2" rect 670 300 64 48
+expect listitem:"Printer2" rect 675 300 64 48
 # Ctrl+Shift+Z redoes like Ctrl+Y
 key ctrl+z
 expect listitem:"Printer2" missing

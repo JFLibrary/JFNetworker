@@ -194,7 +194,11 @@ impl Net {
     // the recent files and the dock layout of the user
     fn load_prefs(&mut self) {
         self.file.recent = self.prefs.recent();
-        if let Some(d) = plat::read_file(DOCK).and_then(|b| DockState::load(&String::from_utf8_lossy(&b))) {
+        if let Some(mut d) = plat::read_file(DOCK).and_then(|b| DockState::load(&String::from_utf8_lossy(&b))) {
+            // a left side never resized (the library's 260) gets ours
+            if d.size(DOCK_LEFT) == 260 {
+                d.set_size(DOCK_LEFT, crate::workspace::shell::LEFT_W);
+            }
             self.shell.dock = d;
         }
     }

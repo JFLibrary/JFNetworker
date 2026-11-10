@@ -19,7 +19,7 @@ type "bg_plan.png"
 click button:"Öffnen"
 expect dialog:"Öffnen" missing
 expect listitem:"Hintergrundbild" selected
-expect listitem:"Hintergrundbild" rect 330 95 600 450
+expect listitem:"Hintergrundbild" rect 335 95 600 450
 expect text:"bg_plan.png" exists
 expect text:"160 × 120 Pixel, PNG, 1 KB" exists
 expect #65792 text "-220"
@@ -38,13 +38,13 @@ wait 600
 drag 400,450 440,490
 expect #65792 text "-180"
 expect #65793 text "-100"
-expect listitem:"PC1" rect 390 240 64 48
+expect listitem:"PC1" rect 395 240 64 48
 key ctrl+z
 expect #65792 text "-220"
 # its handle at the bottom right scales it, the aspect stays
 drag 930,545 990,600
 expect #65794 text "412,5"
-expect listitem:"Hintergrundbild" rect 330 95 660 475
+expect listitem:"Hintergrundbild" rect 335 95 659 475
 key ctrl+z
 expect #65794 text "375"
 # the fields: opacity 30 %; a scale of 0 refused with the reason
@@ -59,7 +59,7 @@ expect text:"Links und Oben in Einheiten der Fläche, Maßstab 1 bis 10 000 %, D
 key ctrl+a
 type "200\n"
 expect #65794 text "200"
-expect listitem:"Hintergrundbild" rect 330 95 320 240
+expect listitem:"Hintergrundbild" rect 335 95 320 240
 shot build/jfnetworker/groups_bg_settings.png
 cmd 10
 cmd 10
@@ -81,10 +81,10 @@ expect listitem:"Hintergrundbild" exists
 # An Ansicht anpassen after zooming out
 cmd 21
 cmd 597
-expect listitem:"Hintergrundbild" rect 330 95 600 450
+expect listitem:"Hintergrundbild" rect 335 95 600 450
 key ctrl+z
 cmd 22
-expect listitem:"Hintergrundbild" rect 330 95 600 450
+expect listitem:"Hintergrundbild" rect 335 95 600 450
 # Hintergrund entfernen, one step
 cmd 596
 expect listitem:"Hintergrundbild" missing
@@ -107,7 +107,7 @@ key ctrl+a
 type "build/jfnetworker/groups_bg.jfnet"
 click button:"Öffnen"
 expect dialog:"Öffnen" missing
-expect listitem:"Hintergrundbild" rect 330 95 600 450
+expect listitem:"Hintergrundbild" rect 335 95 600 450
 expect text:"5 Geräte · 5 Kabel" exists
 click listitem:"Hintergrundbild"
 expect text:"160 × 120 Pixel, PNG, 1 KB" exists
