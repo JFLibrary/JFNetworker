@@ -16,7 +16,7 @@ use netpkt::ipv4::{PROTO_TCP, PROTO_UDP};
 use netpkt::{Ipv4, Prefix4};
 
 use crate::action::Action;
-use crate::fw::{FwAction, FwOp, HostFw, HostOp, HostRule};
+use crate::fw::{FwAction, FwOp, HostFw, HostOp, HostRule, HOST_PAIR};
 use crate::kernel::Engine;
 
 /// an action word as the shell takes it; allowed packets begin a session (fw.rs)
@@ -131,7 +131,7 @@ impl Engine {
                     s.push_str(&format!("  {} {} {}\n", i + 1, action_word(r.action), r.words()));
                 }
                 if h.enabled {
-                    let n = self.fw_sessions(dev).len();
+                    let n = self.fw_sessions(dev).iter().filter(|r| r.session.pair == HOST_PAIR).count();
                     s.push_str(&format!("sessions now: {}\n", n));
                 }
                 self.out(ni, &s);

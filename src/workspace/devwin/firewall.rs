@@ -823,6 +823,8 @@ pub(crate) fn rule_del_line(r: &Rule) -> String {
         Rule::List { acl, .. } => format!("no ip nat inside source list {}", acl),
         Rule::Static { proto: 0, local, .. } => format!("no ip nat inside source static {}", local),
         Rule::Static { proto, local, lport, .. } => format!("no ip nat inside source static {} {} {}", if *proto == PROTO_TCP { "tcp" } else { "udp" }, local, lport),
+        // (a Linux device's rule: this tab is for IOS-like devices)
+        Rule::Masquerade { iface, .. } => format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE", iface),
     }
 }
 
@@ -841,6 +843,7 @@ fn rule_text(r: &Rule) -> String {
                 p => format!("{} {}:{} = {}:{}", if p == PROTO_TCP { "tcp" } else { "udp" }, local, lport, g, gport),
             }
         }
+        Rule::Masquerade { iface, .. } => format!("MASQUERADE {}", iface),
     }
 }
 

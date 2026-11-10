@@ -18,6 +18,10 @@
 //   FwOp                             what Action::Fw does
 //   HostFw { enabled, deny_in, deny_out, rules }   the small firewall of a Linux host (cli/ufw.rs): the
 //                                    same sessions, its own rules; Firewall::host
+//   FwdChain { drop, rules } / FwdRule   iptables' FORWARD chain of a Linux device (cli/iptables.rs):
+//                                    what it forwards; Firewall::fwd
+//   Firewall::fwd_decide(in, out, &FwFlow, now) -> (FwProbe, rule)   what the chain says about a
+//                                    forwarded packet and which rule said it (None: the policy)
 //
 // The rules.  An interface without a zone is outside the firewall's business only towards other
 // interfaces without a zone.  Between two zones a packet is dropped unless a zone pair for that
@@ -75,7 +79,27 @@
 // goes out likewise (allow).  An allowed packet that can begin a session begins one, so answers come
 // back whatever the default says; one that cannot passes alone.  Sessions, timers, notes and the
 // half-open limit are the ones above.  As with the original, ICMP errors and echo requests and a DHCP
-// client's answers pass without a rule.  What the host forwards stays in "net" and passes.
+// client's answers pass without a rule.  What the host forwards stays in "net" and passes, unless the
+// FORWARD chain below has something to say.
+//
+// The FORWARD chain of a Linux device (iptables, cli/iptables.rs: FwdChain { drop, rules }).  It sees the
+// IPv4 packets the device forwards, where fw_out sees them: after routing, with both interfaces known,
+// before NAT changes the source and after NAT gave an answer its inside destination back.  Its rules
+// count in their order; the first that matches decides, else the policy (ACCEPT or DROP).  A rule asks
+// for the interfaces by name (a "+" at the end for every name that begins so), protocol, destination
+// port, source and destination network and the packet's state in connection tracking.  The states come
+// from the sessions above, with their timers, shared with ufw: ESTABLISHED a packet of a session on its
+// way back, or on its way there once something came back; NEW one that can begin a session (and one of
+// a session that has not seen an answer yet); RELATED an ICMP error about a session's packet; INVALID
+// everything else.  So every packet meets the rules, as with the original: a session only lets answers
+// through when a rule accepts its state.  An accepted packet that can begin a session and has none
+// begins one (pair "iptables", the rule's words as its class), so the answers are ESTABLISHED; a policy
+// of ACCEPT does the same.  DROP drops silently, REJECT drops and sends an ICMP unreachable (port
+// unreachable unless the rule says otherwise) from the interface the packet came in on.  Each rule and
+// the policy count packets and bytes.  With the default (ACCEPT, no rules) the chain is inactive and
+// nothing here runs; what the device makes or receives itself is never its business (INPUT and OUTPUT
+// are ufw's), nor is IPv6.  Not done: user chains, LOG and the other targets, "!", fragments
+// reassembled before the rules, connection tracking's own timeouts (the ones above count).
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -103,6 +127,8 @@ pub const SELF_ZONE: &str = "self";
 pub const HOST_NET: &str = "net";
 /// the name of the host firewall in notes and sessions
 pub const HOST_PAIR: &str = "ufw";
+/// the name of iptables' FORWARD chain in notes and sessions
+pub const FWD_PAIR: &str = "iptables";
 /// the class of what no other class matches
 pub const CLASS_DEFAULT: &str = "class-default";
 /// half-open TCP sessions a device keeps at most, unless configured
@@ -424,6 +450,8 @@ pub struct Firewall {
     pub stats: FwStats,
     /// the firewall of a Linux host (cli/ufw.rs)
     pub host: HostFw,
+    /// iptables' FORWARD chain of a Linux device (cli/iptables.rs)
+    pub fwd: FwdChain,
     sessions: BTreeMap<u64, FwSession>,
     index: BTreeMap<Key, (u64, bool)>,
     next_id: u64,
@@ -433,7 +461,7 @@ pub struct Firewall {
 
 impl Default for Firewall {
     fn default() -> Firewall {
-        Firewall { zones: BTreeMap::new(), members: BTreeMap::new(), classes: BTreeMap::new(), policies: BTreeMap::new(), pairs: BTreeMap::new(), timers: FwTimers::default(), max_half_open: HALF_OPEN_MAX, stats: FwStats::default(), host: HostFw::default(), sessions: BTreeMap::new(), index: BTreeMap::new(), next_id: 0, due: None }
+        Firewall { zones: BTreeMap::new(), members: BTreeMap::new(), classes: BTreeMap::new(), policies: BTreeMap::new(), pairs: BTreeMap::new(), timers: FwTimers::default(), max_half_open: HALF_OPEN_MAX, stats: FwStats::default(), host: HostFw::default(), fwd: FwdChain::default(), sessions: BTreeMap::new(), index: BTreeMap::new(), next_id: 0, due: None }
     }
 }
 
@@ -594,9 +622,10 @@ impl FwProbe {
 }
 
 impl Firewall {
-    /// something to do: an interface has a zone, or the host firewall is on
+    /// something to do: an interface has a zone, the host firewall is on, or the FORWARD chain has a rule
+    /// or drops
     pub fn active(&self) -> bool {
-        !self.members.is_empty() || self.host.enabled
+        !self.members.is_empty() || self.host.enabled || self.fwd.active()
     }
     /// the zone of an interface; None as the interface: the device itself
     pub fn zone_of(&self, iface: Option<u16>) -> Option<&str> {
@@ -616,7 +645,7 @@ impl Firewall {
     }
     /// the configuration and counters without the sessions (what a window reads every frame)
     pub fn without_sessions(&self) -> Firewall {
-        Firewall { zones: self.zones.clone(), members: self.members.clone(), classes: self.classes.clone(), policies: self.policies.clone(), pairs: self.pairs.clone(), timers: self.timers, max_half_open: self.max_half_open, stats: self.stats, host: self.host.clone(), sessions: BTreeMap::new(), index: BTreeMap::new(), next_id: self.next_id, due: None }
+        Firewall { zones: self.zones.clone(), members: self.members.clone(), classes: self.classes.clone(), policies: self.policies.clone(), pairs: self.pairs.clone(), timers: self.timers, max_half_open: self.max_half_open, stats: self.stats, host: self.host.clone(), fwd: self.fwd.clone(), sessions: BTreeMap::new(), index: BTreeMap::new(), next_id: self.next_id, due: None }
     }
     /// the half-open TCP sessions at `now`
     pub fn half_open(&self, now: Ns) -> u32 {
@@ -630,9 +659,11 @@ impl Firewall {
         self.stats = FwStats::default();
         self.clear_counters();
     }
-    /// the counters of the classes and the firewall back to 0 ("clear zone-pair counter")
+    /// the counters of the classes and the firewall back to 0 ("clear zone-pair counter"), those of the
+    /// FORWARD chain too
     pub fn clear_counters(&mut self) {
         self.stats = FwStats::default();
+        self.fwd.zero();
         for p in self.policies.values_mut() {
             for c in p.classes.iter_mut().chain(core::iter::once(&mut p.default)) {
                 c.hits = 0;
@@ -653,6 +684,7 @@ impl Firewall {
             + self.policies.values().map(|p| 96 + p.classes.len() * core::mem::size_of::<PolicyClass>()).sum::<usize>()
             + self.sessions.len() * (core::mem::size_of::<FwSession>() + 64)
             + self.index.len() * core::mem::size_of::<(Key, (u64, bool))>()
+            + self.fwd.rules.len() * (core::mem::size_of::<FwdRule>() + 32)
     }
     /// forgets sessions (of one pair); how many
     pub fn clear_sessions(&mut self, pair: Option<&str>) -> usize {
@@ -808,6 +840,60 @@ impl Firewall {
         }
         FwProbe::Policy { pair: String::from(HOST_PAIR), policy: String::from(HOST_PAIR), class, at: None, action, log: false }
     }
+    /// the session of the FORWARD chain a packet belongs to: (id, on the way back).  Connection tracking
+    /// knows no interfaces, so neither does this
+    fn fwd_find(&self, f: &FwFlow, now: Ns) -> Option<(u64, bool)> {
+        let alive = |id: u64| self.sessions.get(&id).is_some_and(|s| s.pair == FWD_PAIR && s.ends(&self.timers) > now);
+        if f.later {
+            let lo = (f.proto, f.src, f.dst, 0u16, 0u16);
+            let hi = (f.proto, f.src, f.dst, u16::MAX, u16::MAX);
+            return self.index.range(lo..=hi).map(|(_, v)| *v).find(|(id, _)| alive(*id));
+        }
+        let (id, back) = *self.index.get(&f.key())?;
+        if back && f.icmp_request() {
+            return None;
+        }
+        alive(id).then_some((id, back))
+    }
+    /// the session of the FORWARD chain an ICMP error is about
+    fn fwd_related(&self, f: &FwFlow, now: Ns) -> Option<u64> {
+        let (id, _) = *self.index.get(&f.quoted?)?;
+        self.sessions.get(&id).filter(|s| s.pair == FWD_PAIR && s.ends(&self.timers) > now).map(|s| s.id)
+    }
+    /// what the FORWARD chain says about a packet from interface `inif` to `outif` (the header has the
+    /// rules), counting nothing and changing nothing; the index of the rule that decided (None: the
+    /// policy)
+    pub fn fwd_decide(&self, inif: &str, outif: &str, f: &FwFlow, now: Ns) -> (FwProbe, Option<usize>) {
+        let sess = self.fwd_find(f, now);
+        let rel = if sess.is_none() { self.fwd_related(f, now) } else { None };
+        let state = match (sess, rel) {
+            (Some((_, true)), _) => CT_ESTABLISHED,
+            (Some((id, false)), _) if self.sessions.get(&id).is_some_and(|s| s.packets[1] > 0) => CT_ESTABLISHED,
+            (Some(_), _) => CT_NEW,
+            (None, Some(_)) => CT_RELATED,
+            (None, None) if f.begins() => CT_NEW,
+            (None, None) => CT_INVALID,
+        };
+        let at = self.fwd.rules.iter().position(|r| r.holds(inif, outif, f, state));
+        let (target, class) = match at.and_then(|i| self.fwd.rules.get(i)) {
+            Some(r) => (r.target, format!("-A FORWARD {}", r.spec())),
+            None if self.fwd.drop => (FwdTarget::Drop, String::from("-P FORWARD DROP")),
+            None => (FwdTarget::Accept, String::from("-P FORWARD ACCEPT")),
+        };
+        let pair = String::from(FWD_PAIR);
+        let policy = |action: FwAction| FwProbe::Policy { pair: String::from(FWD_PAIR), policy: String::from("FORWARD"), class: class.clone(), at, action, log: false };
+        let probe = match target {
+            FwdTarget::Accept => match (sess, rel) {
+                (Some((id, back)), _) => FwProbe::Session { id, back, pair },
+                (None, Some(id)) => FwProbe::Related { id, pair },
+                // an accepted packet begins a session when it can, so its answers are ESTABLISHED
+                (None, None) => policy(if f.begins() { FwAction::Inspect } else { FwAction::Pass }),
+            },
+            FwdTarget::Drop => policy(FwAction::Drop),
+            FwdTarget::Reject(_) => policy(FwAction::Reject),
+        };
+        (probe, at)
+    }
     /// a new session for a packet
     fn begin(&mut self, f: &FwFlow, from: &str, to: &str, pair: &str, class: &str, log: bool, now: Ns) -> u64 {
         self.next_id += 1;
@@ -886,7 +972,7 @@ impl Firewall {
     }
     /// after a change of the configuration: sessions of a pair that went or lost its policy go too
     fn prune(&mut self) {
-        let gone: Vec<u64> = self.sessions.values().filter(|s| s.pair != HOST_PAIR && !self.pairs.get(&s.pair).is_some_and(|p| p.policy.is_some())).map(|s| s.id).collect();
+        let gone: Vec<u64> = self.sessions.values().filter(|s| s.pair != HOST_PAIR && s.pair != FWD_PAIR && !self.pairs.get(&s.pair).is_some_and(|p| p.policy.is_some())).map(|s| s.id).collect();
         for id in gone {
             self.remove(id);
         }
@@ -928,6 +1014,8 @@ pub enum FwOp {
     ClearCounters,
     /// the firewall of a Linux host
     Host(HostOp),
+    /// iptables' FORWARD chain of a Linux device
+    Fwd(FwdOp),
 }
 
 /// a rule of the host firewall
@@ -1012,6 +1100,177 @@ pub enum HostOp {
     Remove(HostRule),
     /// off, the defaults back, no rules, no sessions
     Reset,
+}
+
+/// the states of connection tracking a rule of the FORWARD chain asks for (bits)
+pub const CT_INVALID: u8 = 1;
+pub const CT_NEW: u8 = 2;
+pub const CT_RELATED: u8 = 4;
+pub const CT_ESTABLISHED: u8 = 8;
+/// their words, in the order iptables writes them
+pub const CT_WORDS: [(u8, &str); 4] = [(CT_INVALID, "INVALID"), (CT_NEW, "NEW"), (CT_RELATED, "RELATED"), (CT_ESTABLISHED, "ESTABLISHED")];
+
+/// what a rule of the FORWARD chain does with a packet ("-j")
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FwdTarget {
+    Accept,
+    Drop,
+    /// dropped, and the sender gets ICMP destination unreachable with this code
+    Reject(u8),
+}
+
+/// the "--reject-with" types: (word, ICMP code)
+pub const REJECT_WITH: [(&str, u8); 4] = [("icmp-net-unreachable", icmp::UNREACH_NET), ("icmp-host-unreachable", icmp::UNREACH_HOST), ("icmp-port-unreachable", icmp::UNREACH_PORT), ("icmp-admin-prohibited", UNREACH_ADMIN)];
+
+/// a rule of the FORWARD chain ("iptables -A FORWARD ...")
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FwdRule {
+    /// "-i", "-o": an interface's name; "eth+" every name that begins with "eth"
+    pub inif: Option<String>,
+    pub outif: Option<String>,
+    /// "-p" (None: every protocol)
+    pub proto: Option<u8>,
+    /// "--dport" (TCP or UDP)
+    pub dport: Option<u16>,
+    pub src: Option<Prefix4>,
+    pub dst: Option<Prefix4>,
+    /// CT_* bits (0: the state does not matter)
+    pub state: u8,
+    /// written "-m state --state" rather than "-m conntrack --ctstate"
+    pub state_mod: bool,
+    pub target: FwdTarget,
+    /// the packets and bytes it decided
+    pub packets: u64,
+    pub bytes: u64,
+}
+
+/// an interface name against "-i" / "-o" ("+" at the end: a prefix)
+fn iface_fits(want: &Option<String>, name: &str) -> bool {
+    match want {
+        None => true,
+        Some(w) => match w.strip_suffix('+') {
+            Some(p) => name.starts_with(p),
+            None => w == name,
+        },
+    }
+}
+
+/// a protocol as iptables names it
+pub fn ipt_proto(p: u8) -> String {
+    match p {
+        0 => String::from("all"),
+        PROTO_TCP => String::from("tcp"),
+        PROTO_UDP => String::from("udp"),
+        PROTO_ICMP => String::from("icmp"),
+        n => format!("{}", n),
+    }
+}
+
+/// the words of states ("RELATED,ESTABLISHED")
+pub fn ct_words(bits: u8) -> String {
+    CT_WORDS.iter().filter(|(b, _)| bits & b != 0).map(|(_, w)| *w).collect::<Vec<_>>().join(",")
+}
+
+impl FwdRule {
+    /// the same rule, whatever it counted
+    pub fn same(&self, o: &FwdRule) -> bool {
+        FwdRule { packets: 0, bytes: 0, ..self.clone() } == FwdRule { packets: 0, bytes: 0, ..o.clone() }
+    }
+    /// the rule matches a packet from `inif` to `outif` in connection state `state` (a CT_* bit)
+    pub fn holds(&self, inif: &str, outif: &str, f: &FwFlow, state: u8) -> bool {
+        if !iface_fits(&self.inif, inif) || !iface_fits(&self.outif, outif) {
+            return false;
+        }
+        if self.proto.is_some_and(|p| p != f.proto) {
+            return false;
+        }
+        if let Some(p) = self.dport
+            && !(f.ports && !f.later && f.dport == p)
+        {
+            return false;
+        }
+        let net = |n: &Option<Prefix4>, a: IpAddr| match (n, a) {
+            (None, _) => true,
+            (Some(n), IpAddr::V4(a)) => n.contains(a),
+            (Some(_), IpAddr::V6(_)) => false,
+        };
+        net(&self.src, f.src) && net(&self.dst, f.dst) && (self.state == 0 || self.state & state != 0)
+    }
+    /// the rule as "iptables -S" writes it after "-A FORWARD"
+    pub fn spec(&self) -> String {
+        let mut w: Vec<String> = Vec::new();
+        if let Some(n) = &self.src {
+            w.push(format!("-s {}", n));
+        }
+        if let Some(n) = &self.dst {
+            w.push(format!("-d {}", n));
+        }
+        if let Some(i) = &self.inif {
+            w.push(format!("-i {}", i));
+        }
+        if let Some(i) = &self.outif {
+            w.push(format!("-o {}", i));
+        }
+        if let Some(p) = self.proto {
+            w.push(format!("-p {}", ipt_proto(p)));
+            if let Some(d) = self.dport {
+                w.push(format!("-m {} --dport {}", ipt_proto(p), d));
+            }
+        }
+        if self.state != 0 {
+            w.push(if self.state_mod { format!("-m state --state {}", ct_words(self.state)) } else { format!("-m conntrack --ctstate {}", ct_words(self.state)) });
+        }
+        w.push(match self.target {
+            FwdTarget::Accept => String::from("-j ACCEPT"),
+            FwdTarget::Drop => String::from("-j DROP"),
+            FwdTarget::Reject(c) => format!("-j REJECT --reject-with {}", REJECT_WITH.iter().find(|r| r.1 == c).map_or("icmp-port-unreachable", |r| r.0)),
+        });
+        w.join(" ")
+    }
+}
+
+/// iptables' FORWARD chain: its policy and rules
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FwdChain {
+    /// the policy is DROP (else ACCEPT)
+    pub drop: bool,
+    pub rules: Vec<FwdRule>,
+    /// the packets and bytes the policy decided
+    pub packets: u64,
+    pub bytes: u64,
+}
+
+impl FwdChain {
+    /// something to do: a rule, or a policy that drops
+    pub fn active(&self) -> bool {
+        self.drop || !self.rules.is_empty()
+    }
+    /// every counter back to 0 ("iptables -Z")
+    pub fn zero(&mut self) {
+        self.packets = 0;
+        self.bytes = 0;
+        for r in &mut self.rules {
+            r.packets = 0;
+            r.bytes = 0;
+        }
+    }
+}
+
+/// what Action::Fw does to the FORWARD chain
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FwdOp {
+    /// the policy: DROP (true) or ACCEPT
+    Policy(bool),
+    /// a rule at a place (0: the top; None: at the end)
+    Insert { rule: FwdRule, at: Option<usize> },
+    /// the first rule like this one
+    Delete(FwdRule),
+    /// the rule at a place (0: the first)
+    DeleteAt(usize),
+    /// every rule (the policy stays)
+    Flush,
+    /// the counters back to 0
+    Zero,
 }
 
 /// a live session for the views
@@ -1125,9 +1384,37 @@ impl Engine {
         let Some(st) = self.stack(ni) else {
             return true;
         };
-        let fz = st.fw.zone_of(from).map(String::from);
-        let tz = st.fw.zone_of(to).map(String::from);
-        let probe = st.fw.probe(fz.as_deref(), tz.as_deref(), f, &st.acls, now);
+        // a forwarded IPv4 packet of a Linux device meets iptables' FORWARD chain; what the device makes or
+        // receives itself is ufw's, and with neither it is not the firewall's business
+        let fwd = !v6 && st.fw.fwd.active() && st.fw.members.is_empty() && from.is_some() && to.is_some();
+        if !fwd && st.fw.members.is_empty() && !st.fw.host.enabled {
+            return true;
+        }
+        let mut reject = UNREACH_ADMIN;
+        let (fz, tz, probe) = if fwd {
+            let name = |i: Option<u16>| i.and_then(|i| st.ifaces.get(i as usize)).map(|x| x.name.clone()).unwrap_or_default();
+            let (a, b) = (name(from), name(to));
+            let (probe, at) = st.fw.fwd_decide(&a, &b, f, now);
+            if let Some(FwdTarget::Reject(c)) = at.and_then(|i| st.fw.fwd.rules.get(i)).map(|r| r.target) {
+                reject = c;
+            }
+            // the rule that decided counts the packet, else the policy
+            if let Some(st) = self.stack_mut(ni) {
+                let c = &mut st.fw.fwd;
+                let (p, b) = match at.and_then(|i| c.rules.get_mut(i)) {
+                    Some(r) => (&mut r.packets, &mut r.bytes),
+                    None => (&mut c.packets, &mut c.bytes),
+                };
+                *p += 1;
+                *b += f.len as u64;
+            }
+            (Some(a), Some(b), probe)
+        } else {
+            let fz = st.fw.zone_of(from).map(String::from);
+            let tz = st.fw.zone_of(to).map(String::from);
+            let probe = st.fw.probe(fz.as_deref(), tz.as_deref(), f, &st.acls, now);
+            (fz, tz, probe)
+        };
         let dash = || String::from("-");
         match &probe {
             FwProbe::NoZones => return true,
@@ -1234,7 +1521,7 @@ impl Engine {
                             if v6 {
                                 self.icmp6_error(ni, inif, pkt, Icmp6::DestUnreach { code: icmpv6::UNREACH_ADMIN }, cause);
                             } else if to.is_some() {
-                                self.icmp_error(ni, inif, &crate::l3::as_received(pkt), Icmp::Unreachable { code: UNREACH_ADMIN, mtu: 0 }, cause);
+                                self.icmp_error(ni, inif, &crate::l3::as_received(pkt), Icmp::Unreachable { code: reject, mtu: 0 }, cause);
                             } else {
                                 self.icmp_error(ni, inif, pkt, Icmp::Unreachable { code: UNREACH_ADMIN, mtu: 0 }, cause);
                             }
@@ -1280,6 +1567,40 @@ impl Engine {
     /// the Action::Fw changes
     pub(crate) fn fw_apply(&mut self, dev: u32, op: FwOp) -> Result<(), ActErr> {
         let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;
+        if let FwOp::Fwd(op) = op {
+            if !matches!(self.nodes.get(ni), Some(Some(n)) if n.model.cli == jfn_model::catalog::CliStyle::Linux) {
+                return Err(ActErr::Refused(msg!("Diese Firewall gibt es nur auf Linux-Geräten.")));
+            }
+            let fw = &mut self.stack_mut(ni).ok_or(ActErr::NoIp(dev))?.fw;
+            let c = &mut fw.fwd;
+            match op {
+                FwdOp::Policy(drop) => c.drop = drop,
+                FwdOp::Insert { rule, at } => match at {
+                    Some(i) if i > c.rules.len() => return Err(ActErr::Refused(msg!("Die Kette FORWARD hat nicht so viele Regeln."))),
+                    Some(i) => c.rules.insert(i, rule),
+                    None => c.rules.push(rule),
+                },
+                FwdOp::Delete(r) => match c.rules.iter().position(|x| x.same(&r)) {
+                    Some(i) => {
+                        c.rules.remove(i);
+                    }
+                    None => return Err(ActErr::Refused(msg!("Diese Regel gibt es in der Kette FORWARD nicht."))),
+                },
+                FwdOp::DeleteAt(i) => {
+                    if i >= c.rules.len() {
+                        return Err(ActErr::Refused(msg!("Die Kette FORWARD hat nicht so viele Regeln.")));
+                    }
+                    c.rules.remove(i);
+                }
+                FwdOp::Flush => c.rules.clear(),
+                FwdOp::Zero => c.zero(),
+            }
+            // a chain with nothing to do follows nothing any more
+            if !fw.fwd.active() {
+                fw.clear_sessions(Some(FWD_PAIR));
+            }
+            return Ok(());
+        }
         if let FwOp::Host(h) = op {
             if !matches!(self.nodes.get(ni), Some(Some(n)) if n.model.cli == jfn_model::catalog::CliStyle::Linux) {
                 return Err(ActErr::Refused(msg!("Diese Firewall gibt es nur auf Linux-Geräten.")));
@@ -1289,7 +1610,7 @@ impl Engine {
                 HostOp::Enable(on) => {
                     fw.host.enabled = on;
                     if !on {
-                        fw.clear_sessions(None);
+                        fw.clear_sessions(Some(HOST_PAIR));
                     }
                 }
                 HostOp::Default { out, action } => {
@@ -1307,7 +1628,7 @@ impl Engine {
                 HostOp::Remove(r) => fw.host.rules.retain(|x| *x != r),
                 HostOp::Reset => {
                     fw.host = HostFw::default();
-                    fw.clear_sessions(None);
+                    fw.clear_sessions(Some(HOST_PAIR));
                 }
             }
             return Ok(());
@@ -1333,7 +1654,7 @@ impl Engine {
         let st = self.stack_mut(ni).ok_or(ActErr::NoIp(dev))?;
         let fw = &mut st.fw;
         match op {
-            FwOp::Member { .. } | FwOp::Host(_) => Ok(()),
+            FwOp::Member { .. } | FwOp::Host(_) | FwOp::Fwd(_) => Ok(()),
             FwOp::Zone { name, add: true } => {
                 if name.eq_ignore_ascii_case(SELF_ZONE) {
                     return Err(ActErr::Refused(msg!("Der Name self gehört dem Gerät selbst.")));

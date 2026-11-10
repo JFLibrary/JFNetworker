@@ -1,0 +1,34 @@
+#!args --verify-dirty --open tests/fixtures/lab_forms.jfnet
+# a DHCP server from "Dienst hinzufügen" (workspace/devwin/svcform.rs, svcedit.rs) on HOST1 of
+# tests/fixtures/lab_forms.jfnet, a Linux server with 10.0.0.11/24 on eth1: the kind in the list with its
+# words, its usual name and what follows; added as one undo step, its card, its settings open as JSON (the
+# pool for 10.0.0.0/24 itself is checked in the selftest group homenat); undo takes it away.  Ids: the first
+# device window 26624; "Dienst hinzufügen …" 140304, its kind 140321, its name 140322; the JSON 51456, its
+# Übernehmen 51472, Abbrechen 51473
+size 1400 1200
+theme light
+wait 3000
+dblclick listitem:"HOST1" shift
+expect window 26624 open
+resizewin 26624 900 1100
+click tab:"Dienste"
+click #140304
+expect dialog:"Dienst hinzufügen" exists
+click #140321
+click listitem:"DHCP-Server"
+expect #140322 text "dhcp-server"
+expect text:"Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer." exists
+expect text:"HOST1 startet dafür neu. Danach folgen die Einstellungen als JSON." exists
+click button:"Hinzufügen"
+wait 200
+expect dialog:"Dienst hinzufügen" missing
+expect text:"DHCP-Server · dhcp-server" exists
+expect #51456 exists
+expect text:"Die Einstellungen von dhcp-server als JSON. Übernehmen prüft sie und startet HOST1 mit ihnen neu." exists
+click #51473
+expect #51456 missing
+expect text:"DHCP-Server · dhcp-server" exists
+# one undo step takes it away
+cmd 10
+wait 200
+expect text:"DHCP-Server · dhcp-server" missing

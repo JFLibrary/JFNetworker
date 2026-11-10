@@ -618,8 +618,17 @@ impl Engine {
                 Ok(())
             }
             Action::Svi { dev, vlan, add } => self.svi(dev, vlan, add),
-            Action::SubIf { dev, name, vlan, add } => self.sub_if(dev, &name, vlan, add),
-            Action::Loopback { dev, n, add } => self.loopback(dev, n, add),
+            // (MASQUERADE gives a new interface its side: nat.rs masq_sides)
+            Action::SubIf { dev, name, vlan, add } => {
+                let r = self.sub_if(dev, &name, vlan, add);
+                self.masq_sync(dev);
+                r
+            }
+            Action::Loopback { dev, n, add } => {
+                let r = self.loopback(dev, n, add);
+                self.masq_sync(dev);
+                r
+            }
             Action::RoutedPort { dev, port, routed } => self.routed_port(dev, &port, routed),
             Action::Route { dev, prefix, via, iface, ad, add } => {
                 let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;

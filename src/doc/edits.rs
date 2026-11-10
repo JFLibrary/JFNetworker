@@ -2,7 +2,9 @@
 //
 //   add_placed(p, model, x, y) -> (id, edit)   a new device (free name: PC1, SW2, ...), applied, as the
 //                                              palette places it: with the service its tile brings
-//                                              (catalog::preset_service), in one step
+//                                              (catalog::preset_service) and its startup configuration
+//                                              (catalog::preset_startup: a home router's NAT and
+//                                              filter), in one step
 //   experiments(p, label, list) -> edit        the project's experiments (SA3; not applied yet)
 //   add_note(p, x, y) -> (id, edit)            a new empty note, applied
 //   add_label(p, x, y, w, h, text) -> (id, edit)   a new label with its text in one step, applied
@@ -106,6 +108,9 @@ impl Edit<Project> for AddDevice {
 /// its id and the one undo step
 pub(crate) fn add_placed(p: &mut Project, model: &str, x: i32, y: i32) -> Result<(u32, Box<dyn Edit<Project>>), ProjErr> {
     let id = p.add_device(model, x, y)?;
+    if let (Some(cfg), Some(d)) = (jfn_model::catalog::preset_startup(model), p.device_mut(id)) {
+        d.startup_config = String::from(cfg);
+    }
     if let (Some((kind, name)), Some(d)) = (jfn_model::catalog::preset_service(model), p.device_mut(id)) {
         let config = jfn_model::catalog::preset_config(model).and_then(|c| agent_core::json::parse(c.as_bytes()).ok()).unwrap_or_else(agent_core::jmap::empty_object);
         d.services.push(jfn_model::ServiceDef { kind: String::from(kind), name: String::from(name), disabled: false, config });

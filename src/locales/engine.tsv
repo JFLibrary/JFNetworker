@@ -1846,6 +1846,10 @@ Die Datei enthält keine Kursliste.	The file holds no list of courses.
 Das ist keine Kursliste.	This is not a list of courses.
 Kurs {}: {}	Course {}: {}
 Kurs {}: die Prüfsumme von {} ist kein SHA-256.	Course {}: the checksum of {} is no SHA-256.
+# iptables on Linux devices: the FORWARD chain and MASQUERADE (jfn_sim fw.rs, nat.rs, cli/iptables.rs)
+Die Kette FORWARD hat nicht so viele Regeln.	The FORWARD chain does not have that many rules.
+Diese Regel gibt es in der Kette FORWARD nicht.	There is no such rule in the FORWARD chain.
+MASQUERADE gibt es nur auf Linux-Geräten.	MASQUERADE exists on Linux devices only.
 # F2: the zone firewall (jfn_sim/fw.rs, fwtrace.rs, problems.rs)
 Zonen gibt es nur auf Firewall-Modellen.	Zones exist on firewall models only.
 Die Zone {} gibt es nicht.	There is no zone {}.
