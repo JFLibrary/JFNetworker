@@ -32,6 +32,13 @@ Konsolenkabel	Console cable
 Funk (WLAN)	Wireless (WLAN)
 WAN-Leitung	WAN line
 
+# S1: serial lines -- the clock of the DCE end, the frame format, their notes and problems (jfn_sim serial.rs)
+Serielle Leitung an {}: dieses DCE-Ende gibt keinen Takt (no clock rate); das Leitungsprotokoll bleibt aus.	Serial line on {}: this DCE end gives no clock (no clock rate); the line protocol stays down.
+Serielle Leitung an {}: kein Takt vom DCE-Ende gegenüber; das Leitungsprotokoll bleibt aus.	Serial line on {}: no clock from the DCE end opposite; the line protocol stays down.
+Serielle Leitung an {}: hier {}, gegenüber {}; das Leitungsprotokoll bleibt aus.	Serial line on {}: {} here, {} at the far end; the line protocol stays down.
+Serielle Leitung zwischen {} und {}: das DCE-Ende {} gibt keinen Takt (no clock rate); das Leitungsprotokoll bleibt aus.	Serial line between {} and {}: the DCE end {} gives no clock (no clock rate); the line protocol stays down.
+Serielle Leitung zwischen {} und {}: {} an {}, {} an {}; das Leitungsprotokoll bleibt aus.	Serial line between {} and {}: {} on {}, {} on {}; the line protocol stays down.
+
 # jfn_model: port summaries and speeds (Model::summary_msg, speed_msg)
 {}× Funk {}	{}× radio {}
 {}× Seriell	{}× serial

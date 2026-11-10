@@ -50,6 +50,9 @@ pub struct Port {
     /// the engine slot of its cable
     pub link: Option<usize>,
     pub counters: PortCounters,
+    /// what "clock rate" and "encapsulation" told a serial port (serial.rs; others keep the
+    /// default)
+    pub serial: crate::serial::SerialCfg,
 }
 
 /// a device at run time
@@ -97,7 +100,7 @@ impl Node {
         let ports: Vec<Port> = model
             .ports()
             .into_iter()
-            .map(|spec| Port { mac: port_mac(dev, spec.index), admin_up: up, err_disabled: false, link: None, counters: PortCounters::default(), spec })
+            .map(|spec| Port { mac: port_mac(dev, spec.index), admin_up: up, err_disabled: false, link: None, counters: PortCounters::default(), serial: crate::serial::SerialCfg::default(), spec })
             .collect();
         let mut bridge = if model.has(F_BRIDGE) { Some(Bridge::new(&ports.iter().map(|p| p.spec.clone()).collect::<Vec<_>>())) } else { None };
         // a home router routes its WAN port and bridges the rest

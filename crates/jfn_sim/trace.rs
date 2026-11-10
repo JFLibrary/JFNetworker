@@ -22,7 +22,9 @@
 //                                                 TFTP's and FTP's layer 7 (xfertrace.rs:
 //                                                 Note::Xfer); a cable too long or with
 //                                                 optics that do not fit layer 1 (phys.rs:
-//                                                 Note::Phys); mail's layer 7 (mailtrace.rs:
+//                                                 Note::Phys), a serial line without a clock
+//                                                 layer 1 and with two frame formats layer 2
+//                                                 (serial.rs: Note::Serial); mail's layer 7 (mailtrace.rs:
 //                                                 Note::Mail); SNMP's layer 7 (snmptrace.rs:
 //                                                 Note::Snmp)
 //   (aaatrace.rs: Note::Aaa holds logins, AAA, RADIUS and the vty telnet sessions, layer 7)
@@ -96,7 +98,8 @@ pub struct Hop {
     pub batch: u64,
     /// when the sender handed it to its port (before t_tx when it waited in the queue)
     pub t_queued: Ns,
-    /// a Cisco HDLC frame of a serial line (else Ethernet)
+    /// a frame of a serial line (else Ethernet): Cisco HDLC, or PPP when it starts with FF 03
+    /// (serial.rs: is_ppp)
     pub hdlc: bool,
 }
 
@@ -477,6 +480,8 @@ pub enum Note {
     Xfer(crate::xfertrace::XNote),
     /// the physical layer (phys.rs, P1): a cable too long, optics that do not fit (layer 1)
     Phys(crate::phys::PhysNote),
+    /// a serial line (serial.rs, S1): no clock (layer 1), two frame formats (layer 2)
+    Serial(crate::serial::SerialNote),
     /// mail (smtpd.rs, pop3d.rs, mailc.rs; mailtrace.rs): sessions, logins, the queue,
     /// deliveries, relays, bounces, the clients (layer 7)
     Mail(crate::mailtrace::MNote),
@@ -626,6 +631,7 @@ impl Note {
             Note::Bgp(_) => 7,
             Note::Xfer(_) => 7,
             Note::Phys(_) => 1,
+            Note::Serial(n) => n.layer(),
             Note::Mail(_) => 7,
             Note::Snmp(_) => 7,
             Note::Aaa(_) => 7,
@@ -1219,6 +1225,7 @@ impl Note {
             Note::Bgp(n) => n.message(),
             Note::Xfer(n) => n.message(),
             Note::Phys(n) => n.message(port),
+            Note::Serial(n) => n.message(port),
             Note::Mail(n) => n.message(),
             Note::Unit { unit, what } => msg!("Einheit {}: {}", unit, what),
             Note::Deploy { id, what } => msg!("Bereitstellung {}: {}", id, what),

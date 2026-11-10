@@ -18,7 +18,9 @@
 // (the severity of the code, 7 for debugging); the device's own log keeps only what its
 // services log (os.rs), as "debug stays local" in tests/svctest wants it.
 //
-// The state of a port is its link (a shut down far end takes it down too); a subinterface
+// The state of a port is its link (a shut down far end takes it down too), its line protocol
+// the link's traffic (a serial line without a clock or with two frame formats keeps its carrier:
+// "is up, line protocol is down"); a subinterface
 // needs its port, a VLAN interface a live port in its VLAN, a loopback only "no shutdown".
 
 use alloc::format;
@@ -40,9 +42,9 @@ use crate::kernel::Engine;
 use crate::l3::HDLC_IPV4;
 use crate::trace::{HopId, Note};
 
-/// the IPv4 packet of a recorded frame (Ethernet, tagged or not, or Cisco HDLC)
+/// the IPv4 packet of a recorded frame (Ethernet, tagged or not, Cisco HDLC or PPP)
 fn ip_of(frame: &[u8]) -> Option<&[u8]> {
-    if frame.len() > 4 && frame[..4] == HDLC_IPV4 {
+    if frame.len() > 4 && (frame[..4] == HDLC_IPV4 || frame[..4] == crate::serial::PPP_IPV4) {
         return Some(&frame[4..]);
     }
     let l2 = L2::parse(frame)?;
@@ -76,6 +78,9 @@ impl Engine {
         };
         // the radio of an access point without a cable is up while it sends a network (wlan.rs)
         let port_link = |p: u16| n.ports.get(p as usize).is_some_and(|x| x.link.is_some_and(|li| self.link_up(li))) || self.wlan_radio_up(ni, p);
+        // the carrier alone: a serial line without a clock or with two frame formats is up with
+        // its line protocol down (serial.rs)
+        let port_carrier = |p: u16| n.ports.get(p as usize).is_some_and(|x| x.link.is_some_and(|li| self.link_carrier(li))) || self.wlan_radio_up(ni, p);
         let port_admin = |p: u16| n.ports.get(p as usize).is_some_and(|x| x.admin_up);
         let x = f.and_then(|i| n.ip.as_ref().and_then(|s| s.ifaces.get(i as usize)));
         match (x.map(|x| x.kind), port) {
@@ -83,7 +88,7 @@ impl Engine {
                 let admin = x.is_some_and(|x| x.admin_up);
                 (admin, admin && port_admin(p) && port_link(p), f.is_some_and(|i| self.iface_up(ni, i)))
             }
-            (_, Some(p)) => (port_admin(p), port_link(p), port_link(p) && n.power),
+            (_, Some(p)) => (port_admin(p), port_carrier(p), port_link(p) && n.power),
             (Some(IfKind::Svi(v)), None) => {
                 let admin = x.is_some_and(|x| x.admin_up);
                 let exists = n.bridge.as_ref().is_some_and(|b| b.vlans.contains_key(&v));

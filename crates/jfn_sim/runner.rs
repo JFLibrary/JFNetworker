@@ -51,7 +51,7 @@ use jfn_model::catalog::{self, Hw};
 use jfn_model::ifname;
 use jfn_model::project::Project;
 use jfn_model::scenario::{Expect, FaultSpec, HealSpec, HwSpec, LbStep, Scenario, StepKind};
-use netpkt::pcapng::{Writer, LINKTYPE_ETHERNET};
+use netpkt::pcapng::Writer;
 
 use crate::action::Action;
 use crate::driver::{Cmd, Inline, Report};
@@ -61,7 +61,6 @@ use crate::kernel::{Engine, Ns, SEC};
 
 /// how far "run until idle" goes at most
 pub const IDLE_CAP: Ns = 3600 * SEC;
-const LINKTYPE_C_HDLC: u16 = 104;
 
 /// what a scenario run gives
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,19 +79,20 @@ pub struct Outcome {
 /// every recorded frame as pcapng: one interface per cable, stamped when it was sent
 pub fn capture(e: &Engine) -> (Vec<u8>, usize) {
     let mut w = Writer::new("JFNetworker");
-    let mut ifs: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut ifs: BTreeMap<(u32, u16), u32> = BTreeMap::new();
     let name = |dev: u32, port: u16| match e.node(dev) {
         Some(n) => format!("{} {}", n.name, ifname::short(n.port_name(port))),
         None => format!("{} {}", dev, port),
     };
     let mut n = 0;
     for h in e.trace.hops() {
-        let i = match ifs.get(&h.link) {
+        // a serial line's frames are Cisco HDLC or PPP (pcap.rs, serial.rs)
+        let lt = crate::pcap::linktype(h);
+        let i = match ifs.get(&(h.link, lt)) {
             Some(i) => *i,
             None => {
-                let serial = e.link_rt(h.link).is_some_and(|l| l.cable.is_serial());
-                let i = w.add_interface(&format!("{} \u{2013} {}", name(h.from.0, h.from.1), name(h.to.0, h.to.1)), if serial { LINKTYPE_C_HDLC } else { LINKTYPE_ETHERNET }, 0);
-                ifs.insert(h.link, i);
+                let i = w.add_interface(&format!("{} \u{2013} {}", name(h.from.0, h.from.1), name(h.to.0, h.to.1)), lt, 0);
+                ifs.insert((h.link, lt), i);
                 i
             }
         };

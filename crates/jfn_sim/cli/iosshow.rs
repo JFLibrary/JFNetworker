@@ -17,7 +17,10 @@
 //                                an interface (the next hop may be further away); the legend
 //                                names B only where BGP runs (cli/bgp.rs)
 //   show interfaces              a port whose cable is too long or whose optics do not fit
-//                                (phys.rs, P1) gets a line in our own words that says so
+//                                (phys.rs, P1) gets a line in our own words that says so, and so
+//                                does a serial line whose protocol is down for want of a clock
+//                                or for two frame formats (serial.rs, which writes its
+//                                encapsulation lines: HDLC, or PPP with "LCP Open" / "Closed")
 //
 // The layouts follow IOS 15 / IOS-XE: column widths of "show ip interface brief" (22, 15, 3,
 // 6, 21), "show arp" (address 15, age right-aligned in 9), "show mac address-table" and "show
@@ -371,6 +374,12 @@ impl Engine {
             // its zone (cli/fw.rs)
             s.push_str(&self.ios_fw_if_config(ni, i));
         }
+        // a serial port's frame format and clock (serial.rs)
+        let (encap, clock) = match port {
+            Some(p) if !name.contains('.') => self.serial_if_config(ni, p),
+            _ => (String::new(), String::new()),
+        };
+        s.push_str(&encap);
         let admin = match (port, f) {
             (Some(p), None) | (Some(p), Some(_)) if !name.contains('.') => n.ports.get(p as usize).is_some_and(|x| x.admin_up),
             (_, Some(i)) => n.ip.as_ref().is_some_and(|st| st.ifaces[i as usize].admin_up),
@@ -379,6 +388,7 @@ impl Engine {
         if !admin {
             s.push_str(" shutdown\n");
         }
+        s.push_str(&clock);
         // its IPv6 lines (cli/ip6.rs)
         if let Some(i) = f {
             s.push_str(&self.ios_ip6_if_config(ni, i));
@@ -515,7 +525,8 @@ impl Engine {
             match kind {
                 Some(IfKind::Loopback(_)) => s.push_str("  Encapsulation LOOPBACK, loopback not set\n"),
                 Some(IfKind::Sub { vlan, .. }) => s.push_str(&format!("  Encapsulation 802.1Q Virtual LAN, Vlan ID  {}.\n", vlan)),
-                _ if serial => s.push_str("  Encapsulation HDLC, crc 16, loopback not set\n  Keepalive set (10 sec)\n"),
+                // HDLC or PPP, and why the line protocol is down (serial.rs)
+                _ if serial => s.push_str(&self.serial_show(ni, port.unwrap_or(0), proto)),
                 _ => s.push_str("  Encapsulation ARPA, loopback not set\n  Keepalive set (10 sec)\n"),
             }
             if let Some(p) = pv
