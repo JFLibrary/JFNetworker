@@ -265,7 +265,7 @@ struct Lbl {
 
 /// the series of the charts in words (rates per second end in "/s")
 // i18n: label
-static LABELS: [Lbl; 89] = [
+static LABELS: [Lbl; 90] = [
     Lbl { key: "requests", label: "Anfragen/s" },
     Lbl { key: "responses", label: "Antworten/s" },
     Lbl { key: "connections", label: "Verbindungen/s" },
@@ -355,6 +355,7 @@ static LABELS: [Lbl; 89] = [
     Lbl { key: "failover_lost", label: "Beim Failover verloren" },
     Lbl { key: "fenced_lost", label: "Beim Abgrenzen verloren" },
     Lbl { key: "split_commits", label: "Commits im Split Brain" },
+    Lbl { key: "sync_fallbacks", label: "Zurück auf async/s" },
 ];
 
 /// a series' name in the window: "Anfragen/s" for requests, "p99" for p99_us (the language);

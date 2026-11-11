@@ -2231,7 +2231,7 @@ impl Db {
     /// alone too long promotes itself (failover_ms)
     fn repl_beat(&mut self, os: &mut OsApi) {
         let now = os.now();
-        let (flushed, lsn) = (self.flushed, self.lsn);
+        let flushed = self.flushed;
         let Some(r) = self.repl.as_mut() else { return };
         r.beat_armed = false;
         let (hb, timeout) = (r.cfg.heartbeat, r.cfg.timeout);
@@ -2272,7 +2272,6 @@ impl Db {
         let Some(r) = self.repl.as_mut() else { return };
         if r.role == Role::Replica && !r.promoting && r.cfg.failover > 0 && !r.need_copy && r.copy.is_none() && r.lost_since.is_some_and(|t| now.saturating_sub(t) >= r.cfg.failover) {
             os.log(4, "db", &format!("Replikation: seit {} ms nichts vom Primary, wird selbst Primary", r.cfg.failover / MS));
-            let _ = lsn;
             let _ = self.promote(os, None);
         }
         // the watch on the primary's silence starts when the connection does

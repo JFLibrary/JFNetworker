@@ -325,10 +325,11 @@ static DB: [Group; 5] = [
             MEM_FIELDS[1],
         ],
     },
-    // (SA5: at the end, so the fields before keep their places)
+    // (SA5: at the end, so the fields before keep their places; folded like the rarer ones, so the form of a
+    // database without replication stays as long as it was)
     Group {
         title: "Replikation",
-        rare: false,
+        rare: true,
         fields: &[
             Field { key: "replication.role", label: "Rolle", unit: "", help: "Ohne Rolle hat die Datenbank keine Replikation. Ein Replikat folgt seinem Primary über das Netz, wendet sein Log an und nimmt nur Lesezugriffe an.", kind: Fk::Choice(CH_REPL_ROLE) },
             Field { key: "replication.primary", label: "Primary", unit: "", help: "Die Adresse des Primary, dem ein Replikat folgt.", kind: Fk::Text },
@@ -758,7 +759,7 @@ pub(crate) struct Form {
     base: Value,
     /// the defaults of its kind (jfn_sim::svcform::defaults)
     defs: Value,
-    /// the rarer settings show
+    /// the rarer settings that show: a bit per folded group
     rare: i32,
     say: Say,
     say_for: Option<(Vals, u32)>,
@@ -1101,10 +1102,12 @@ pub(crate) fn view(n: &mut Net, ui: &mut Ui, dev: u32, j: usize) {
     let mut i = 0;
     for (g, group) in groups.iter().enumerate() {
         if group.rare {
-            let mut open = n.devwin.svc.form.as_ref().map_or(0, |x| x.rare);
+            // (each folded group on its own: a bit of `rare` per group)
+            let bit = 1i32 << g.min(30);
+            let mut open = n.devwin.svc.form.as_ref().map_or(0, |x| (x.rare & bit != 0) as i32);
             let shown = ui.expander_begin(ID_SF_RARE + g as u32, t(group.title), &mut open) != 0;
             if let Some(x) = n.devwin.svc.form.as_mut() {
-                x.rare = open;
+                x.rare = if open != 0 { x.rare | bit } else { x.rare & !bit };
             }
             if shown {
                 ui.box_begin(0, BOX_V, 6);

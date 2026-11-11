@@ -340,7 +340,7 @@ fn open_updates(rps: u64) -> ServiceDef {
 }
 
 pub(crate) fn run(t: &mut T) {
-    let parts: [(&str, fn(&mut T)); 16] = [
+    let parts: [(&str, fn(&mut T)); 18] = [
         ("config", config),
         ("ships", ships),
         ("commit_latency", commit_latency),
@@ -357,6 +357,8 @@ pub(crate) fn run(t: &mut T) {
         ("determinism", determinism),
         ("old_project", old_project),
         ("tools", tools),
+        ("auto_failover", auto_failover),
+        ("form", form),
     ];
     for (name, f) in parts {
         section(name);
@@ -934,4 +936,50 @@ fn tools(t: &mut T) {
     t.check(&format!("in English: {}", s), s.contains("Primary in epoch 2, mode async"));
     let s = out(&mut e, n.rep, "man dbctl");
     t.check("its man page", s.contains("promote"));
+}
+
+/// failover_ms: a replica without a word from its primary for so long promotes itself (after its timeout found the
+/// connection dead)
+fn auto_failover(t: &mut T) {
+    let pri = db_cfg(r#"{"mode": "async", "heartbeat_ms": 100, "timeout_ms": 300}"#, "");
+    let rep = db_cfg(&format!(r#"{{"primary": "{}", "heartbeat_ms": 100, "timeout_ms": 300, "failover_ms": 1000}}"#, P_IP), "");
+    let n = net(&pri, &rep, None, None, None, 50, None);
+    let mut e = engine(&n.p);
+    run_for(&mut e, SEC);
+    let _ = e.apply(Action::Power { dev: n.pri, on: false });
+    run_for(&mut e, 700 * MS);
+    t.eq("not yet after 0.7 s", metric(&e, n.rep, "role"), 2);
+    run_for(&mut e, 1500 * MS);
+    t.eq("after timeout_ms + failover_ms it is primary itself", (metric(&e, n.rep, "role"), metric(&e, n.rep, "epoch")), (1, 2));
+    t.check("its log says why", e.log_lines(n.rep).iter().any(|l| l.text.contains("wird selbst Primary")));
+}
+
+/// the form against the JSON it writes (workspace/devwin/svcform.rs)
+fn form(t: &mut T) {
+    use crate::workspace::devwin::svcform::{fields, fill, merged};
+    let base = cfg(&db_cfg(r#"{"role": "replica", "primary": "10.0.0.2", "mode": "sync"}"#, ""));
+    let at = |key: &str| fields("db").position(|f| f.key == key).unwrap_or(usize::MAX);
+    let v = fill("db", &base);
+    let text = |v: &crate::workspace::devwin::svcform::Vals, k: &str| v.texts.get(at(k)).cloned().unwrap_or_default();
+    t.eq("the form shows the role", text(&v, "replication.role"), String::from("replica"));
+    t.eq("its primary", text(&v, "replication.primary"), String::from("10.0.0.2"));
+    t.eq("its mode", text(&v, "replication.mode"), String::from("sync"));
+    let mut v2 = v.clone();
+    if let Some(x) = v2.texts.get_mut(at("replication.sync_count")) {
+        *x = String::from("2");
+    }
+    let m = merged("db", &base, &v2).ok();
+    let repl = m.as_ref().and_then(|c| c.get("replication"));
+    t.eq("what the form writes", repl.and_then(|r| r.get("sync_count")).and_then(|x| x.as_u64()), Some(2));
+    t.eq("and the rest stays", repl.and_then(|r| r.get("mode")).and_then(|x| x.as_str()), Some("sync"));
+    t.check("a config the database takes", m.as_ref().is_some_and(|c| jfn_sim::db::from_def_msg(c).is_ok()));
+    // every field of replication empty: the member goes, and with it replication
+    let mut v3 = v.clone();
+    for k in ["replication.role", "replication.primary", "replication.mode"] {
+        if let Some(x) = v3.texts.get_mut(at(k)) {
+            x.clear();
+        }
+    }
+    let m3 = merged("db", &base, &v3).ok();
+    t.check("emptied: no replication", m3.as_ref().is_some_and(|c| c.get("replication").is_none()));
 }

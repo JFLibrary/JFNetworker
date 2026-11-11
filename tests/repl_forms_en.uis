@@ -23,6 +23,7 @@ type "200"
 click #140288
 wait 300
 click button:"Settings …"
+click #140295
 expect text:"Without a role the database has no replication. A replica follows its primary over the network, applies its log and takes reads only." exists
 expect text:"What a commit on the primary waits for before it answers: the more, the less a failure loses and the longer the answer takes." exists
 click #140588

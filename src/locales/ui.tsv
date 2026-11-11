@@ -2786,3 +2786,4 @@ Commits warten auf Replikate	Commits waiting for replicas
 Beim Failover verloren	Lost in a failover
 Beim Abgrenzen verloren	Lost when fenced
 Commits im Split Brain	Commits in split brain
+Zurück auf async/s	Back to async/s
