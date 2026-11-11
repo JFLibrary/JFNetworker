@@ -123,13 +123,10 @@ You need Rust through rustup (1.98 or later), the tool `cargo jflib` for the tes
 cargo install cargo-jflib
 ```
 
-JFLib comes from crates.io and [JFScript](https://github.com/JFLibrary/JFScript) from its repository.
-**Until the next JFLib release** a JFLib checkout lies beside this repository: JFNetworker's style
-`netlab` is not on crates.io yet, so `.cargo/config.toml` takes it, and every other JFLib crate with
-it, from `../JFLib` (`tools/jflib_patch.py` writes that table).
+JFLib comes from crates.io, its style `netlab` included, and [JFScript](https://github.com/JFLibrary/JFScript)
+from its repository.
 
 ```sh
-git clone https://github.com/JFLibrary/JFLib ../JFLib
 git clone https://github.com/JFLibrary/JFNetworker
 cd JFNetworker
 ```
@@ -189,8 +186,8 @@ The plan's phases 1 to 6 are done; phase 7 (more hardware, the firewall, the Aka
 architecture lab) is under way: replication, traffic control and an autoscaler for the lab, and
 more courses come next ([roadmap](docs/ROADMAP.md)).
 
-- **Packages:** setup and .deb packages wait for a version of `cargo jflib` that knows the style
-  `netlab`.
+- **Packages:** setup and .deb packages wait for the next version of `cargo jflib`, which knows the
+  style `netlab` (JFLib's main has it).
 - **Courses:** two courses so far; the lessons were checked against the simulator, not yet by a
   second reader.
 - **Simplifications:** Wi-Fi associates on layer 2, signal and rate follow the distance without real

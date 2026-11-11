@@ -8,17 +8,17 @@ rustup (1.98 oder neuer), das Werkzeug `cargo jflib` (`cargo install cargo-jflib
 Python 3.11 für die Skripte in `tools/`. JFLib kommt von crates.io, JFScript aus seiner Repo
 ([JFLibrary/JFScript](https://github.com/JFLibrary/JFScript), Git-Abhängigkeit).
 
-**Bis zum nächsten JFLib-Release** liegt ein JFLib-Checkout neben dieser Repo (`../JFLib`): Der Style `netlab`
-ist noch nicht auf crates.io, darum nimmt `.cargo/config.toml` ihn und jede andere JFLib-Crate von dort
-(`[patch.crates-io]`, geschrieben von `tools/jflib_patch.py`). Sobald `jflib-style-netlab` veröffentlicht ist,
-fällt die Tabelle weg. Werkzeuge der Bibliothek (`i18n_check.py`, `vsym.py`, `vicon.py`) kommen ebenfalls aus
-diesem Checkout.
+Auch der Style `netlab` kommt von crates.io (`jflib-style-netlab`, seit 2026-11-10 einzeln veröffentlicht). Einen
+JFLib-Checkout neben dieser Repo (`../JFLib`) braucht es nur noch für die Werkzeuge der Bibliothek
+(`i18n_check.py`, `vsym.py`, `vicon.py`) und um eigene Änderungen an JFLib hier auszuprobieren:
+`python tools/jflib_patch.py` schreibt dann in `.cargo/config.toml` eine Tabelle `[patch.crates-io]`, die jede
+JFLib-Crate aus diesem Checkout nimmt, `python tools/jflib_patch.py --remove` nimmt sie wieder weg.
 
 Unter Linux immer mit `--target x86_64-unknown-linux-gnu` bauen (die Schalter in `.cargo/config.toml` erreichen
 dann nur die Programme): `cargo build --workspace --target x86_64-unknown-linux-gnu`.
 
 ```
-git clone https://github.com/JFLibrary/JFLib ../JFLib            # bis netlab auf crates.io liegt
+git clone https://github.com/JFLibrary/JFLib ../JFLib            # nur für JFLibs Werkzeuge (tools/i18n.py)
 cargo build --workspace                                     # target/debug/JFNetworker.exe und jfn-sim.exe
 target/debug/JFNetworker.exe                                   # der Editor
 target/debug/JFNetworker.exe --open tests/fixtures/campus.jfnet

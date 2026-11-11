@@ -56,9 +56,8 @@ rust-version = "1.98"
 license = "MIT"
 repository = "https://github.com/JFLibrary/JFNetworker"
 
-# JFLib's crates under the names the code uses, at exact versions like inside JFLib.  The style
-# netlab is not on crates.io yet: .cargo/config.toml takes it (and with it every JFLib crate, so
-# that there is one runtime) from a JFLib checkout beside this one until the next JFLib release.
+# JFLib's crates from crates.io under the names the code uses, at exact versions like inside JFLib
+# (the style netlab too, published on its own on 2026-11-10).
 [workspace.dependencies]
 rt = { package = "jflib-rt", version = "=0.1.0" }
 agent_core = { package = "jflib-agent-core", version = "=0.1.0" }
