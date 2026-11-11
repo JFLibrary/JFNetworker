@@ -27,6 +27,12 @@
 // grows beyond MEM_LIMIT ends where it is (Status::Memory): an overloaded generator without max_conns
 // opens a connection per request.
 //
+// Figures (SA5, Experiment::figures): after a level's measuring each figure reads a service's metric on that
+// level's engine, in their order, after it switched a device off, promoted a replica (Action::DbPromote) and
+// let its wait pass when it says so: what a failover at the end of the level loses.  They are thousandths in
+// Fig::extra and Point::extra (the mean over the seeds) and columns of their own after "Engpass" in the
+// table and at the end of the CSV; without figures nothing of them is there and every byte stays.
+//
 // Results, for a point of a configuration and a level over its seeds: the latency histograms and the
 // counters are added up and the quantiles taken of the sum (p99_min and p99_max are the seeds' own, for
 // the spread), figures of devices are means or maxima.  Latencies are of the answers: a request that
@@ -53,7 +59,7 @@ use agent_core::jmap::{empty_object, Value};
 use agent_core::json;
 use base::metrics::Hist;
 use jfn_model::catalog::Prices;
-use jfn_model::experiment::{patch_clones, patch_config, patch_hw, patch_load, patch_pool, words_in, Config, Experiment, Level, SloLimits};
+use jfn_model::experiment::{patch_clones, patch_config, patch_hw, patch_link, patch_load, patch_pool, words_in, Config, Experiment, Level, SloLimits};
 use jfn_model::msg;
 use jfn_model::msg::{phrase, Lang, Msg};
 use jfn_model::project::Project;
@@ -193,6 +199,8 @@ pub struct Fig {
     pub seconds: u64,
     /// events the level ran
     pub events: u64,
+    /// the experiment's figures in thousandths (-1000: not there)
+    pub extra: Vec<i64>,
 }
 
 /// a configuration with what it does to the project
@@ -349,6 +357,10 @@ impl Plan {
         let to = e.now();
         let after = Snap::of(e, self.gen_dev, &svc);
         let hist = e.service::<HttpLoad>(self.gen_dev, &svc).map_or_else(Hist::new, |l| l.lat_between(from, to));
+        let devs = e.fig_devs(&before, &after, &backlog, from, to);
+        let links = e.fig_links(&before, &after, from, to);
+        let svcs = e.fig_svcs(&before, &after, from, to);
+        let extra = if self.exp.figures.is_empty() || status != Status::Ok { Vec::new() } else { self.figures(e) };
         Fig {
             sent: after.sent - before.sent,
             responses: after.responses - before.responses,
@@ -357,13 +369,35 @@ impl Plan {
             failed: after.failed - before.failed,
             timeouts: after.timeouts - before.timeouts,
             hist,
-            devs: e.fig_devs(&before, &after, &backlog, from, to),
-            links: e.fig_links(&before, &after, from, to),
-            svcs: e.fig_svcs(&before, &after, from, to),
+            devs,
+            links,
+            svcs,
             status,
             seconds,
             events: e.events_done() - done0,
+            extra,
         }
+    }
+
+    /// the experiment's figures on this engine after its measuring, in thousandths (SA5)
+    fn figures(&self, e: &mut Engine) -> Vec<i64> {
+        let id = |e: &Engine, name: &str| self.cfgs.first().and_then(|c| c.project.find(name)).map(|d| d.id).filter(|d| e.node_index(*d).is_some());
+        let mut out = Vec::new();
+        for f in &self.exp.figures {
+            if let Some(d) = id(e, &f.off) {
+                let _ = e.apply(Action::Power { dev: d, on: false });
+            }
+            if let Some(d) = id(e, &f.promote) {
+                let _ = e.apply(Action::DbPromote { dev: d, svc: f.svc.clone() });
+            }
+            if f.wait_s > 0 {
+                let t = e.now() + f.wait_s * SEC;
+                e.run_until(t, usize::MAX);
+            }
+            let v = id(e, &f.dev).and_then(|d| e.metric(d, &f.svc, &f.metric));
+            out.push(v.map_or(-1000, |v| v.saturating_mul(1000) / f.div.max(1) as i64));
+        }
+        out
     }
 
     /// it holds more than a level may: what keyframes count, and the generator's waiting requests
@@ -435,7 +469,9 @@ impl Plan {
             }
         }
         let t = &self.exp.timing;
+        let figures = self.exp.figures.iter().map(|f| (f.name.clone(), f.div > 1)).collect();
         Sweep {
+            figures,
             name: self.name.clone(),
             title: self.exp.title.clone(),
             columns,
@@ -491,6 +527,11 @@ impl Plan {
         p.p99_min = p99s.iter().copied().min();
         p.p99_max = p99s.iter().copied().max();
         p.slo_ok = p.status == Status::Ok && self.slo.held(p.p50, p.p95, p.p99, p.p999, p.err_ppm);
+        // the figures: the mean of the seeds that have them
+        for k in 0..self.exp.figures.len() {
+            let vals: Vec<i64> = of.iter().filter_map(|f| f.extra.get(k).copied()).filter(|v| *v != -1000).collect();
+            p.extra.push(if vals.is_empty() { -1000 } else { vals.iter().sum::<i64>() / vals.len() as i64 });
+        }
         // the busiest of each kind: the mean over the seeds of a device's figure
         let mut cpu: Vec<(String, u64, u64, u64)> = Vec::new();
         for f in of {
@@ -557,6 +598,7 @@ fn patched(base: &Project, boot: &Engine, exp: &Experiment, config: &Config) -> 
         match a.kind.as_str() {
             "hw" => patch_hw(&mut p, a, *i)?,
             "config" => patch_config(&mut p, a, *i)?,
+            "link" => patch_link(&mut p, a, *i)?,
             _ => {
                 let lb = base.find(&a.dev).map(|d| d.id);
                 let addr = |n: &str| base.find(n).and_then(|d| addr_of(boot, d.id, lb));
@@ -808,6 +850,8 @@ pub struct Point {
     pub cost_per_1000_u: u64,
     pub status: Status,
     pub seconds: u64,
+    /// the experiment's figures in thousandths, the mean over the seeds (-1000: none)
+    pub extra: Vec<i64>,
 }
 
 /// a configuration over its levels
@@ -842,6 +886,20 @@ pub struct Sweep {
     pub points: Vec<Point>,
     /// every run in the plan's index order
     pub details: Vec<Fig>,
+    /// the figures' columns and whether each shows a decimal (SA5)
+    pub figures: Vec<(String, bool)>,
+}
+
+/// a figure's value from thousandths: a whole number, or one decimal; "-" when there is none
+fn figure_text(v: Option<&i64>, decimal: bool) -> String {
+    match v {
+        None | Some(-1000) => String::from("-"),
+        Some(x) if decimal => {
+            let t = x / 100;
+            format!("{}{}.{}", if t < 0 { "-" } else { "" }, t.abs() / 10, t.abs() % 10)
+        }
+        Some(x) => format!("{}", x / 1000),
+    }
 }
 
 /// a number with three decimals from thousandths
@@ -943,6 +1001,7 @@ impl Sweep {
             s.push('\n');
             s.push_str(&format!("{} ({} \u{20ac}/h)\n", words(&cfg.label), euro3(cfg.cost_uh)));
             let mut rows = alloc::vec![head(phrase("Last|erreicht/s|p50 ms|p95 ms|p99 ms|p99.9 ms|Fehler %|CPU %|€/1000|SLO|Engpass"))];
+            rows[0].extend(self.figures.iter().map(|f| f.0.clone()));
             for p in self.points_of(c) {
                 let verdict = if p.status == Status::Memory {
                     phrase("speicher")
@@ -968,6 +1027,9 @@ impl Sweep {
                     tx(verdict),
                     words(&p.bottleneck),
                 ]);
+                if let Some(r) = rows.last_mut() {
+                    r.extend(self.figures.iter().enumerate().map(|(k, f)| figure_text(p.extra.get(k), f.1)));
+                }
             }
             aligned(&rows, &mut s);
         }
@@ -997,7 +1059,12 @@ impl Sweep {
             s.push(',');
             s.push_str(&field(c));
         }
-        s.push_str(",offered_rps,users,achieved_rps,sent,ok,errors,timeouts,err_pct,p50_us,p95_us,p99_us,p999_us,mean_us,max_us,p99_min_us,p99_max_us,slo_ok,knee,cpu_max_pct,cpu_dev,runq_mean,cpu_wait_us,mem_max_mib,swap_max_mib,pageins,oom_kills,disk_max_pct,disk_dev,disk_wait_max_us,disk_backlog_max_us,link_max_pct,link,lock_max_pct,lock,bottleneck,cost_eur_h_assumed,cost_eur_per_1000_assumed,status,seconds\n");
+        s.push_str(",offered_rps,users,achieved_rps,sent,ok,errors,timeouts,err_pct,p50_us,p95_us,p99_us,p999_us,mean_us,max_us,p99_min_us,p99_max_us,slo_ok,knee,cpu_max_pct,cpu_dev,runq_mean,cpu_wait_us,mem_max_mib,swap_max_mib,pageins,oom_kills,disk_max_pct,disk_dev,disk_wait_max_us,disk_backlog_max_us,link_max_pct,link,lock_max_pct,lock,bottleneck,cost_eur_h_assumed,cost_eur_per_1000_assumed,status,seconds");
+        for f in &self.figures {
+            s.push(',');
+            s.push_str(&field(&f.0));
+        }
+        s.push('\n');
         for p in &self.points {
             let Some(cfg) = self.configs.get(p.config) else { continue };
             s.push_str(&field(&cfg.series));
@@ -1045,6 +1112,17 @@ impl Sweep {
                 p.status.as_str(),
                 p.seconds,
             ));
+            if !self.figures.is_empty() {
+                s.pop();
+                for (k, f) in self.figures.iter().enumerate() {
+                    s.push(',');
+                    let t = figure_text(p.extra.get(k), f.1);
+                    if t != "-" {
+                        s.push_str(&t);
+                    }
+                }
+                s.push('\n');
+            }
         }
         s
     }
@@ -1175,6 +1253,7 @@ fn row_point(v: &Value) -> Option<Point> {
         cost_per_1000_u: u(next())?,
         status: Status::parse(next()?.as_str()?),
         seconds: u(next())?,
+        extra: Vec::new(),
     })
 }
 
@@ -1214,6 +1293,10 @@ impl Sweep {
         o.insert("configs", Value::Array(configs.collect()));
         let rows = self.points.iter().map(|p| Value::string(json::stringify(&point_row(p)).unwrap_or_default()));
         o.insert("points", Value::Array(rows.collect()));
+        if !self.figures.is_empty() {
+            o.insert("figures", Value::Array(self.figures.iter().map(|(n, d)| Value::Array(alloc::vec![Value::string(n.as_str()), Value::Bool(*d)])).collect()));
+            o.insert("extra", Value::Array(self.points.iter().map(|p| Value::Array(p.extra.iter().map(|x| agent_core::json::Number::parse(&format!("{}", x)).map_or(Value::Null, Value::Number)).collect())).collect()));
+        }
         o
     }
 
@@ -1251,6 +1334,13 @@ impl Sweep {
             let row = json::parse(r.as_str()?.as_bytes()).ok()?;
             points.push(row_point(&row)?);
         }
+        let figures: Vec<(String, bool)> = v.get("figures").and_then(|x| x.as_array()).unwrap_or(&[]).iter().filter_map(|f| Some((String::from(f.as_array()?.first()?.as_str()?), f.as_array()?.get(1)?.as_bool()?))).collect();
+        for (p, x) in points.iter_mut().zip(v.get("extra").and_then(|x| x.as_array()).unwrap_or(&[])) {
+            p.extra = x.as_array().unwrap_or(&[]).iter().filter_map(|n| match n {
+                Value::Number(n) => n.as_str().parse::<i64>().ok(),
+                _ => None,
+            }).collect();
+        }
         Some(Sweep {
             name: String::from(v.get("name").and_then(|x| x.as_str()).unwrap_or("")),
             title: String::from(v.get("title").and_then(|x| x.as_str()).unwrap_or("")),
@@ -1264,6 +1354,7 @@ impl Sweep {
             measure_s: num("measure_s")?,
             points,
             details: Vec::new(),
+            figures,
         })
     }
 

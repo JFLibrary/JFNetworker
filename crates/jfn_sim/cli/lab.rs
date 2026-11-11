@@ -5,9 +5,11 @@
 //                                            a KV node: members as it sees them, the ring, the
 //                                            replicas of a key and what each one holds, its
 //                                            own entries
-//   dbctl [status|tables|locks|explain SQL] [-s NAME]
+//   dbctl [status|tables|locks|explain SQL|replication|promote] [-s NAME]
 //                                            a database: state and figures, its tables, the row locks
-//                                            held and waited for, how a statement would go
+//                                            held and waited for, how a statement would go; its
+//                                            replication (role, epoch, positions, lag, replicas); a
+//                                            replica becomes primary (Engine::db_promote, SA5)
 //   cachectl [status|keys] [-s NAME]         a cache: hits, misses, its entries
 //   mqctl [status] [-s NAME]                 a queue: its topics
 //   workerctl [status] [-s NAME]             a worker: its slots
@@ -107,6 +109,8 @@ fn db_help() -> Vec<(Msg, Msg)> {
         (Msg::plain("dbctl tables"), phrase("ihre Tabellen: Zeilen, geänderte Zeilen, Seiten, Indizes")),
         (Msg::plain("dbctl locks"), phrase("die Zeilensperren, wer sie hält und wie viele warten")),
         (phrase("dbctl explain ANWEISUNG"), phrase("wie eine Anweisung liefe: Index oder alle Seiten, Zeilen, Seiten, warum")),
+        (Msg::plain("dbctl replication"), phrase("die Replikation: Rolle, Epoche, Positionen, Rückstand, die Replikate")),
+        (Msg::plain("dbctl promote"), phrase("ein Replikat wird Primary, nachdem es angewendet hat, was es schon hat")),
     ]
 }
 
@@ -408,6 +412,14 @@ impl Engine {
                 Some(Err(e)) => return self.lab_err(ni, &format!("dbctl: {}\n", e.line())),
                 None => String::new(),
             },
+            ["replication"] => self.db_repl_text(dev, &name),
+            ["promote"] => match self.db_promote(dev, &name) {
+                Ok(()) => format!("{}\n", self.tx(&msg!("{} wird Primary: wendet zuerst an, was es schon hat, dann hören die anderen Mitglieder davon.", name))),
+                Err(e) => {
+                    let t = format!("dbctl: {}\n", self.tx(&e.msg()));
+                    return self.lab_err(ni, &t);
+                }
+            },
             _ => return self.lab_unknown(ni, "dbctl", &rest, &db_help()),
         };
         self.out(ni, &text);
@@ -443,6 +455,74 @@ impl Engine {
         let mut s = String::new();
         for l in lines {
             s.push_str(&self.tx(&l));
+            s.push('\n');
+        }
+        s
+    }
+
+    fn db_repl_text(&self, dev: u32, name: &str) -> String {
+        let (Some(v), Some(d)) = (self.db_repl_view(dev, name), self.db_view(dev, name)) else {
+            return format!("{}\n", self.tx(&phrase("Diese Datenbank hat keine Replikation.")));
+        };
+        let st = v.stats;
+        let addr = |a: Option<netpkt::Ipv4>| format!("{}", a.unwrap_or(netpkt::Ipv4::UNSPECIFIED));
+        let mut lines = Vec::new();
+        let mut table_rows: Vec<Vec<String>> = Vec::new();
+        match v.role {
+            crate::db::ReplRole::Primary => {
+                lines.push(msg!("Primary in Epoche {}, Modus {} (wartet auf {} Replikate), Log-Port {}", v.epoch, v.mode.name(), v.sync_count, v.port));
+                if v.checking {
+                    lines.push(phrase("Fragt nach einem Neustart erst seine Mitglieder, ob es einen neueren Primary gibt: nimmt bis dahin keine Schreibzugriffe an."));
+                }
+                if v.fallback {
+                    lines.push(phrase("Fällt gerade auf async zurück: kein Replikat hat rechtzeitig bestätigt."));
+                }
+                if v.rival.is_some() {
+                    lines.push(msg!("Split Brain: auch {} nimmt Schreibzugriffe an.", addr(v.rival)));
+                }
+                lines.push(msg!("Log: Stand {}, auf der Platte {}", d.lsn, d.flushed));
+                if v.followers.is_empty() {
+                    lines.push(phrase("Kein Replikat verbunden."));
+                } else {
+                    table_rows.push(self.head(phrase("Replikat|empfangen|geschrieben|angewendet|Rückstand|Bytes|Zustand")));
+                    for f in &v.followers {
+                        let state = if f.copying { phrase("kopiert") } else { phrase("folgt") };
+                        table_rows.push(alloc::vec![format!("{}", f.addr), format!("{}", f.received), format!("{}", f.flushed), format!("{}", f.applied), format!("{} ms", f.lag_ms), format!("{}", f.lag_bytes), self.tx(&state)]);
+                    }
+                }
+            }
+            crate::db::ReplRole::Replica => {
+                lines.push(msg!("Replikat von {} in Epoche {}, Log-Port {}", addr(v.primary), v.epoch, v.port));
+                if v.promoting {
+                    lines.push(phrase("Wird Primary: wendet zuerst an, was es schon hat."));
+                } else if let Some(p) = v.copying {
+                    lines.push(msg!("Bekommt eine Kopie der Daten ({} %): beantwortet bis dahin keine Lesezugriffe.", p));
+                } else if !v.connected {
+                    lines.push(phrase("Erreicht seinen Primary nicht: versucht es weiter."));
+                }
+                if v.fenced {
+                    lines.push(phrase("War Primary und wurde abgegrenzt: ein neuerer Primary ist da."));
+                }
+                lines.push(msg!("Position: empfangen {}, geschrieben {}, angewendet {}; Rückstand {} ms ({} Bytes)", d.lsn, d.flushed, v.applied, v.lag_ms, v.lag_bytes));
+                lines.push(msg!("Vom Commit auf dem Primary bis hier angewendet: p50 {}, p99 {}", opt_ns(v.lag_p50), opt_ns(v.lag_p99)));
+            }
+        }
+        let mut tail = Vec::new();
+        tail.push(msg!("Sätze gesendet {}, empfangen {}, angewendet {}; Commits angewendet {}; veraltete Lesezugriffe {}, gewartet {}", st.records_out, st.records_in, st.applied_records, st.applied_commits, st.stale_reads, st.read_waits));
+        tail.push(msg!("Commits gewartet {}, auf async zurückgefallen {}; Kopien {}; Schreibzugriffe abgewiesen {}", st.sync_waits, st.sync_fallbacks, st.copies, st.refused_writes));
+        tail.push(msg!("Verloren beim Failover {}, beim Abgrenzen {}; Commits im Split Brain {} (die andere Seite {})", st.failover_lost, st.fenced_lost, st.split_commits, st.rival_commits));
+        let hist: Vec<String> = v.history.iter().map(|(e, at)| format!("{}@{}", e, at)).collect();
+        tail.push(msg!("Epochen (Epoche@Position): {}", hist.join(", ")));
+        let mut s = String::new();
+        for l in &lines {
+            s.push_str(&self.tx(l));
+            s.push('\n');
+        }
+        if !table_rows.is_empty() {
+            s.push_str(&table(&table_rows));
+        }
+        for l in &tail {
+            s.push_str(&self.tx(l));
             s.push('\n');
         }
         s

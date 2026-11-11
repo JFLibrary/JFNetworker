@@ -130,7 +130,8 @@ pub fn missing(kind: &str, c: &Value) -> Option<Msg> {
         "kv" if !has(c, "nodes") => Some(msg!("Noch keine Knoten: der KV-Speicher weiß nicht, wer dazugehört.")),
         "cache" if !has(c, "backend") => Some(msg!("Noch kein Backend: der Cache kann nichts nachladen.")),
         "worker" if !has(c, "queue") => Some(msg!("Noch keine Queue: der Worker holt nichts ab.")),
-        "db" if !has(c, "tables") => Some(msg!("Noch keine Tabellen: die Datenbank hat nichts, worauf sich eine Anweisung beziehen könnte.")),
+        // (a replica may leave its tables to the copy from its primary: dbrepl.rs)
+        "db" if !has(c, "tables") && c.get("replication").is_none_or(|r| r.get("primary").is_none()) => Some(msg!("Noch keine Tabellen: die Datenbank hat nichts, worauf sich eine Anweisung beziehen könnte.")),
         _ => None,
     }
 }

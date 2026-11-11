@@ -154,13 +154,17 @@ static G_CACHE: [Group; 4] = [
     Group { title: "Inhalt", show: Show::Num, names: &["entries"] },
 ];
 // i18n: title
-static G_DB: [Group; 6] = [
+static G_DB: [Group; 9] = [
     Group { title: "Durchsatz", show: Show::Num, names: &["statements", "commits", "rollbacks"] },
     Group { title: "Latenz", show: Show::Lat, names: LAT3 },
     Group { title: "Puffer", show: Show::Pct, names: &["pool_hit_pm", "pool_use_pm"] },
     Group { title: "Sperren", show: Show::Num, names: &["lock_waits", "deadlocks", "lock_timeouts", "conflicts"] },
     Group { title: "Log", show: Show::Num, names: &["wal_flushes", "group_pm", "lost_commits"] },
     Group { title: "Fehler|Diagramm", show: Show::Num, names: &["errors", "refused"] },
+    // replication (SA5): only a database with it has these series
+    Group { title: "Rückstand der Replikation", show: Show::Lat, names: &["lag_p50_us", "lag_p99_us"] },
+    Group { title: "Replikation", show: Show::Num, names: &["applied_commits", "lag_ms", "stale_reads", "sync_waiting"] },
+    Group { title: "Ausfälle der Replikation", show: Show::Num, names: &["failover_lost", "fenced_lost", "split_commits", "sync_fallbacks"] },
 ];
 // i18n: title
 static G_MQ: [Group; 4] = [
@@ -261,7 +265,7 @@ struct Lbl {
 
 /// the series of the charts in words (rates per second end in "/s")
 // i18n: label
-static LABELS: [Lbl; 80] = [
+static LABELS: [Lbl; 90] = [
     Lbl { key: "requests", label: "Anfragen/s" },
     Lbl { key: "responses", label: "Antworten/s" },
     Lbl { key: "connections", label: "Verbindungen/s" },
@@ -342,6 +346,16 @@ static LABELS: [Lbl; 80] = [
     Lbl { key: "lock_timeouts", label: "Sperren zu spät/s" },
     Lbl { key: "wal_flushes", label: "Log geschrieben/s" },
     Lbl { key: "group_pm", label: "Commits je Schreiben (Tausendstel)" },
+    Lbl { key: "lag_p50_us", label: "Rückstand p50" },
+    Lbl { key: "lag_p99_us", label: "Rückstand p99" },
+    Lbl { key: "applied_commits", label: "Angewendet/s" },
+    Lbl { key: "lag_ms", label: "Rückstand jetzt (ms)" },
+    Lbl { key: "stale_reads", label: "Veraltet gelesen/s" },
+    Lbl { key: "sync_waiting", label: "Commits warten auf Replikate" },
+    Lbl { key: "failover_lost", label: "Beim Failover verloren" },
+    Lbl { key: "fenced_lost", label: "Beim Abgrenzen verloren" },
+    Lbl { key: "split_commits", label: "Commits im Split Brain" },
+    Lbl { key: "sync_fallbacks", label: "Zurück auf async/s" },
 ];
 
 /// a series' name in the window: "Anfragen/s" for requests, "p99" for p99_us (the language);

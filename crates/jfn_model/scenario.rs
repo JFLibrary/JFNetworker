@@ -76,6 +76,7 @@
 //     [r 1]                                      step's line says why one cannot); a cache forgets
 //   svc set WEB1 web workers 8 [time_ms 2.5]     what it holds
 //   cache clear CACHE1 cache
+//   db promote DB2 db                            a replica of the database becomes primary (SA5)
 //   expect WEB1 unit web active|inactive|failed|enabled|disabled   a unit of a host (A2)
 //   expect DEV1 deploy done|running|failed|rolledback|aborted      its newest deployment
 //
@@ -141,6 +142,8 @@ pub enum StepKind {
     SvcSet { dev: String, svc: String, sets: Vec<(String, String)> },
     /// a cache forgets what it holds ("cache clear DEV SVC")
     CacheClear { dev: String, svc: String },
+    /// a replica of the database becomes primary ("db promote DEV SVC")
+    DbPromote { dev: String, svc: String },
 }
 
 /// what "lb" does
@@ -592,6 +595,7 @@ fn parse_line(t: &str, sc: &mut Scenario) -> Result<Option<(Option<u64>, StepKin
             StepKind::SvcSet { dev: String::from(*dev), svc: String::from(*svc), sets: rest.chunks(2).map(|p| (String::from(p[0]), String::from(p[1]))).collect() }
         }
         ["cache", "clear", dev, svc] => StepKind::CacheClear { dev: String::from(*dev), svc: String::from(*svc) },
+        ["db", "promote", dev, svc] => StepKind::DbPromote { dev: String::from(*dev), svc: String::from(*svc) },
         [k, ..] => return Err(format!("Unbekannter Schritt \u{201e}{}\u{201c}.", k)),
         [] => return Ok(None),
     };

@@ -2,7 +2,7 @@
 //
 //   Engine::lab_apply(Action)      Fault, Heal, HealAll (fault.rs); LbBackend, LbAlgorithm
 //                                  (lb.rs); KvSet (kv.rs); CacheClear (cache.rs); WorkerSet
-//                                  (mq.rs); ServiceConfig (Service::reconfigure)
+//                                  (mq.rs); ServiceConfig (Service::reconfigure); DbPromote (dbrepl.rs)
 //   Engine::can_reconfigure(dev, svc, &config)   a copy of the service could take this config
 //   Engine::refused(dev)           the project's services this device could not start, with the reason
 //   Engine::service_list()         every configured service of every device in brief (SvcBrief:
@@ -121,8 +121,19 @@ impl Engine {
                 }
                 Ok(())
             }),
+            Action::DbPromote { dev, svc } => self.db_promote(dev, &svc),
             _ => Err(ActErr::Refused(msg!("Diese Aktion kennt der Simulator nicht."))),
         }
+    }
+
+    /// Action::DbPromote and dbctl promote: a replica becomes primary; what the failover loses is counted
+    /// from what the engine knows of the old primary (an observation, not the replica's knowledge)
+    pub(crate) fn db_promote(&mut self, dev: u32, svc: &str) -> Result<(), ActErr> {
+        let lost = self.db_lost_at(dev, svc);
+        self.lab_change::<crate::db::Db>(dev, svc, |d, api| match api {
+            Some(api) => d.promote(api, lost),
+            None => Err(msg!("Die Datenbank läuft nicht.")),
+        })
     }
 
     /// every configured service of every device (not the console's programs), by device id

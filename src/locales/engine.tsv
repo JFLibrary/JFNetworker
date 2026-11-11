@@ -1949,7 +1949,7 @@ Es fehlt „dev“ oder „group“.	“dev” or “group” is missing.
 Die Gruppe „{}“ gibt es nicht.	There is no group “{}”.
 Die Gruppe „{}“ hat keine Geräte.	The group “{}” has no devices.
 „values“ ist leer.	“values” is empty.
-Die Art „{}“ gibt es nicht (hw, config, backends).	There is no kind “{}” (hw, config, backends).
+Die Art „{}“ gibt es nicht (hw, config, backends, link).	There is no kind “{}” (hw, config, backends, link).
 {} hat keinen Dienst „{}“ (es gibt: {}).	{} has no service “{}” (there are: {}).
 Ein Dienst der Art {} kennt „{}“ nicht (es gibt: {}).	A service of kind {} does not know “{}” (there are: {}).
 Der Dienst „{}“ ist kein Load Balancer, sondern {}.	The service “{}” is no load balancer but {}.
@@ -2050,3 +2050,66 @@ Die Anweisung „{}“: {}	The statement "{}": {}
 „db.addr“: „{}“ ist keine IPv4-Adresse.	"db.addr": "{}" is no IPv4 address.
 Eine Route fragt die Datenbank, aber „db“ fehlt.	A route asks the database, but "db" is missing.
 Noch keine Tabellen: die Datenbank hat nichts, worauf sich eine Anweisung beziehen könnte.	No tables yet: the database has nothing a statement could refer to.
+# SA5: replication of the database (dbrepl.rs, cli/lab.rs dbctl, trace.rs notes)
+die Replikation: Rolle, Epoche, Positionen, Rückstand, die Replikate	replication: role, epoch, positions, lag, the replicas
+ein Replikat wird Primary, nachdem es angewendet hat, was es schon hat	a replica becomes primary after it applied what it already has
+{} wird Primary: wendet zuerst an, was es schon hat, dann hören die anderen Mitglieder davon.	{} becomes primary: it first applies what it already has, then the other members hear of it.
+Diese Datenbank hat keine Replikation.	This database has no replication.
+Primary in Epoche {}, Modus {} (wartet auf {} Replikate), Log-Port {}	Primary in epoch {}, mode {} (waits for {} replicas), log port {}
+Fragt nach einem Neustart erst seine Mitglieder, ob es einen neueren Primary gibt: nimmt bis dahin keine Schreibzugriffe an.	After a restart it first asks its members whether there is a newer primary: until then it takes no writes.
+Fällt gerade auf async zurück: kein Replikat hat rechtzeitig bestätigt.	Falling back to async: no replica acknowledged in time.
+Split Brain: auch {} nimmt Schreibzugriffe an.	Split brain: {} takes writes too.
+Log: Stand {}, auf der Platte {}	Log: at {}, on the disk {}
+Kein Replikat verbunden.	No replica connected.
+Replikat|empfangen|geschrieben|angewendet|Rückstand|Bytes|Zustand	Replica|received|written|applied|lag|bytes|state
+folgt	follows
+Replikat von {} in Epoche {}, Log-Port {}	Replica of {} in epoch {}, log port {}
+Wird Primary: wendet zuerst an, was es schon hat.	Becoming primary: it first applies what it already has.
+Bekommt eine Kopie der Daten ({} %): beantwortet bis dahin keine Lesezugriffe.	Getting a copy of the data ({} %): it answers no reads until then.
+Erreicht seinen Primary nicht: versucht es weiter.	Does not reach its primary: it keeps trying.
+War Primary und wurde abgegrenzt: ein neuerer Primary ist da.	Was primary and was fenced: a newer primary is there.
+Position: empfangen {}, geschrieben {}, angewendet {}; Rückstand {} ms ({} Bytes)	Position: received {}, written {}, applied {}; lag {} ms ({} bytes)
+Vom Commit auf dem Primary bis hier angewendet: p50 {}, p99 {}	From the commit on the primary to applied here: p50 {}, p99 {}
+Sätze gesendet {}, empfangen {}, angewendet {}; Commits angewendet {}; veraltete Lesezugriffe {}, gewartet {}	Records sent {}, received {}, applied {}; commits applied {}; stale reads {}, waited {}
+Commits gewartet {}, auf async zurückgefallen {}; Kopien {}; Schreibzugriffe abgewiesen {}	Commits waited {}, fell back to async {}; copies {}; writes refused {}
+Verloren beim Failover {}, beim Abgrenzen {}; Commits im Split Brain {} (die andere Seite {})	Lost in a failover {}, when fenced {}; commits in split brain {} (the other side {})
+Epochen (Epoche@Position): {}	Epochs (epoch@position): {}
+„replication“ ist ein Objekt.	"replication" is an object.
+„replication.primary“: „{}“ ist keine IPv4-Adresse.	"replication.primary": "{}" is no IPv4 address.
+„replication.role“ kennt {} nicht (primary, replica).	"replication.role" does not know {} (primary, replica).
+Ein Replikat braucht „replication.primary“: die Adresse seines Primary.	A replica needs "replication.primary": the address of its primary.
+„replication.mode“ kennt {} nicht (async, semi, sync, apply).	"replication.mode" does not know {} (async, semi, sync, apply).
+Das Log braucht einen eigenen Port, nicht {}.	The log needs a port of its own, not {}.
+Diese Datenbank ist schon Primary.	This database is primary already.
+Diese Datenbank wird schon Primary.	This database is becoming primary already.
+Das Replikat hat noch keine vollständige Kopie der Daten: es kann nicht Primary werden.	The replica has no complete copy of the data yet: it cannot become primary.
+Das Replikat erreicht seinen Primary {} nicht.	The replica does not reach its primary {}.
+Port {}: wird Primary, wendet zuerst an, was es hat	Port {}: becoming primary, first applies what it has
+Port {}: Replikat, bekommt eine Kopie der Daten ({} %)	Port {}: replica, getting a copy of the data ({} %)
+Port {}: Replikat, erreicht seinen Primary {} nicht	Port {}: replica, does not reach its primary {}
+Port {}: abgegrenzt (ein neuerer Primary ist da), folgt {}, Rückstand {} ms	Port {}: fenced (a newer primary is there), follows {}, lag {} ms
+Port {}: Replikat von {}, Rückstand {} ms ({} Bytes), {} Commits angewendet	Port {}: replica of {}, lag {} ms ({} bytes), {} commits applied
+Port {}: Primary nach einem Neustart, fragt erst seine Mitglieder	Port {}: primary after a restart, first asks its members
+Port {}: Split Brain, auch {} nimmt Schreibzugriffe an	Port {}: split brain, {} takes writes too
+Port {}: Primary (Epoche {}), {} statt {}: kein Replikat hat rechtzeitig bestätigt	Port {}: primary (epoch {}), {} instead of {}: no replica acknowledged in time
+Port {}: Primary (Epoche {}, {}), {} Replikate, Rückstand bis {} ms	Port {}: primary (epoch {}, {}), {} replicas, lag up to {} ms
+Rolle, Primary und Port der Replikation ändern sich nur mit einem Neustart.	Role, primary and port of replication change only with a restart.
+„db.read“: „{}“ ist keine IPv4-Adresse.	"db.read": "{}" is no IPv4 address.
+Die Datenbank läuft nicht.	The database is not running.
+Der Dienst {}: {}	The service {}: {}
+Replikation: folgt dem Primary {} ab Position {}.	Replication: follows the primary {} from position {}.
+Replikation: bekommt eine Kopie der Daten ({}).	Replication: gets a copy of the data ({}).
+Replikation: hat aufgeholt, Position {}.	Replication: caught up, position {}.
+Replikation: liegt {} ms hinter dem Primary.	Replication: {} ms behind the primary.
+Replikation: {} folgt jetzt diesem Primary.	Replication: {} follows this primary now.
+Replikation: die Verbindung zum Replikat {} ist weg.	Replication: the connection to the replica {} is gone.
+Replikation: ist jetzt Primary in Epoche {}.	Replication: is primary now in epoch {}.
+Replikation: ein Primary in Epoche {} ist da, diese Datenbank nimmt keine Schreibzugriffe mehr an.	Replication: a primary in epoch {} is there, this database takes no more writes.
+Replikation: folgt dem neuen Primary {} in Epoche {}.	Replication: follows the new primary {} in epoch {}.
+Replikation: kein Replikat hat rechtzeitig bestätigt, Commits gehen jetzt async.	Replication: no replica acknowledged in time, commits go async now.
+Replikation: die Replikate haben aufgeholt, Commits warten wieder auf sie.	Replication: the replicas caught up, commits wait for them again.
+# SA5: the study's link axis and figures (jfn_model experiment.rs)
+Eine Verzögerung ist eine Zahl in Millisekunden.	A delay is a number of milliseconds.
+An {} {} hängt kein Kabel.	No cable is plugged into {} {}.
+Spalte {}: das Gerät „{}“ gibt es nicht.	Column {}: there is no device "{}".
+Spalte {}: {} hat keinen Dienst „{}“.	Column {}: {} has no service "{}".
