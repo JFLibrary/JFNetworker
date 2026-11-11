@@ -44,9 +44,10 @@ PROXY: proxyctl routes
 run 10ms
 expect PROXY output contains "blog.lab/"
 expect PROXY output contains "-/shop +/v2"
-# ohne Keep-alive: jede Anfrage ein voller Handshake, die CPU des Proxys trägt ihn
-svc set GEN load keepalive false
-at 14s expect PROXY svc proxy metric tls_handshakes >= 300 over 3s
+# ohne Keep-alive: jede Anfrage ein voller Handshake, die CPU des Proxys trägt ihn (5 Nutzer, damit der Lauf
+# kurz bleibt: jeder Handshake wird hier wirklich gerechnet)
+svc set GEN load keepalive false users 5
+at 12s expect PROXY svc proxy metric tls_handshakes >= 150 over 3s
 expect PROXY svc proxy metric tls_cpu_us >= 100000
 PROXY: proxyctl
 run 10ms

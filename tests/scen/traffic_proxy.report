@@ -90,21 +90,21 @@
    8.010000000  --      run 10ms
    8.020000000  ok      expect PROXY output contains "blog.lab/"
    8.020000000  ok      expect PROXY output contains "-/shop +/v2"
-   8.020000000  --      svc set GEN load keepalive false
-  14.000000000  ok      expect PROXY svc proxy metric tls_handshakes >= 300 over 3s (944)
-  14.000000000  ok      expect PROXY svc proxy metric tls_cpu_us >= 100000 (2335235)
-  14.000000000  PROXY   root@PROXY:~# proxyctl
-  14.000000000  PROXY   Reverse Proxy proxy: HTTPS auf Port 443, Verfahren round-robin, Health Checks http GET / alle 1,000 s (Timeout 1,000 s, verfügbar nach 2, ausgefallen nach 3 Prüfungen)
-  14.000000000  PROXY   Anfragen 13490, beendet 13490, offen 0, Fehler 2 (ohne Backend 0), Wiederholungen 0
-  14.000000000  PROXY   Antwortzeit p50 44 µs, p95 1,687 ms, p99 2,129 ms
-  14.000000000  PROXY   Abgewiesen: Rate-Limit 1, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 0, Backends ausgeschlossen 0
-  14.000000000  PROXY   TLS: 5828 volle Handshakes, 0 wieder aufgenommen, 2,335 s CPU
-  14.000000000  PROXY   Cache: 1000 Einträge, Treffer 11898 (davon abgelaufen 0), Fehlschläge 1588 (88,2 % Treffer), gespart 194 KiB
-  14.000000000  PROXY   
-  14.000000000  PROXY   Backend  Pool  Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
-  14.000000000  PROXY   shop1    shop  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      795     0       24 µs
-  14.000000000  PROXY   shop2    shop  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      794     0       24 µs
-  14.000000000  PROXY   blog1    blog  10.0.0.13:80  1        verfügbar  geschlossen  0 ns  0      1       0       26 µs
-  14.000000000  --      run 10ms
-  14.010000000  ok      expect PROXY output contains "volle Handshakes"
+   8.020000000  --      svc set GEN load keepalive false users 5
+  12.000000000  ok      expect PROXY svc proxy metric tls_handshakes >= 150 over 3s (245)
+  12.000000000  ok      expect PROXY svc proxy metric tls_cpu_us >= 100000 (458583)
+  12.000000000  PROXY   root@PROXY:~# proxyctl
+  12.000000000  PROXY   Reverse Proxy proxy: HTTPS auf Port 443, Verfahren round-robin, Health Checks http GET / alle 1,000 s (Timeout 1,000 s, verfügbar nach 2, ausgefallen nach 3 Prüfungen)
+  12.000000000  PROXY   Anfragen 8802, beendet 8802, offen 0, Fehler 2 (ohne Backend 0), Wiederholungen 0
+  12.000000000  PROXY   Antwortzeit p50 40 µs, p95 438 µs, p99 581 µs
+  12.000000000  PROXY   Abgewiesen: Rate-Limit 1, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 0, Backends ausgeschlossen 0
+  12.000000000  PROXY   TLS: 1140 volle Handshakes, 0 wieder aufgenommen, 458,583 ms CPU
+  12.000000000  PROXY   Cache: 943 Einträge, Treffer 7734 (davon abgelaufen 0), Fehlschläge 1064 (87,9 % Treffer), gespart 126 KiB
+  12.000000000  PROXY   
+  12.000000000  PROXY   Backend  Pool  Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+  12.000000000  PROXY   shop1    shop  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      533     0       24 µs
+  12.000000000  PROXY   shop2    shop  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      532     0       24 µs
+  12.000000000  PROXY   blog1    blog  10.0.0.13:80  1        verfügbar  geschlossen  0 ns  0      1       0       26 µs
+  12.000000000  --      run 10ms
+  12.010000000  ok      expect PROXY output contains "volle Handshakes"
 # 20 von 20 Erwartungen erfüllt

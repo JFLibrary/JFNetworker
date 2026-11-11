@@ -1300,9 +1300,10 @@ const KINDS: [AddKind; 11] = [
     AddKind { kind: "mq", help: "Hält Nachrichten, bis ein Worker sie abgeholt und bestätigt hat." },
     AddKind { kind: "worker", help: "Holt Nachrichten aus einer Queue und arbeitet sie ab." },
     AddKind { kind: "db", help: "Eine Datenbank mit Tabellen, Puffer, Sperren, Versionen und Log; sie nimmt SQL-artige Anweisungen über HTTP an." },
-    AddKind { kind: "dhcp-server", help: "Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer." },
+    // (the DHCP server stays last: it is the one a Linux device adds to the lab's kinds)
     AddKind { kind: "proxy", help: "Ein Reverse Proxy: Routen nach Host und Pfad zu Pools, Umschreiben, TLS, Cache, dazu Rate-Limits, Wiederholungen und Circuit Breaker." },
     AddKind { kind: "dbpool", help: "Ein Pooler vor einer Datenbank: hält höchstens N Verbindungen und lässt die übrigen Anweisungen warten." },
+    AddKind { kind: "dhcp-server", help: "Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer." },
 ];
 
 /// the kinds of the dialog for a device: a DHCP server only on a Linux device (an IOS-like one has
