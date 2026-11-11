@@ -25,7 +25,8 @@
 //                  "requests": 0, "timeout_ms": 5000, "connect_timeout_ms": 0,
 //                  "keepalive": true, "max_conns": 0, "balance": "round-robin",
 //                  "mix": [{"method": "GET", "path": "/", "weight": 1, "body": "",
-//                  "headers": {}}]}
+//                  "headers": {}}], "retry": {...} (traffic.rs), "cookies": false}
+//                  Targets may be https: URLs (TLS on connections of their own, the lab CA trusted).
 //
 // Server: a route matches its path exactly, "/api/*" by prefix, "*" every path; its method or
 // any ("" or "*"; GET routes answer HEAD too).  A path without a route of the method gets 405
@@ -75,7 +76,11 @@
 // the request, from 0), {rand:N} (0 to N-1) and {hot:N} (four of five requests among the
 // first fifth of 0 to N-1: a few keys get most of the load).  It stops after duration_ms or `requests`.
 // A request that cannot even start (no route, ARP gave up) fails at once; what follows comes 100 ms
-// later, so that a target that reboots gets its load back.
+// later, so that a target that reboots gets its load back.  "retry" (SA6): a failed request is sent
+// again after its backoff, for what the policy repeats and within its budget, its latency counted
+// from the first attempt; a closed loop's user waits for the last one, an open loop's arrivals go on
+// (a retry storm: the load at a target that fails with probability p grows by 1 + p + .. + p^n).
+// "cookies" (closed loop): every user keeps the cookies its answers set and sends them back.
 //
 // Metrics (Service::metrics_at; latencies in µs over the five-minute window):
 //   http-server  requests, responses, status_2xx..5xx, errors (injected), rejected (503 when
@@ -86,7 +91,7 @@
 //   http-load    sent, responses, ok, http_errors, failed, timeouts, errors, inflight,
 //                connections, status_2xx..5xx, users / rate_mrps, rps (answers per second
 //                over the last 10 s), err_pm (errors per mille), p50_us, p95_us, p99_us,
-//                mean_us, max_us
+//                mean_us, max_us; with "retry" also retries, budget_denied
 // Time series (series.rs): busy_ms counts up (its rate is the workers' load in ms per
 // second); the latency windows give p50_us, p95_us, p99_us of each interval, a web server's
 // backend also backend_p50_us .. backend_p99_us, the load generator also mean_us and max_us.
@@ -265,7 +270,7 @@ fn jitter_of(rng: &mut Pcg32, jitter: Ns) -> Ns {
     if jitter == 0 { 0 } else { rng.range(0, jitter as i64) as Ns }
 }
 
-fn seeded(os: &mut OsApi) -> Pcg32 {
+pub(crate) fn seeded(os: &mut OsApi) -> Pcg32 {
     let a = os.rand() as u64;
     let b = os.rand() as u64;
     Pcg32::new((a << 32) | b, os.svc_id() as u64)
@@ -1492,6 +1497,18 @@ enum LTimer {
     Stop,
     /// what the agent ended while it was asked comes out (come_back)
     Done,
+    /// SA6: a request's backoff is over (its number in `later`)
+    Retry(u64),
+}
+
+/// a request that may be sent again (SA6: retries, cookies)
+#[derive(Clone, Debug)]
+struct Try {
+    req: Req,
+    secure: bool,
+    attempt: u32,
+    start: Ns,
+    user: Option<u32>,
 }
 
 /// what a virtual user does
@@ -1529,6 +1546,17 @@ pub struct HttpLoad {
     pub keepalive: bool,
     pub max_conns: u32,
     pub mix: Vec<MixItem>,
+    /// SA6: which targets are https, the retry policy, cookies per user
+    pub secure: Vec<bool>,
+    pub retry: Option<crate::traffic::RetryCfg>,
+    pub cookies: bool,
+    tries: BTreeMap<u64, Try>,
+    later: BTreeMap<u64, Try>,
+    next_try: u64,
+    budget: crate::traffic::Budget,
+    jars: BTreeMap<u32, Vec<(String, String)>>,
+    pub retries: u64,
+    pub budget_denied: u64,
     agent: Agent,
     wheel: Wheel<LTimer>,
     rng: Pcg32,
@@ -1583,6 +1611,16 @@ impl HttpLoad {
             keepalive: true,
             max_conns: 0,
             mix: alloc::vec![MixItem { method: String::from("GET"), path: String::from("/"), weight: 1, body: Vec::new(), headers: Headers::new() }],
+            secure: Vec::new(),
+            retry: None,
+            cookies: false,
+            tries: BTreeMap::new(),
+            later: BTreeMap::new(),
+            next_try: 0,
+            budget: crate::traffic::Budget::default(),
+            jars: BTreeMap::new(),
+            retries: 0,
+            budget_denied: 0,
             agent: Agent::new(K_HTTP),
             wheel: Wheel::new(K_OWN),
             rng: Pcg32::new(0, 0),
@@ -1665,7 +1703,7 @@ impl HttpLoad {
         self.wheel.arm(os);
     }
 
-    fn pick(&mut self) -> (String, Url, Vec<u8>, Headers) {
+    fn pick(&mut self) -> (String, Url, Vec<u8>, Headers, bool) {
         let total: u64 = self.mix.iter().map(|m| m.weight.max(1) as u64).sum();
         let mut r = if self.mix.len() > 1 { self.rng.below(total.min(u32::MAX as u64) as u32) as u64 } else { 0 };
         let mut item = self.mix[0].clone();
@@ -1678,8 +1716,19 @@ impl HttpLoad {
             r -= w;
         }
         let item = MixItem { path: self.fill(&item.path), body: if item.body.contains(&b'{') { self.fill(&String::from_utf8_lossy(&item.body)).into_bytes() } else { item.body }, ..item };
+        let mut secure = false;
         let url = if item.path.contains("://") {
-            Url::parse(&item.path).unwrap_or_else(|_| self.targets[0].clone())
+            if item.path.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) {
+                match Url::parse_web(&item.path) {
+                    Ok((u, s)) => {
+                        secure = s;
+                        u
+                    }
+                    Err(_) => self.targets[0].clone(),
+                }
+            } else {
+                Url::parse(&item.path).unwrap_or_else(|_| self.targets[0].clone())
+            }
         } else {
             let i = if self.random_target && self.targets.len() > 1 {
                 self.rng.below(self.targets.len() as u32) as usize
@@ -1689,9 +1738,10 @@ impl HttpLoad {
                 i
             };
             let t = &self.targets[i];
+            secure = self.secure.get(i).copied().unwrap_or(false);
             Url { host: t.host.clone(), port: t.port, target: if item.path.is_empty() { t.target.clone() } else { item.path.clone() } }
         };
-        (item.method, url, item.body, item.headers)
+        (item.method, url, item.body, item.headers, secure)
     }
 
     /// a path or body with {seq}, {rand:N} and {hot:N} filled in (random numbers only when
@@ -1733,15 +1783,30 @@ impl HttpLoad {
             return false;
         }
         let now = os.now();
-        let (method, url, body, extra) = self.pick();
+        let (method, url, body, extra, secure) = self.pick();
         let mut h = Headers::new();
         h.add("User-Agent", "jfn-load/1.0");
         h.add("Accept", "*/*");
         for (k, v) in &extra.0 {
             h.set(k, v);
         }
+        if self.cookies
+            && let Some(jar) = user.and_then(|u| self.jars.get(&u))
+            && !jar.is_empty()
+        {
+            let c: Vec<String> = jar.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+            h.set("Cookie", &c.join("; "));
+        }
         let req = Req { method, url, version: Version::Http11, headers: h, body, timeout: self.timeout, connect_timeout: self.connect_timeout, reuse: self.keepalive, keep_body: false };
-        let id = self.agent.submit(os, req);
+        let keep = self.retry.is_some() || self.cookies;
+        if self.retry.is_some() {
+            self.budget.request(now);
+        }
+        let copy = if keep { Some(req.clone()) } else { None };
+        let id = if secure { self.agent.submit_tls(os, req, Some(crate::http::TlsReq::default())) } else { self.agent.submit(os, req) };
+        if let Some(req) = copy {
+            self.tries.insert(id, Try { req, secure, attempt: 0, start: now, user });
+        }
         self.sent += 1;
         self.per.add(now, 0, 1);
         if let Some(u) = user {
@@ -1845,6 +1910,16 @@ impl HttpLoad {
                     self.stopped = true;
                     self.check_end(os);
                 }
+                LTimer::Retry(k) => {
+                    if let Some(t) = self.later.remove(&k) {
+                        let req = t.req.clone();
+                        let id = if t.secure { self.agent.submit_tls(os, req, Some(crate::http::TlsReq::default())) } else { self.agent.submit(os, req) };
+                        if let Some(u) = t.user {
+                            self.busy_users.insert(id, u);
+                        }
+                        self.tries.insert(id, t);
+                    }
+                }
             }
         }
         self.come_back(os);
@@ -1853,7 +1928,7 @@ impl HttpLoad {
 
     /// after the end: idle connections close once nothing is in flight
     fn check_end(&mut self, os: &mut OsApi) {
-        if (self.stopped || (self.max_requests > 0 && self.sent >= self.max_requests)) && self.agent.active() == 0 {
+        if (self.stopped || (self.max_requests > 0 && self.sent >= self.max_requests)) && self.agent.active() == 0 && self.later.is_empty() {
             self.stopped = true;
             self.agent.close_idle(os);
         }
@@ -1862,7 +1937,39 @@ impl HttpLoad {
     fn finished(&mut self, os: &mut OsApi, d: Done) {
         let now = os.now();
         let user = self.busy_users.remove(&d.id);
-        let lat = d.end - d.start;
+        let mut lat = d.end - d.start;
+        if let Some(mut t) = self.tries.remove(&d.id) {
+            lat = d.end - t.start;
+            if self.cookies
+                && let (Some(u), Ok(r)) = (t.user, &d.result)
+            {
+                let jar = self.jars.entry(u).or_default();
+                for (k, v) in &r.head.headers.0 {
+                    if k.eq_ignore_ascii_case("set-cookie")
+                        && let Some((name, val)) = v.split(';').next().and_then(|p| p.split_once('='))
+                    {
+                        let (name, val) = (name.trim(), val.trim());
+                        jar.retain(|(n, _)| n != name);
+                        jar.push((String::from(name), String::from(val)));
+                    }
+                }
+            }
+            if let Some(cfg) = self.retry.clone() {
+                let out = crate::traffic::outcome_of(&d.result);
+                if cfg.repeats(&t.req.method, out) && t.attempt < cfg.max {
+                    if self.budget.take(now, &cfg) {
+                        t.attempt += 1;
+                        let delay = cfg.delay(t.attempt, &mut self.rng);
+                        self.retries += 1;
+                        self.next_try += 1;
+                        self.later.insert(self.next_try, t);
+                        self.wheel.add(now + delay, LTimer::Retry(self.next_try));
+                        return;
+                    }
+                    self.budget_denied += 1;
+                }
+            }
+        }
         match &d.result {
             Ok(r) => {
                 self.responses += 1;
@@ -1992,6 +2099,12 @@ impl HttpLoad {
         o.insert("keepalive", Value::Bool(self.keepalive));
         o.insert("max_conns", Value::u64(self.max_conns as u64));
         o.insert("balance", word(if self.random_target { "random" } else { "round-robin" }));
+        if let Some(r) = &self.retry {
+            o.insert("retry", r.value());
+        }
+        if self.cookies {
+            o.insert("cookies", Value::Bool(true));
+        }
         o
     }
 }
@@ -2006,6 +2119,8 @@ impl Service for HttpLoad {
         self.agent.reset();
         self.wheel.clear();
         self.busy_users.clear();
+        self.tries.clear();
+        self.later.clear();
         self.ustate.clear();
         self.next_arrival = None;
         self.t0 = None;
@@ -2034,6 +2149,8 @@ impl Service for HttpLoad {
         self.agent.reset();
         self.wheel.clear();
         self.busy_users.clear();
+        self.tries.clear();
+        self.later.clear();
         self.stopped = true;
         self.redo = false;
     }
@@ -2044,7 +2161,7 @@ impl Service for HttpLoad {
         let v = |x: u64| x as i64;
         let done = self.responses + self.failed;
         let err = self.http_errors + self.failed;
-        alloc::vec![
+        let mut m = alloc::vec![
             Metric::new("sent", v(self.sent)),
             Metric::new("responses", v(self.responses)),
             Metric::new("ok", v(self.ok)),
@@ -2067,7 +2184,12 @@ impl Service for HttpLoad {
             Metric::new("p99_us", us(self.lat.p99(now))),
             Metric::new("mean_us", us(self.lat.mean(now))),
             Metric::new("max_us", us(self.lat.max(now))),
-        ]
+        ];
+        if self.retry.is_some() {
+            m.push(Metric::new("retries", v(self.retries)));
+            m.push(Metric::new("budget_denied", v(self.budget_denied)));
+        }
+        m
     }
     fn windows(&self) -> Vec<LatWindow<'_>> {
         alloc::vec![LatWindow::new(&self.lat, LOAD_LAT)]
@@ -2096,6 +2218,9 @@ impl Service for HttpLoad {
         self.max_conns = f.max_conns;
         self.agent.max_per_host = f.max_conns as usize;
         self.mix = f.mix.clone();
+        self.secure = f.secure.clone();
+        self.cookies = f.cookies;
+        self.retry = f.retry.clone();
         let rate = if self.rate_m != f.rate_m { Some(f.rate_m) } else { None };
         let users = if self.users != f.users { Some(f.users) } else { None };
         match os {
@@ -2141,6 +2266,14 @@ fn url_of(s: &str) -> Result<Url, Msg> {
         crate::http::UrlErr::Port => msg!("Der Port der URL ist keine Zahl bis 65535."),
         crate::http::UrlErr::BadHost => msg!("Der Host der URL hat ungültige Zeichen."),
     })
+}
+
+/// an http or https URL (the load generator's targets) and whether it is https
+fn web_url_of(s: &str) -> Result<(Url, bool), Msg> {
+    if s.trim().get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) {
+        return Url::parse_web(s).map_err(|_| msg!("Die URL {} taugt nicht.", String::from(s)));
+    }
+    url_of(s).map(|u| (u, false))
 }
 
 /// an HTTP service from its definition in a project file (svcact.rs); the German reason when
@@ -2306,18 +2439,28 @@ pub fn from_def_msg(kind: &str, c: &Value) -> Result<Box<dyn Service>, Msg> {
         }
         "http-load" => {
             let mut targets = Vec::new();
+            let mut secure = Vec::new();
             if let Some(t) = text("target") {
-                targets.push(url_of(&t)?);
+                let (u, sec) = web_url_of(&t)?;
+                targets.push(u);
+                secure.push(sec);
             }
             for t in c.get("targets").and_then(|t| t.as_array()).unwrap_or(&[]) {
                 if let Some(s) = t.as_str() {
-                    targets.push(url_of(s)?);
+                    let (u, sec) = web_url_of(s)?;
+                    targets.push(u);
+                    secure.push(sec);
                 }
             }
             if targets.is_empty() {
                 return Err(msg!("\u{201e}targets\u{201c} fehlt."));
             }
             let mut s = HttpLoad::new(targets);
+            s.secure = secure;
+            if let Some(r) = c.get("retry") {
+                s.retry = Some(crate::traffic::RetryCfg::of(r)?);
+            }
+            s.cookies = flag("cookies", false);
             s.mode = match text("mode").as_deref().unwrap_or("closed") {
                 "closed" => LoadMode::Closed,
                 "open" => LoadMode::Open,

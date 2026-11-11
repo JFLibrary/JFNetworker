@@ -1,0 +1,230 @@
+{
+  "format": "jfn",
+  "version": 1,
+  "title": "Überlast: Wiederholen oder abweisen",
+  "description": "GEN schickt Last an den Load Balancer LB vor zwei Webservern (je 4 Kerne, 8 ms CPU je Anfrage: zusammen rund 1100 Anfragen je Sekunde). LB gibt einem Versuch 250 ms. Das Experiment overload.jfnex vergleicht: keine Wiederholung, zwei Wiederholungen ohne und mit Budget und Load Shedding mit max_conns und Warteschlange.",
+  "seed": 41,
+  "next_id": 200,
+  "strict_mdix": false,
+  "metered": true,
+  "devices": [
+    {
+      "id": 1,
+      "name": "GEN",
+      "model": "traffic-gen",
+      "x": 40,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname GEN\nip addr add 10.0.0.1/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-load",
+          "name": "load",
+          "disabled": false,
+          "config": {
+            "targets": [
+              "http://10.0.0.10/"
+            ],
+            "mode": "open",
+            "rps": 600,
+            "arrival": "poisson",
+            "timeout_ms": 2000,
+            "connect_timeout_ms": 1000,
+            "max_conns": 4096,
+            "mix": [
+              {
+                "method": "GET",
+                "path": "/",
+                "weight": 1
+              }
+            ]
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 2,
+      "name": "SW1",
+      "model": "jf-s48x",
+      "x": 220,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname SW1\n",
+      "services": [],
+      "comment": ""
+    },
+    {
+      "id": 3,
+      "name": "LB",
+      "model": "load-balancer",
+      "x": 400,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname LB\nip addr add 10.0.0.10/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "lb",
+          "name": "lb",
+          "disabled": false,
+          "config": {
+            "mode": "http",
+            "port": 80,
+            "backends": [
+              {
+                "name": "web1",
+                "addr": "10.0.0.11"
+              },
+              {
+                "name": "web2",
+                "addr": "10.0.0.12"
+              }
+            ],
+            "health": {
+              "type": "none"
+            },
+            "timeout_ms": 250,
+            "retry": {
+              "max": 0,
+              "backoff_ms": 0,
+              "jitter": "none",
+              "on": [
+                "connect",
+                "timeout",
+                "5xx"
+              ]
+            },
+            "cpu_us": 20
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 4,
+      "name": "WEB1",
+      "model": "server-s",
+      "x": 580,
+      "y": 120,
+      "off": false,
+      "startup_config": "hostname WEB1\nip addr add 10.0.0.11/24 dev eth1\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "cpu_ms": 8,
+            "max_requests": 0
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 5,
+      "name": "WEB2",
+      "model": "server-s",
+      "x": 580,
+      "y": 280,
+      "off": false,
+      "startup_config": "hostname WEB2\nip addr add 10.0.0.12/24 dev eth1\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "cpu_ms": 8,
+            "max_requests": 0
+          }
+        }
+      ],
+      "comment": ""
+    }
+  ],
+  "links": [
+    {
+      "id": 101,
+      "a": {
+        "dev": 1,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/1"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 102,
+      "a": {
+        "dev": 3,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/2"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 103,
+      "a": {
+        "dev": 4,
+        "port": "eth1"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/3"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 104,
+      "a": {
+        "dev": 5,
+        "port": "eth1"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/4"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    }
+  ]
+}

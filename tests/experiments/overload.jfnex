@@ -1,0 +1,104 @@
+{
+  "format": "jfnex",
+  "version": 1,
+  "name": "overload",
+  "title": "Überlast: Wiederholen oder abweisen",
+  "project": "overload.jfnet",
+  "load": {
+    "dev": "GEN",
+    "svc": "load",
+    "rps": [
+      600,
+      1000,
+      1400
+    ]
+  },
+  "timing": {
+    "warmup_s": 2,
+    "settle_s": 2,
+    "measure_s": 3,
+    "seeds": [
+      41
+    ]
+  },
+  "slo": {
+    "p99_ms": 500,
+    "errors_pct": 1
+  },
+  "series": [
+    {
+      "name": "Ohne Wiederholung",
+      "axes": [
+        {
+          "kind": "config",
+          "name": "Versuche",
+          "dev": "LB",
+          "path": "lb.retry.max",
+          "values": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Wiederholen",
+      "axes": [
+        {
+          "kind": "config",
+          "name": "Versuche",
+          "dev": "LB",
+          "path": "lb.retry.max",
+          "values": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mit Budget",
+      "axes": [
+        {
+          "kind": "config",
+          "name": "Versuche",
+          "dev": "LB",
+          "path": "lb.retry.max",
+          "values": [
+            2
+          ]
+        },
+        {
+          "kind": "config",
+          "name": "Budget",
+          "dev": "LB",
+          "path": "lb.retry.budget",
+          "values": [
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Abweisen",
+      "axes": [
+        {
+          "kind": "config",
+          "name": "Verbindungen",
+          "dev": "LB",
+          "path": "lb.max_conns",
+          "values": [
+            16
+          ]
+        },
+        {
+          "kind": "config",
+          "name": "Warteschlange",
+          "dev": "LB",
+          "path": "lb.queue",
+          "values": [
+            32
+          ]
+        }
+      ]
+    }
+  ]
+}

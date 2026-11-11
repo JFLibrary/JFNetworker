@@ -530,6 +530,8 @@ fn roles(kind: &str) -> Roles {
         "http-load" => r(&["responses", "failed"], &["errors"], None, Some("inflight")),
         "http-client" => r(&["responses"], &["errors"], None, None),
         "lb" => r(&["requests", "connections"], &["errors"], None, Some("active")),
+        "proxy" => r(&["requests"], &["errors"], Some("waiting"), Some("active")),
+        "dbpool" => r(&["statements"], &["errors"], Some("waiting"), Some("in_use")),
         "kv" => r(&["requests"], &["unavailable", "full"], None, None),
         "db" => r(&["statements"], &["errors"], None, Some("inflight")),
         "cache" => r(&["requests"], &["backend_errors"], None, None),
@@ -885,6 +887,8 @@ impl Engine {
                 per_mille(s.change(rec, &["hits"], from, to), s.change(rec, &["hits", "misses"], from, to))
             } else if rec.kind == "db" {
                 per_mille(s.change(rec, &["pool_hits"], from, to), s.change(rec, &["pool_hits", "pool_misses"], from, to))
+            } else if rec.kind == "proxy" {
+                per_mille(s.change(rec, &["cache_hits", "cache_stale"], from, to), s.change(rec, &["cache_hits", "cache_stale", "cache_misses"], from, to))
             } else {
                 None
             },

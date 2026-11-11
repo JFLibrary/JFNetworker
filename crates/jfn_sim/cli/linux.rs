@@ -9,7 +9,7 @@
 //   traceroute [-n] [-m MAX] [-q N] [-w S] DEST       (DEST: an address or a name)
 //   hostname [NAME], sysctl [-w] net.ipv4.ip_forward[=0|1], echo, clear, true, false
 //   curl, nc, ss, top, printf and "echo|printf ... | nc|cat ..." (tools.rs)
-//   lbctl, kvctl, dbctl, cachectl, mqctl, workerctl (lab.rs: the services of the lab)
+//   lbctl, kvctl, dbctl, cachectl, mqctl, workerctl, proxyctl, dbpoolctl (lab.rs: the services of the lab)
 //   script [list|status|start|stop|restart|errors|output] [NAME] (scripts.rs: the scripts)
 //   dhclient [-v] [-r] [IF], cat /etc/resolv.conf|/etc/hosts|/etc/hostname (netsvc.rs)
 //   ip -6 addr|route|neigh, ping6 / ping -6, traceroute6 / traceroute -6, sysctl net.ipv6.*
@@ -173,6 +173,8 @@ impl Engine {
             "cachectl" => self.sh_cachectl(ni, &args),
             "mqctl" => self.sh_mqctl(ni, &args),
             "workerctl" => self.sh_workerctl(ni, &args),
+            "proxyctl" => self.sh_proxyctl(ni, &args),
+            "dbpoolctl" => self.sh_dbpoolctl(ni, &args),
             "script" => self.sh_script(ni, &args),
             "dhclient" => self.sh_dhclient(ni, &args),
             "cat" => self.sh_cat(ni, &args),
@@ -286,6 +288,7 @@ impl Engine {
             "screen", "picocom", "minicom",
             "wpa_cli", "wpa_supplicant",
             "iptables", "iptables-save",
+            "proxyctl", "dbpoolctl",
         ];
         // the verbs and units of systemctl (cli/units.rs)
         if let Some(r) = self.systemctl_complete(ni, line) {

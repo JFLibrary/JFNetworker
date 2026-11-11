@@ -28,7 +28,7 @@ use crate::kernel::{Ns, MS, US};
 use crate::os::Service;
 
 /// the kinds with a form
-pub const KINDS: [&str; 8] = ["http-server", "http-load", "lb", "kv", "cache", "mq", "worker", "db"];
+pub const KINDS: [&str; 10] = ["http-server", "http-load", "lb", "kv", "cache", "mq", "worker", "db", "proxy", "dbpool"];
 
 /// a number with the fraction it has
 fn dec(v: u64, unit: u64) -> Value {
@@ -71,6 +71,8 @@ fn built(kind: &str, c: &Value) -> Result<Box<dyn Service>, Msg> {
         "cache" => crate::cache::from_def_msg(c),
         "mq" | "worker" => crate::mq::from_def_msg(kind, c),
         "db" => crate::db::from_def_msg(c),
+        "proxy" => crate::lb::proxy_from_def_msg(c),
+        "dbpool" => crate::dbpool::from_def_msg(c),
         k => Err(msg!("Unbekannte Dienstart \u{201e}{}\u{201c}.", k)),
     }
 }
@@ -88,6 +90,8 @@ pub fn effective(kind: &str, c: &Value) -> Result<Value, Msg> {
         "mq" => a.downcast_ref::<crate::mq::Queue>().map(|x| x.settings()),
         "worker" => a.downcast_ref::<crate::mq::Worker>().map(|x| x.settings()),
         "db" => a.downcast_ref::<crate::db::Db>().map(|x| x.settings()),
+        "proxy" => a.downcast_ref::<crate::lb::Lb>().map(|x| x.settings()),
+        "dbpool" => a.downcast_ref::<crate::dbpool::DbPool>().map(|x| x.settings()),
         _ => None,
     };
     Ok(v.unwrap_or_else(empty_object))
@@ -104,6 +108,8 @@ fn least(kind: &str) -> Value {
         "cache" => Value::object([("backend", local)]),
         "worker" => Value::object([("queue", local)]),
         "db" => Value::object([("tables", Value::Array(alloc::vec![Value::object([("name", Value::string("t")), ("rows", Value::u64(1))])]))]),
+        "proxy" => Value::object([("backends", Value::Array(alloc::vec![Value::object([("addr", ip.clone())])]))]),
+        "dbpool" => Value::object([("db", Value::object([("addr", ip)]))]),
         _ => empty_object(),
     }
 }
@@ -131,6 +137,8 @@ pub fn missing(kind: &str, c: &Value) -> Option<Msg> {
         "cache" if !has(c, "backend") => Some(msg!("Noch kein Backend: der Cache kann nichts nachladen.")),
         "worker" if !has(c, "queue") => Some(msg!("Noch keine Queue: der Worker holt nichts ab.")),
         "db" if !has(c, "tables") => Some(msg!("Noch keine Tabellen: die Datenbank hat nichts, worauf sich eine Anweisung beziehen könnte.")),
+        "proxy" if !has(c, "backends") && !has(c, "pools") => Some(msg!("Noch keine Backends: der Proxy hat niemanden, an den er weitergeben kann.")),
+        "dbpool" if c.get("db").and_then(|d| d.get("addr")).is_none() => Some(msg!("Noch keine Datenbank: der Pooler weiß nicht, wohin.")),
         _ => None,
     }
 }

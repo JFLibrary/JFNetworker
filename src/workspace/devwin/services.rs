@@ -38,6 +38,8 @@ pub(crate) fn kind_name(kind: &str) -> &str {
         "http-load" => "Lastgenerator (HTTP)",
         "script" => "Skript",
         "lb" => "Loadbalancer",
+        "proxy" => "Reverse Proxy",
+        "dbpool" => "DB-Pooler",
         "kv" => "KV-Knoten",
         "db" => "Datenbank",
         "cache" => "Cache",

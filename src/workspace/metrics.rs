@@ -131,12 +131,34 @@ static G_LOAD: [Group; 4] = [
     Group { title: "In Arbeit", show: Show::Num, names: &["inflight"] },
 ];
 // i18n: title
-static G_LB: [Group; 5] = [
+static G_LB: [Group; 7] = [
     Group { title: "Durchsatz", show: Show::Num, names: &["requests", "responses", "connections"] },
     Group { title: "Latenz", show: Show::Lat, names: LAT3 },
     Group { title: "Fehler|Diagramm", show: Show::Num, names: &["errors", "no_backend", "retries"] },
     Group { title: "In Arbeit", show: Show::Num, names: &["active"] },
     Group { title: "Backends", show: Show::Num, names: &["backends_up", "backends"] },
+    Group { title: "Abgewiesen", show: Show::Num, names: &["limited", "shed", "queue_timeouts", "fail_fast", "budget_denied"] },
+    Group { title: "Schutz der Backends", show: Show::Num, names: &["waiting", "breakers_open", "ejected"] },
+];
+// i18n: title
+static G_PROXY: [Group; 9] = [
+    Group { title: "Durchsatz", show: Show::Num, names: &["requests", "responses"] },
+    Group { title: "Latenz", show: Show::Lat, names: LAT3 },
+    Group { title: "Fehler|Diagramm", show: Show::Num, names: &["errors", "no_backend", "retries"] },
+    Group { title: "Abgewiesen", show: Show::Num, names: &["limited", "shed", "queue_timeouts", "fail_fast", "budget_denied"] },
+    Group { title: "Schutz der Backends", show: Show::Num, names: &["waiting", "breakers_open", "ejected"] },
+    Group { title: "Cache", show: Show::Num, names: &["cache_hits", "cache_stale", "cache_misses"] },
+    Group { title: "Treffer im Cache", show: Show::Pct, names: &["hit_pm"] },
+    Group { title: "TLS", show: Show::Num, names: &["tls_handshakes", "tls_resumed"] },
+    Group { title: "Backends", show: Show::Num, names: &["backends_up", "backends"] },
+];
+// i18n: title
+static G_DBPOOL: [Group; 5] = [
+    Group { title: "Durchsatz", show: Show::Num, names: &["requests", "statements"] },
+    Group { title: "Latenz", show: Show::Lat, names: LAT3 },
+    Group { title: "Verbindungen", show: Show::Num, names: &["in_use", "db_conns", "txns"] },
+    Group { title: "Warteschlange", show: Show::Num, names: &["waiting"] },
+    Group { title: "Fehler|Diagramm", show: Show::Num, names: &["refused", "queue_timeouts", "mode_refused", "idle_kills"] },
 ];
 // i18n: title
 static G_KV: [Group; 5] = [
@@ -237,6 +259,8 @@ pub(crate) fn groups(kind: &str) -> &'static [Group] {
         "http-server" => &G_HTTP,
         "http-load" | "http-client" => &G_LOAD,
         "lb" => &G_LB,
+        "proxy" => &G_PROXY,
+        "dbpool" => &G_DBPOOL,
         "kv" => &G_KV,
         "db" => &G_DB,
         "cache" => &G_CACHE,
@@ -261,7 +285,7 @@ struct Lbl {
 
 /// the series of the charts in words (rates per second end in "/s")
 // i18n: label
-static LABELS: [Lbl; 80] = [
+static LABELS: [Lbl; 98] = [
     Lbl { key: "requests", label: "Anfragen/s" },
     Lbl { key: "responses", label: "Antworten/s" },
     Lbl { key: "connections", label: "Verbindungen/s" },
@@ -342,6 +366,24 @@ static LABELS: [Lbl; 80] = [
     Lbl { key: "lock_timeouts", label: "Sperren zu spät/s" },
     Lbl { key: "wal_flushes", label: "Log geschrieben/s" },
     Lbl { key: "group_pm", label: "Commits je Schreiben (Tausendstel)" },
+    Lbl { key: "limited", label: "Begrenzt (429)/s" },
+    Lbl { key: "shed", label: "Abgewiesen (503)/s" },
+    Lbl { key: "queue_timeouts", label: "Zu lange gewartet/s" },
+    Lbl { key: "fail_fast", label: "Breaker offen, sofort 503/s" },
+    Lbl { key: "budget_denied", label: "Budget verbraucht/s" },
+    Lbl { key: "waiting", label: "Wartend" },
+    Lbl { key: "breakers_open", label: "Offene Breaker" },
+    Lbl { key: "ejected", label: "Ausgeschlossene Backends" },
+    Lbl { key: "cache_hits", label: "Treffer/s" },
+    Lbl { key: "cache_stale", label: "Abgelaufen beantwortet/s" },
+    Lbl { key: "cache_misses", label: "Fehlschläge/s" },
+    Lbl { key: "hit_pm", label: "Trefferquote" },
+    Lbl { key: "tls_handshakes", label: "Volle Handshakes/s" },
+    Lbl { key: "tls_resumed", label: "Wieder aufgenommen/s" },
+    Lbl { key: "in_use", label: "Belegt" },
+    Lbl { key: "db_conns", label: "Verbindungen zur Datenbank" },
+    Lbl { key: "mode_refused", label: "Im Modus abgelehnt/s" },
+    Lbl { key: "idle_kills", label: "Stille Transaktionen beendet/s" },
 ];
 
 /// a series' name in the window: "Anfragen/s" for requests, "p99" for p99_us (the language);
@@ -368,6 +410,8 @@ pub(crate) fn series_label(name: &str) -> String {
 pub(crate) fn kind_name(kind: &str) -> &str {
     match kind {
         "lb" => t("Loadbalancer"),
+        "proxy" => t("Reverse Proxy"),
+        "dbpool" => t("DB-Pooler"),
         "kv" => t("KV-Knoten"),
         "db" => t("Datenbank"),
         "cache" => t("Cache"),

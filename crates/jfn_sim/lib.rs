@@ -206,6 +206,9 @@
 //   fwtrace  FwNote: the decisions of the firewall as notes (Note::Fw)
 //   imapd    the IMAP server (a subset of RFC 9051 and 3501); "imap-server", the Maildir of smtpd and
 //            pop3d with folders, flags and UIDs (X1g)
+//   traffic  traffic management (SA6): retries with backoff and budget, circuit breakers, outlier
+//            ejection, rate limits, sticky sessions, the TLS costs of the proxy (kind "proxy" is lb.rs)
+//   dbpool   the database pooler: at most N connections to one db, statement or transaction mode (SA6)
 // UDP and TCP run over both families (os.rs: sockets on ANY take both, ANY4 IPv4 only); the
 // services, the resolver (A and AAAA in the order of RFC 6724) and the tools use IPv6 where a
 // device has it; dig, host and nslookup are console programs too (cli/names.rs).
@@ -324,6 +327,8 @@ pub mod svcform;
 pub mod db;
 pub mod dbsql;
 pub mod dbstore;
+pub mod traffic;
+pub mod dbpool;
 
 pub use action::{ActErr, Action};
 pub use bridge::{Bridge, PortMode, VlanSet};

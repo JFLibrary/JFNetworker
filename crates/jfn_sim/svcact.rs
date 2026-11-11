@@ -16,7 +16,8 @@
 //                     "ping_timeout_ms": 1000, "authoritative": false, "lease": 600}
 //     dhcp-relay      {"helpers": [["eth0", "10.0.2.10"]]}
 //     dns-server      {"zones": [{"origin": "lab", "ttl": 3600, "records": ["www CNAME web",
-//                     "web A 10.0.2.20"]}], "forward": false}
+//                     "web A 10.0.2.20"], "rotate": false}], "forward": false} ("rotate": DNS round
+//                     robin, dnsd.rs)
 //     syslog-server   {"max": 1000}
 //     ntp             {"servers": ["10.0.2.10"], "master": 8, "poll": 6}
 //     tcp-echo        {"port": 7, "backlog": 0, "rcvbuf": 0, "sndbuf": 0, "nodelay": false}
@@ -31,6 +32,10 @@
 //     lb              {"mode": "http", "port": 80, "algorithm": "round-robin", "backends":
 //                     [{"name": "web1", "addr": "10.0.2.11", "port": 80}], "health": {...}}
 //                     (lb.rs)
+//     proxy           {"port": 80, "routes": [{"host": "", "path": "/api/", "pool": "api", "strip": "/api"}],
+//                     "pools": [...], "backends": [...], "tls": {...}, "cache": {...}} (lb.rs, SA6)
+//     dbpool          {"port": 6432, "db": {"addr": "10.0.2.30", "port": 7100}, "pool": 10, "mode":
+//                     "transaction", ...} (dbpool.rs, SA6)
 //     kv              {"nodes": ["10.0.2.21", "10.0.2.22"], "rf": 2, "consistency": "strong",
 //                     ...} (kv.rs)
 //     db              {"port": 7100, "tables": [{"name": "users", "rows": 1000000, ...}], "pool_mb": 128,
@@ -202,6 +207,7 @@ impl Engine {
                     if let Some(t) = z.get("ttl").and_then(|t| t.as_u64()) {
                         zone.ttl = t.min(u32::MAX as u64) as u32;
                     }
+                    zone.rotate = z.get("rotate").and_then(|r| r.as_bool()).unwrap_or(false);
                     for line in z.get("records").and_then(|r| r.as_array()).unwrap_or(&[]) {
                         let l = line.as_str().unwrap_or("");
                         let rr = parse_record(l, &zone.origin, zone.ttl).ok_or_else(|| bad(kind, msg!("\u{201e}{}\u{201c} ist kein Eintrag.", l)))?;
@@ -235,6 +241,8 @@ impl Engine {
             "tcp-echo" | "tcp-discard" | "tcp-client" => crate::tcpsvc::from_def_msg(kind, c).map_err(|w| bad(kind, w))?,
             "http-server" | "http-client" | "http-load" => crate::httpsvc::from_def_msg(kind, c).map_err(|w| bad(kind, w))?,
             "lb" => crate::lb::from_def_msg(c).map_err(|w| bad(kind, w))?,
+            "proxy" => crate::lb::proxy_from_def_msg(c).map_err(|w| bad(kind, w))?,
+            "dbpool" => crate::dbpool::from_def_msg(c).map_err(|w| bad(kind, w))?,
             "kv" => crate::kv::from_def_msg(c).map_err(|w| bad(kind, w))?,
             "db" => crate::db::from_def_msg(c).map_err(|w| bad(kind, w))?,
             "cache" => crate::cache::from_def_msg(c).map_err(|w| bad(kind, w))?,

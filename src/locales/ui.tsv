@@ -2741,3 +2741,100 @@ Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz
 Erklärung im Browser öffnen?	Open the explanation in your browser?
 Die Erklärung zu {} steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:	The explanation of {} is on JFNetworker's website. For it you leave the program and switch to your browser:
 Im Browser öffnen	Open in browser
+# SA6: traffic management (lb.rs, traffic.rs, dbpool.rs, their console and forms)
+Proxy	Proxy
+Adresse des Clients	the client's address
+Cookie des Load Balancers	the load balancer's cookie
+Zertifikat der Lab-CA	certificate of the lab CA
+je Anweisung	per statement
+je Transaktion	per transaction
+Mit „Verbindungen je Backend“: so viele warten auf ein freies Backend, die nächste bekommt sofort 503 (Load Shedding). Leer: keine eigene Warteschlange.	With "Connections per backend": this many wait for a free backend, the next one gets 503 at once (load shedding). Empty: no queue of its own.
+So lange wartet eine Anfrage in der Warteschlange, dann bekommt sie 503.	A request waits this long in the queue, then it gets 503.
+Warten höchstens	Wait at most
+So oft versucht er eine gescheiterte Anfrage noch einmal, nach einer wachsenden Pause; nur was sich gefahrlos wiederholen lässt.	This often a failed request is tried again, after a growing pause; only what is safe to repeat.
+Wiederholungen mit Pause	Retries with backoff
+Erste Pause	First pause
+Vor der ersten Wiederholung; jede weitere wartet doppelt so lange, zufällig verteilt.	Before the first retry; each further one waits twice as long, spread at random.
+Höchstens so viele Wiederholungen wie dieser Anteil der Anfragen der letzten 10 s. Das hält einen Retry-Sturm auf.	At most this share of the requests of the last 10 s as retries. That stops a retry storm.
+Retry-Budget	Retry budget
+Circuit Breaker nach	Circuit breaker after
+Fehlern	failures
+So viele Fehler in Folge, dann bekommt dieses Backend eine Weile nichts mehr.	This many failures in a row, then this backend gets nothing for a while.
+Breaker offen für	Breaker open for
+Danach lässt er wenige Proben durch; gelingen sie, ist er wieder geschlossen.	Then it lets a few probes through; if they succeed, it is closed again.
+Ausschluss nach	Eject after
+So viele Fehler in Folge schließen ein Backend aus, jedes Mal länger, nie mehr als die Hälfte.	This many failures in a row eject a backend, longer each time, never more than half of them.
+Ausschluss für	Eject for
+Das erste Mal so lange, dann ein Vielfaches davon.	This long the first time, then a multiple of it.
+Ein Backend, das dazukommt oder zurückkommt, bekommt in dieser Zeit langsam seinen vollen Anteil.	A backend that joins or comes back gets its full share slowly over this time.
+Langsamer Start	Slow start
+Ein Client bleibt bei seinem Backend, solange es da ist: per Cookie oder nach seiner Adresse.	A client stays with its backend while that one is there: by a cookie or by its address.
+Sticky Sessions	Sticky sessions
+Darüber bekommt ein Client 429 mit Retry-After.	Beyond it a client gets 429 with Retry-After.
+Rate-Limit je Client	Rate limit per client
+So viele darf ein Client auf einmal schicken, bevor das Rate-Limit greift.	A client may send this many at once before the rate limit acts.
+Spitze	Burst
+So oft schickt der Generator eine gescheiterte Anfrage noch einmal. Unter Überlast wird daraus ein Retry-Sturm.	This often the generator sends a failed request again. Under overload this becomes a retry storm.
+Höchstens so viele Wiederholungen wie dieser Anteil der Anfragen der letzten 10 s.	At most this share of the requests of the last 10 s as retries.
+Bei geschlossener Last: jeder Nutzer schickt die Cookies seiner Antworten zurück, wie ein Browser.	With a closed load: every user sends the cookies of its answers back, as a browser does.
+Cookies behalten	Keep cookies
+Verkehr steuern	Traffic management
+Weitergeben	Passing on
+An diese Server gibt der Proxy weiter, wenn keine Route einen Pool nennt. Routen und Pools stehen im JSON.	The proxy passes requests to these servers when no route names a pool. Routes and pools are in the JSON.
+Hier nimmt er Anfragen an; mit TLS 443, wenn hier nichts steht.	It takes requests here; with TLS 443 when nothing stands here.
+TLS und Cache	TLS and cache
+Der Proxy beendet TLS mit diesem Zertifikat; die Backends sprechen weiter HTTP. Leer: kein TLS.	The proxy terminates TLS with this certificate; the backends go on speaking HTTP. Empty: no TLS.
+TLS	TLS
+Annahme: ein voller TLS-Handshake auf einem Referenzkern. Zählt nur mit simulierter Hardware.	Assumption: a full TLS handshake on a reference core. Counts only with simulated hardware.
+CPU je Handshake	CPU per handshake
+Annahme: eine wieder aufgenommene Sitzung kostet so viel.	Assumption: a resumed session costs this much.
+CPU je Wiederaufnahme	CPU per resumption
+Annahme: Ver- und Entschlüsseln je KiB, das durch TLS geht.	Assumption: encrypting and decrypting per KiB that goes through TLS.
+CPU je KiB	CPU per KiB
+Modell: eine neue Verbindung einer Adresse mit kurz zuvor vollem Handshake kostet nur die Wiederaufnahme.	Model: a new connection of an address with a full handshake shortly before costs only the resumption.
+Sitzungen wieder aufnehmen	Resume sessions
+Danach schließt er die Verbindung des Clients; 0 heißt ohne Grenze. So oft lohnt sich ein Handshake.	Then it closes the client's connection; 0 means no limit. That is how often a handshake pays off.
+Cache gültig für	Cache valid for
+GET-Antworten hält der Proxy so lange, wenn Cache-Control nichts anderes sagt. Leer: kein Cache.	The proxy keeps GET answers this long unless Cache-Control says otherwise. Empty: no cache.
+Einträge im Cache	Entries in the cache
+Abgelaufen noch nutzen	Use when expired
+So lange nach Ablauf antwortet er noch aus dem Cache und holt im Hintergrund eine neue Antwort.	This long after expiry it still answers from the cache and fetches a new answer in the background.
+Client-Verbindung offen halten	Keep client connections open
+So lange bleibt die Verbindung eines Clients ohne Anfrage offen.	A client's connection stays open this long without a request.
+Auch ein Proxy kann der Engpass sein.	A proxy can be the bottleneck too.
+Pooler	Pooler
+Die Adresse des Geräts mit dem Dienst db.	The address of the device with the service db.
+Dort nimmt die Datenbank Anweisungen an.	The database takes statements there.
+Port der Datenbank	Port of the database
+Mehr hält der Pooler nie offen, egal wie viele Clients fragen.	The pooler never keeps more open, however many clients ask.
+Verbindungen zur Datenbank	Connections to the database
+Je Transaktion: von BEGIN bis COMMIT, auch wenn der Client schweigt. Je Anweisung: nur für eine Anweisung, dann gehen keine Transaktionen.	Per transaction: from BEGIN to COMMIT, even while the client says nothing. Per statement: only for one statement, then transactions do not work.
+Verbindung halten	Hold a connection
+Anweisungen	statements
+So viele warten auf eine freie Verbindung, die nächste bekommt sofort 503.	This many wait for a free connection, the next one gets 503 at once.
+So lange wartet eine Anweisung, dann bekommt sie 503.	A statement waits this long, then it gets 503.
+So lange darf eine Transaktion ohne Anweisung ihre Verbindung halten; 0 heißt für immer.	A transaction may hold its connection this long without a statement; 0 means for ever.
+Stille Transaktion beenden	End a silent transaction
+Hier nimmt der Pooler Anweisungen an: POST /query wie bei der Datenbank.	The pooler takes statements here: POST /query as for the database.
+So lange wartet er auf die Datenbank.	It waits this long for the database.
+So lange darf eine Verbindung zur Datenbank dauern.	A connection to the database may take this long.
+Rechenzeit des Poolers; sie zählt nur mit simulierter Hardware.	The pooler's CPU time; it counts only with simulated hardware.
+Ein Reverse Proxy: Routen nach Host und Pfad zu Pools, Umschreiben, TLS, Cache, dazu Rate-Limits, Wiederholungen und Circuit Breaker.	A reverse proxy: routes by host and path to pools, rewriting, TLS, a cache, and rate limits, retries and circuit breakers.
+Ein Pooler vor einer Datenbank: hält höchstens N Verbindungen und lässt die übrigen Anweisungen warten.	A pooler before a database: keeps N connections at most and lets the other statements wait.
+Abgewiesen	Refused
+Schutz der Backends	Protecting the backends
+Treffer im Cache	Hits in the cache
+Begrenzt (429)/s	Limited (429)/s
+Abgewiesen (503)/s	Refused (503)/s
+Zu lange gewartet/s	Waited too long/s
+Breaker offen, sofort 503/s	Breaker open, 503 at once/s
+Budget verbraucht/s	Budget used up/s
+Offene Breaker	Open breakers
+Ausgeschlossene Backends	Ejected backends
+Abgelaufen beantwortet/s	Answered stale/s
+Volle Handshakes/s	Full handshakes/s
+Wieder aufgenommen/s	Resumed/s
+Im Modus abgelehnt/s	Refused by the mode/s
+Stille Transaktionen beendet/s	Silent transactions ended/s
+Reverse Proxy	Reverse proxy
+DB-Pooler	Database pooler

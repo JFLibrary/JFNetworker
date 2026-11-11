@@ -62,7 +62,7 @@ pub(crate) struct Pill {
 
 /// the pills in their order on a device
 // i18n: text
-pub(crate) static PILLS: [Pill; 10] = [
+pub(crate) static PILLS: [Pill; 12] = [
     Pill { kind: "lb", text: "LB", tint: 5 },
     Pill { kind: "kv", text: "KV", tint: 5 },
     Pill { kind: "cache", text: "Cache", tint: 5 },
@@ -73,6 +73,8 @@ pub(crate) static PILLS: [Pill; 10] = [
     Pill { kind: "dhcp-server", text: "DHCP", tint: 4 },
     Pill { kind: "script", text: "Skript", tint: 1 },
     Pill { kind: "db", text: "DB", tint: 5 },
+    Pill { kind: "proxy", text: "Proxy", tint: 5 },
+    Pill { kind: "dbpool", text: "Pool", tint: 5 },
 ];
 
 /// the index of a kind's pill (None: the kind has none, as clients and the console's tools)
@@ -81,7 +83,7 @@ pub(crate) fn pill_of(kind: &str) -> Option<usize> {
 }
 
 /// the kinds of service with a sparkline and their key series
-const SPARK_KINDS: [(&str, &str); 5] = [("lb", "requests"), ("kv", "requests"), ("cache", "requests"), ("mq", "depth"), ("db", "statements")];
+const SPARK_KINDS: [(&str, &str); 7] = [("lb", "requests"), ("kv", "requests"), ("cache", "requests"), ("mq", "depth"), ("db", "statements"), ("proxy", "requests"), ("dbpool", "statements")];
 
 /// the pills of the services (Engine::service_list): device -> (index into PILLS, a service
 /// of the kind runs), one per kind in PILLS' order
