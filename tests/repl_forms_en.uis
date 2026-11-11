@@ -1,0 +1,40 @@
+#!args --verify-dirty --lang en --open tests/fixtures/lab_forms.jfnet
+# replication in the database's form in English (workspace/devwin/svcform.rs): the group's words, a refusal, a
+# choice, the status of a replica.  Ids as in repl_forms.uis
+size 1500 1800
+theme light
+wait 2000
+dblclick listitem:"HOST1" shift
+resizewin 26624 900 1700
+click tab:"Services"
+click #140304
+click #140321
+click listitem:"Database"
+click button:"Add"
+wait 200
+click #141056
+wait 50
+click #140800
+type "users"
+click #140801
+type "1000"
+click #140803
+type "200"
+click #140288
+wait 300
+click button:"Settings …"
+click #140295
+expect text:"Without a role the database has no replication. A replica follows its primary over the network, applies its log and takes reads only." exists
+expect text:"What a commit on the primary waits for before it answers: the more, the less a failure loses and the longer the answer takes." exists
+click #140588
+click listitem:"Replica: follows a primary"
+wait 50
+expect text:"Service db: A replica needs \"replication.primary\": the address of its primary." exists
+click #140590
+type "10.0.0.12"
+click #140592
+click listitem:"semi: a replica has received the record"
+click #140288
+wait 400
+expect text:"Port 7100: replica, does not reach its primary 10.0.0.12" exists
+close window 26624

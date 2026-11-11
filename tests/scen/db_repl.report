@@ -1,0 +1,125 @@
+# JFNetworker-Szenario db_repl.scn: „Datenbank: Replikation, Failover, Fencing“, 6 Geräte, 5 Verbindungen, Seed 51
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/5 is up
+   0.000000000  --      run 1s
+   1.000000000  DB1     root@DB1:~# dbctl replication
+   1.000000000  DB1     Primary in Epoche 1, Modus semi (wartet auf 1 Replikate), Log-Port 7101
+   1.000000000  DB1     Log: Stand 0, auf der Platte 0
+   1.000000000  DB1     Replikat   empfangen  geschrieben  angewendet  Rückstand  Bytes  Zustand
+   1.000000000  DB1     10.0.0.32  0          0            0           0 ms       0      folgt
+   1.000000000  DB1     10.0.0.31  0          0            0           0 ms       0      folgt
+   1.000000000  DB1     Sätze gesendet 0, empfangen 0, angewendet 0; Commits angewendet 0; veraltete Lesezugriffe 0, gewartet 0
+   1.000000000  DB1     Commits gewartet 0, auf async zurückgefallen 0; Kopien 1; Schreibzugriffe abgewiesen 0
+   1.000000000  DB1     Verloren beim Failover 0, beim Abgrenzen 0; Commits im Split Brain 0 (die andere Seite 0)
+   1.000000000  DB1     Epochen (Epoche@Position): 1@0
+   1.000000000  --      run 10ms
+   1.010000000  ok      expect DB1 output contains "Primary in Epoche 1, Modus semi"
+   1.010000000  ok      expect DB1 output contains "10.0.0.31"
+   1.010000000  DB3     root@DB3:~# dbctl replication
+   1.010000000  DB3     Replikat von 10.0.0.30 in Epoche 1, Log-Port 7101
+   1.010000000  DB3     Position: empfangen 0, geschrieben 0, angewendet 0; Rückstand 0 ms (0 Bytes)
+   1.010000000  DB3     Vom Commit auf dem Primary bis hier angewendet: p50 -, p99 -
+   1.010000000  DB3     Sätze gesendet 0, empfangen 0, angewendet 0; Commits angewendet 0; veraltete Lesezugriffe 0, gewartet 0
+   1.010000000  DB3     Commits gewartet 0, auf async zurückgefallen 0; Kopien 1; Schreibzugriffe abgewiesen 0
+   1.010000000  DB3     Verloren beim Failover 0, beim Abgrenzen 0; Commits im Split Brain 0 (die andere Seite 0)
+   1.010000000  DB3     Epochen (Epoche@Position): 1@0
+   1.010000000  --      run 10ms
+   1.020000000  ok      expect DB3 output contains "Replikat von 10.0.0.30 in Epoche 1"
+   1.020000000  GEN     root@GEN:~# curl -s -d "UPDATE users SET balance = 4711 WHERE id = 42" http://10.0.0.30:7100/query
+   1.020000000  --      run 100ms
+   1.022099724  GEN     {"ok":true,"changed":1,"figures":{"rows_examined":1,"pages_hit":0,"pages_missed":3,"lock_wait_us":0,"us":2096},"lsn":328}
+   1.120000000  ok      expect GEN output contains "\"lsn\":"
+   1.120000000  GEN     root@GEN:~# curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.31:7100/query
+   1.120000000  --      run 100ms
+   1.132038541  GEN     {"ok":true,"rows":[{"balance":4711}],"count":1,"figures":{"rows_examined":1,"pages_hit":3,"pages_missed":0,"lock_wait_us":0,"us":36}}
+   1.220000000  ok      expect GEN output contains "\"balance\":4711"
+   1.220000000  GEN     root@GEN:~# curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.32:7100/query
+   1.220000000  --      run 100ms
+   1.220038841  GEN     {"ok":true,"rows":[{"balance":4711}],"count":1,"figures":{"rows_examined":1,"pages_hit":3,"pages_missed":0,"lock_wait_us":0,"us":36}}
+   1.320000000  ok      expect GEN output contains "\"balance\":4711"
+   1.320000000  GEN     root@GEN:~# curl -s -d "UPDATE users SET balance = 1 WHERE id = 42" http://10.0.0.31:7100/query
+   1.320000000  --      run 100ms
+   1.328031725  GEN     {"ok":false,"code":"read_only","error":"Ein Replikat nimmt nur Lesezugriffe an. Schreibzugriffe gehen an den Primary 10.0.0.30.","retryable":false}
+   1.420000000  ok      expect GEN output contains "\"code\":\"read_only\""
+   1.420000000  ok      expect GEN output contains "10.0.0.30"
+   1.420000000  GEN     root@GEN:~# curl -s http://10.0.0.31:7100/_db/health/replica?max_lag_ms=100
+   1.420000000  --      run 100ms
+   1.428001499  GEN     {"ok":true,"lag_ms":0,"lag_bytes":0,"applied_lsn":5248}
+   1.520000000  ok      expect GEN output contains "\"ok\":true"
+   1.520000000  GEN     root@GEN:~# curl -s http://10.0.0.30:7100/_db/health
+   1.520000000  --      run 100ms
+   1.520002200  GEN     {"status":"ok","role":"primary","epoch":1,"lsn":5904,"flushed_lsn":5904,"checkpoint_lsn":0,"mode":"semi","sync_count":1,"fallback":false,"replicas":[{"addr":"10.0.0.32","received":5904,"flushed":5904,"applied":5576,"lag_ms":38,"lag_bytes":328,"copying":false},{"addr":"10.0.0.31","received":5904,"flushed":5904,"applied":5904,"lag_ms":0,"lag_bytes":0,"copying":false}],"recoveries":0,"recovery_ms":0}
+   1.620000000  ok      expect GEN output contains "\"role\":\"primary\""
+   1.620000000  ok      expect GEN output contains "\"mode\":\"semi\""
+   5.000000000  ok      expect DB1 svc db metric commits >= 15 over 3s (15.666)
+   5.000000000  ok      expect DB2 svc db metric applied_commits >= 15 over 3s (15.666)
+   5.000000000  ok      expect DB2 svc db metric max lag_ms <= 50 over 3s (0)
+   5.000000000  ok      expect WEB1 svc web metric db_reads >= 60 over 3s (84.333)
+   5.000000000  ok      expect DB1 svc db metric replicas == 2 (2)
+   5.000000000  --      power off DB1
+   5.000000000  SW1     *Mar  1 00:00:05.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is down
+   5.000000000  SW1     *Mar  1 00:00:05.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is down
+   5.000000000  --      run 100ms
+   5.100000000  --      db promote DB2 db
+   5.100000000  --      run 500ms
+   5.600000000  ok      expect DB2 svc db metric role == 1 (1)
+   5.600000000  ok      expect DB2 svc db metric epoch == 2 (2)
+   5.600000000  DB2     root@DB2:~# dbctl replication
+   5.600000000  DB2     Primary in Epoche 2, Modus async (wartet auf 1 Replikate), Log-Port 7101
+   5.600000000  DB2     Log: Stand 24600, auf der Platte 24600
+   5.600000000  DB2     Replikat   empfangen  geschrieben  angewendet  Rückstand  Bytes  Zustand
+   5.600000000  DB2     10.0.0.32  24600      24600        24600       0 ms       0      folgt
+   5.600000000  DB2     Sätze gesendet 0, empfangen 150, angewendet 150; Commits angewendet 75; veraltete Lesezugriffe 0, gewartet 0
+   5.600000000  DB2     Commits gewartet 0, auf async zurückgefallen 0; Kopien 0; Schreibzugriffe abgewiesen 1
+   5.600000000  DB2     Verloren beim Failover 0, beim Abgrenzen 0; Commits im Split Brain 0 (die andere Seite 0)
+   5.600000000  DB2     Epochen (Epoche@Position): 1@0, 2@24600
+   5.600000000  --      run 10ms
+   5.610000000  ok      expect DB2 output contains "Primary in Epoche 2"
+   5.610000000  DB3     root@DB3:~# dbctl replication
+   5.610000000  DB3     Replikat von 10.0.0.31 in Epoche 2, Log-Port 7101
+   5.610000000  DB3     Position: empfangen 24600, geschrieben 24600, angewendet 24600; Rückstand 0 ms (0 Bytes)
+   5.610000000  DB3     Vom Commit auf dem Primary bis hier angewendet: p50 1,040 ms, p99 1,050 ms
+   5.610000000  DB3     Sätze gesendet 0, empfangen 150, angewendet 150; Commits angewendet 75; veraltete Lesezugriffe 0, gewartet 0
+   5.610000000  DB3     Commits gewartet 0, auf async zurückgefallen 0; Kopien 1; Schreibzugriffe abgewiesen 0
+   5.610000000  DB3     Verloren beim Failover 0, beim Abgrenzen 0; Commits im Split Brain 0 (die andere Seite 0)
+   5.610000000  DB3     Epochen (Epoche@Position): 1@0, 2@24600
+   5.610000000  --      run 10ms
+   5.620000000  ok      expect DB3 output contains "Replikat von 10.0.0.31 in Epoche 2"
+   5.620000000  GEN     root@GEN:~# curl -s -d "UPDATE users SET balance = 815 WHERE id = 42" http://10.0.0.31:7100/query
+   5.620000000  --      run 100ms
+   5.628548819  GEN     {"ok":true,"changed":1,"figures":{"rows_examined":1,"pages_hit":3,"pages_missed":0,"lock_wait_us":0,"us":547},"lsn":24928}
+   5.720000000  ok      expect GEN output contains "\"lsn\":"
+   5.720000000  --      power on DB1
+   5.720000000  SW1     *Mar  1 00:00:05.720: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is up
+   5.720000000  SW1     *Mar  1 00:00:05.720: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is up
+   5.720000000  --      run 5s
+  10.720000000  ok      expect DB1 svc db metric role == 2 (2)
+  10.720000000  ok      expect DB1 svc db metric fenced == 1 (1)
+  10.720000000  DB1     root@DB1:~# dbctl replication
+  10.720000000  DB1     Replikat von 10.0.0.31 in Epoche 2, Log-Port 7101
+  10.720000000  DB1     War Primary und wurde abgegrenzt: ein neuerer Primary ist da.
+  10.720000000  DB1     Position: empfangen 24928, geschrieben 24928, angewendet 24928; Rückstand 0 ms (0 Bytes)
+  10.720000000  DB1     Vom Commit auf dem Primary bis hier angewendet: p50 106,504 ms, p99 106,504 ms
+  10.720000000  DB1     Sätze gesendet 300, empfangen 2, angewendet 2; Commits angewendet 1; veraltete Lesezugriffe 0, gewartet 0
+  10.720000000  DB1     Commits gewartet 75, auf async zurückgefallen 0; Kopien 1; Schreibzugriffe abgewiesen 127
+  10.720000000  DB1     Verloren beim Failover 0, beim Abgrenzen 0; Commits im Split Brain 0 (die andere Seite 0)
+  10.720000000  DB1     Epochen (Epoche@Position): 1@0, 2@24600
+  10.720000000  --      run 10ms
+  10.730000000  ok      expect DB1 output contains "Replikat von 10.0.0.31 in Epoche 2"
+  10.730000000  GEN     root@GEN:~# curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.30:7100/query
+  10.730000000  --      run 100ms
+  10.730038839  GEN     {"ok":true,"rows":[{"balance":815}],"count":1,"figures":{"rows_examined":1,"pages_hit":3,"pages_missed":0,"lock_wait_us":0,"us":36}}
+  10.830000000  ok      expect GEN output contains "\"balance\":815"
+  10.830000000  GEN     root@GEN:~# curl -s -d "UPDATE users SET balance = 1 WHERE id = 42" http://10.0.0.30:7100/query
+  10.830000000  --      run 100ms
+  10.830031987  GEN     {"ok":false,"code":"fenced","error":"Ein neuerer Primary ist da: diese Datenbank nimmt keine Schreibzugriffe mehr an. Schreibzugriffe gehen an den Primary 10.0.0.31.","retryable":false}
+  10.930000000  ok      expect GEN output contains "\"code\":\"fenced\""
+# 26 von 26 Erwartungen erfüllt

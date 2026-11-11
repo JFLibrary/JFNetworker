@@ -1,0 +1,43 @@
+# JFNetworker-Experiment db_repl.jfnex: „async, semi oder sync?“
+# Konfigurationen: 6, Laststufen: 2, Seeds: 1; 3 s Warmlauf, je Stufe 1 s Übergang und 5 s Messung (virtuelle Zeit)
+# SLO: p99 bis 50 ms, Fehler bis 1 %
+# Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote
+
+Modus Commit async bis zum Replikat ms 1 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer    1760.000     0.5     0.5     1.0       1.0      0.00    0.5  0.000361    ok        -               2.0         1
+8 Nutzer    7956.000     1.0     1.0     1.0       1.0      0.00    2.3  0.000079  Knie        -               2.4         8
+
+Modus Commit async bis zum Replikat ms 10 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer    1760.000     0.5     0.5     1.0       1.0      0.00    0.5  0.000361    ok        -              11.1        18
+8 Nutzer    7956.000     1.0     1.0     1.0       1.0      0.00    2.3  0.000079  Knie        -              11.4        80
+
+Modus Commit semi bis zum Replikat ms 1 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer     361.800     2.5     3.0     3.0       3.0      0.00    0.1  0.001758    ok        -               2.0         0
+8 Nutzer    2705.600     2.9     3.0     3.5       3.5      0.00    0.7  0.000235  Knie        -               2.2         0
+
+Modus Commit semi bis zum Replikat ms 10 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer      47.400    21.2    21.5    21.5      21.5      0.00    0.0  0.013420    ok        -              11.1         0
+8 Nutzer     383.600    21.2    21.2    21.7      22.0      0.00    0.1  0.001658  Knie        -              11.1         0
+
+Modus Commit sync bis zum Replikat ms 1 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer     303.400     3.0     3.5     3.5       4.0      0.00    0.0  0.002096    ok        -               2.0         0
+8 Nutzer    2311.800     3.5     3.5     4.0       4.0      0.00    0.6  0.000275  Knie        -               2.0         0
+
+Modus Commit sync bis zum Replikat ms 10 (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+1 Nutzer      46.200    21.7    22.0    22.0      22.0      0.00    0.0  0.013768    ok        -              11.1         0
+8 Nutzer     374.000    21.7    21.7    22.2      22.2      0.00    0.1  0.001700  Knie        -              11.1         0
+
+Zusammenfassung
+Konfiguration                                €/h      Knie  Maximum/s  €/1000 am Knie  begrenzt durch
+Modus Commit async bis zum Replikat ms 1   2.290  8 Nutzer   7956.000        0.000079  -
+Modus Commit async bis zum Replikat ms 10  2.290  8 Nutzer   7956.000        0.000079  -
+Modus Commit semi bis zum Replikat ms 1    2.290  8 Nutzer   2705.600        0.000235  -
+Modus Commit semi bis zum Replikat ms 10   2.290  8 Nutzer    383.600        0.001658  -
+Modus Commit sync bis zum Replikat ms 1    2.290  8 Nutzer   2311.800        0.000275  -
+Modus Commit sync bis zum Replikat ms 10   2.290  8 Nutzer    374.000        0.001700  -

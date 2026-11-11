@@ -1,0 +1,109 @@
+# JFNetworker-Szenario traffic_pool.scn: „DNS Round Robin und DB-Pooler“, 10 Geräte, 9 Verbindungen, Seed 53
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/6 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/6 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/7 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/7 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/8 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/8 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/9 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/9 is up
+   0.000000000  --      run 1s
+   1.000000000  PC1     root@PC1:~# dig +short web.lab
+   1.000000000  --      run 200ms
+   1.000005102  PC1     10.0.0.11
+   1.000005102  PC1     10.0.0.12
+   1.000005102  PC1     10.0.0.13
+   1.200000000  PC1     root@PC1:~# dig +short web.lab
+   1.200000000  --      run 200ms
+   1.200003022  PC1     10.0.0.12
+   1.200003022  PC1     10.0.0.13
+   1.200003022  PC1     10.0.0.11
+   1.400000000  PC1     root@PC1:~# dig +short web.lab
+   1.400000000  --      run 200ms
+   1.400003022  PC1     10.0.0.13
+   1.400003022  PC1     10.0.0.11
+   1.400003022  PC1     10.0.0.12
+   1.600000000  PC1     root@PC1:~# curl -s http://web.lab/
+   1.600000000  --      run 200ms
+   1.600012518  PC1     WEB1
+   1.800000000  ok      expect PC1 output contains "WEB1"
+   1.800000000  PC2     root@PC2:~# curl -s http://web.lab/
+   1.800000000  --      run 200ms
+   1.800014598  PC2     WEB2
+   2.000000000  ok      expect PC2 output contains "WEB2"
+   2.000000000  PC3     root@PC3:~# curl -s http://web.lab/
+   2.000000000  --      run 200ms
+   2.000014598  PC3     WEB3
+   2.200000000  ok      expect PC3 output contains "WEB3"
+   2.200000000  PC1     root@PC1:~# curl -s http://web.lab/
+   2.200000000  --      run 200ms
+   2.200007663  PC1     WEB1
+   2.400000000  PC1     root@PC1:~# curl -s http://web.lab/
+   2.400000000  --      run 200ms
+   2.400007663  PC1     WEB1
+   2.600000000  ok      expect PC1 output not contains "WEB2"
+   2.600000000  ok      expect WEB1 svc web metric requests == 3 (3)
+   2.600000000  ok      expect WEB2 svc web metric requests == 1 (1)
+   2.600000000  --      power off WEB2
+   2.600000000  SW1     *Mar  1 00:00:02.600: %LINK-3-UPDOWN: TenGigabitEthernet1/0/6 is down
+   2.600000000  SW1     *Mar  1 00:00:02.600: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/6 is down
+   2.600000000  PC2     root@PC2:~# curl -sS -m 2 http://web.lab/
+   2.600000000  --      run 2500ms
+   4.600000000  PC2     curl: (28) Connection timed out after 2000 milliseconds
+   5.100000000  ok      expect PC2 output contains "curl: ("
+   5.100000000  ok      expect PC2 output not contains "WEB"
+   5.100000000  PC1     root@PC1:~# curl -s -d "BEGIN" http://pool.lab:6432/query
+   5.100000000  --      run 200ms
+   5.100023402  PC1     {"ok":true,"txn":1,"isolation":"read committed"}
+   5.300000000  ok      expect PC1 output contains "\"txn\":1"
+   5.300000000  PC2     root@PC2:~# curl -s -d "BEGIN" http://pool.lab:6432/query
+   5.300000000  --      run 200ms
+   5.300018858  PC2     {"ok":true,"txn":2,"isolation":"read committed"}
+   5.500000000  ok      expect PC2 output contains "\"txn\":2"
+   5.500000000  PC3     root@PC3:~# curl -s -d "SELECT * FROM konten WHERE id = 5" http://pool.lab:6432/query
+   5.500000000  --      run 500ms
+   6.000000000  ok      expect PC3 output not contains "\"id\":5"
+   6.000000000  POOL    root@POOL:~# dbpoolctl
+   6.000000000  POOL    DB-Pooler pool: Port 6432 vor 10.0.0.30:7100, Verbindung je Transaktion, höchstens 2 Verbindungen
+   6.000000000  POOL    Belegt 2 (höchstens 2), Verbindungen zur Datenbank 1, wartend 1 (höchstens 1), offene Transaktionen 2
+   6.000000000  POOL    Anweisungen 3, gewartet 1, Warteschlange voll 0, zu lange gewartet 0, im Modus abgelehnt 0, stille Transaktionen beendet 0
+   6.000000000  POOL    Warten p50 -, p99 -; Antwortzeit p99 9 µs
+   6.000000000  POOL    
+   6.000000000  POOL    Transaktion  offen seit  still seit  in Arbeit
+   6.000000000  POOL    1            899,980 ms  899,980 ms  0
+   6.000000000  POOL    2            699,985 ms  699,985 ms  0
+   6.000000000  --      run 10ms
+   6.010000000  ok      expect POOL output contains "Belegt 2"
+   6.010000000  ok      expect POOL output contains "wartend 1"
+   6.010000000  ok      expect POOL output contains "Transaktion"
+   6.010000000  ok      expect POOL svc pool metric db_conns <= 2 (1)
+   6.010000000  PC1     root@PC1:~# curl -s -H "X-Txn: 1" -d "COMMIT" http://pool.lab:6432/query
+   6.010000000  --      run 200ms
+   6.010014099  PC1     {"ok":true,"committed":1}
+   6.010383213  PC3     {"ok":true,"rows":[{"id":5,"stand":9774}],"count":1,"figures":{"rows_examined":1,"pages_hit":0,"pages_missed":3,"lock_wait_us":0,"us":360}}
+   6.210000000  ok      expect PC1 output contains "\"committed\":1"
+   6.210000000  ok      expect PC3 output contains "\"id\":5"
+   6.210000000  --      svc set POOL pool idle_txn_ms 1000
+   6.210000000  --      run 2s
+   8.210000000  ok      expect POOL svc pool metric idle_kills == 1 (1)
+   8.210000000  ok      expect POOL svc pool metric txns == 0 (0)
+   8.210000000  --      svc set POOL pool mode statement
+   8.210000000  PC1     root@PC1:~# curl -s -d "BEGIN" http://pool.lab:6432/query
+   8.210000000  --      run 200ms
+   8.210010118  PC1     {"ok": false, "code": "pool_mode", "error": "statement mode: a transaction needs one connection for all its statements, use transaction mode", "retryable": false}
+   8.410000000  ok      expect PC1 output contains "\"code\": \"pool_mode\""
+   8.410000000  PC1     root@PC1:~# curl -s -d "SELECT COUNT(*) FROM konten" http://pool.lab:6432/query
+   8.410000000  --      run 200ms
+   8.412231471  PC1     {"ok":true,"count":10000,"figures":{"rows_examined":10000,"pages_hit":1,"pages_missed":123,"lock_wait_us":0,"us":2215}}
+   8.610000000  ok      expect PC1 output contains "\"count\":10000"
+# 21 von 21 Erwartungen erfüllt

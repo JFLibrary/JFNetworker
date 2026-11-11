@@ -1,0 +1,74 @@
+# Replikation der Datenbank: DB1 ist Primary (semi: ein Commit wartet, bis ein Replikat den Satz empfangen hat),
+# DB2 ein Replikat 2 ms entfernt, DB3 ein Replikat ohne eigene Tabellen, das sich beim Start eine Kopie holt.
+# WEB1 schreibt auf DB1 und liest von DB2. Dann fällt DB1 aus, DB2 wird Primary, DB3 folgt ihm, und als DB1
+# zurückkommt, hört es von der neueren Epoche und nimmt keine Schreibzugriffe mehr an (Fencing).
+#
+# erst die Lage: wer ist Primary, wer folgt wem
+run 1s
+DB1: dbctl replication
+run 10ms
+expect DB1 output contains "Primary in Epoche 1, Modus semi"
+expect DB1 output contains "10.0.0.31"
+DB3: dbctl replication
+run 10ms
+expect DB3 output contains "Replikat von 10.0.0.30 in Epoche 1"
+# ein Schreibzugriff auf den Primary nennt seine Position im Log
+GEN: curl -s -d "UPDATE users SET balance = 4711 WHERE id = 42" http://10.0.0.30:7100/query
+run 100ms
+expect GEN output contains "\"lsn\":"
+# beide Replikate haben ihn, auch DB3 mit seiner Kopie
+GEN: curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.31:7100/query
+run 100ms
+expect GEN output contains "\"balance\":4711"
+GEN: curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.32:7100/query
+run 100ms
+expect GEN output contains "\"balance\":4711"
+# ein Replikat nimmt keine Schreibzugriffe an und sagt, wohin sie gehören
+GEN: curl -s -d "UPDATE users SET balance = 1 WHERE id = 42" http://10.0.0.31:7100/query
+run 100ms
+expect GEN output contains "\"code\":\"read_only\""
+expect GEN output contains "10.0.0.30"
+# die Prüfung für einen Loadbalancer: frisch genug
+GEN: curl -s http://10.0.0.31:7100/_db/health/replica?max_lag_ms=100
+run 100ms
+expect GEN output contains "\"ok\":true"
+GEN: curl -s http://10.0.0.30:7100/_db/health
+run 100ms
+expect GEN output contains "\"role\":\"primary\""
+expect GEN output contains "\"mode\":\"semi\""
+# die Last über WEB1: Schreiben auf DB1, Lesen von DB2
+at 5s expect DB1 svc db metric commits >= 15 over 3s
+expect DB2 svc db metric applied_commits >= 15 over 3s
+expect DB2 svc db metric max lag_ms <= 50 over 3s
+expect WEB1 svc web metric db_reads >= 60 over 3s
+expect DB1 svc db metric replicas == 2
+# DB1 fällt aus, DB2 wird Primary
+power off DB1
+run 100ms
+db promote DB2 db
+run 500ms
+expect DB2 svc db metric role == 1
+expect DB2 svc db metric epoch == 2
+DB2: dbctl replication
+run 10ms
+expect DB2 output contains "Primary in Epoche 2"
+DB3: dbctl replication
+run 10ms
+expect DB3 output contains "Replikat von 10.0.0.31 in Epoche 2"
+GEN: curl -s -d "UPDATE users SET balance = 815 WHERE id = 42" http://10.0.0.31:7100/query
+run 100ms
+expect GEN output contains "\"lsn\":"
+# DB1 kommt zurück: es fragt erst seine Mitglieder, hört von Epoche 2 und folgt DB2
+power on DB1
+run 5s
+expect DB1 svc db metric role == 2
+expect DB1 svc db metric fenced == 1
+DB1: dbctl replication
+run 10ms
+expect DB1 output contains "Replikat von 10.0.0.31 in Epoche 2"
+GEN: curl -s -d "SELECT balance FROM users WHERE id = 42" http://10.0.0.30:7100/query
+run 100ms
+expect GEN output contains "\"balance\":815"
+GEN: curl -s -d "UPDATE users SET balance = 1 WHERE id = 42" http://10.0.0.30:7100/query
+run 100ms
+expect GEN output contains "\"code\":\"fenced\""

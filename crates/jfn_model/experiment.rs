@@ -53,6 +53,15 @@
 //   {"kind": "backends", "dev": "LB", "svc": "lb", "template": "WEB1", "counts": [1, 2, 4]}
 //    the first N copies of a device: a copy has the next addresses and the next free port of the
 //    switch the device hangs on
+//   {"kind": "link", "dev": "DB2", "path": "eth0", "values": [1, 10]}   the one-way delay in ms (decimals
+//    allowed) of the cable at a device's port (SA5)
+//
+// Figures (SA5, "figures": [...]): columns of their own, a service's metric read after each level's
+// measuring, in their order on that level's engine: {"name": "Rückstand p99 ms", "dev": "DB2", "svc": "db",
+// "metric": "lag_p99_us", "div": 1000}; before it is read a figure may switch a device off ("off": "DB1"),
+// promote a replica ("promote": "DB2", Action::DbPromote of its service "svc") and let "wait_s" pass, so
+// later figures see what that left: what a failover at the end of the level loses.  Without figures the
+// results are what they were.
 //
 // Levels are strictly rising (the knee is the highest level up to which every level holds the SLO).
 // Every run boots each configuration once per seed, warms up at "warm" of "load" (default: the first
@@ -88,7 +97,7 @@ pub const MAX_MEASURE_S: u64 = 280;
 record! {
     /// one thing that varies
     pub struct Axis {
-        /// hw, config, backends
+        /// hw, config, backends, link
         pub kind: String,
         /// the device it acts on, or a group of the project ("group")
         pub dev: String,
@@ -97,7 +106,7 @@ record! {
         pub name: String,
         /// hw: figures; config: the member's values
         pub values: Vec<Value>,
-        /// config: "http-server.workers"
+        /// config: "http-server.workers"; link: the port
         pub path: String,
         /// backends: the load balancer's name on `dev`
         pub svc: String,
@@ -153,6 +162,22 @@ record! {
 }
 
 record! {
+    /// a column of its own: a service's metric after a level's measuring (see the head of this file)
+    pub struct Figure {
+        pub name: String,
+        pub dev: String,
+        pub svc: String,
+        pub metric: String,
+        /// it is shown divided by this, with a decimal (0 or 1: a whole number as it is)
+        pub div: u64,
+        /// before it is read: this device off, this device's service `svc` promoted, so many seconds
+        pub off: String,
+        pub promote: String,
+        pub wait_s: u64,
+    }
+}
+
+record! {
     /// a sweep (see the head of this file)
     pub struct Experiment {
         pub format: String,
@@ -167,6 +192,8 @@ record! {
         pub series: Vec<Series>,
         pub prices: BTreeMap<String, Value>,
         pub cost_exclude: Vec<String>,
+        /// columns of their own (SA5)
+        pub figures: Vec<Figure>,
     }
 }
 
@@ -351,13 +378,15 @@ pub fn fixed(v: u64, unit: u64) -> String {
 pub fn known_keys(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
         "http-server" => &["port", "root", "workers", "queue", "time_ms", "jitter_ms", "error_rate", "error_status", "keepalive_ms", "max_requests", "header_timeout_ms", "max_body", "backlog", "server", "routes", "kv", "db", "cpu_ms", "serial_us", "usl", "mem_mb", "conn_kb", "data_mb", "tls"],
-        "http-load" => &["target", "targets", "mode", "users", "think_ms", "think", "rps", "start_rps", "arrival", "ramp_ms", "delay_ms", "duration_ms", "requests", "timeout_ms", "connect_timeout_ms", "keepalive", "max_conns", "balance", "mix"],
-        "lb" => &["mode", "port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb"],
-        "db" => &["port", "tables", "seed", "pool_mb", "page_kb", "fanout", "max_conns", "durability", "flush_ms", "isolation", "lock_timeout_ms", "txn_idle_ms", "checkpoint_s", "touched_max", "stmt_us", "page_us", "row_us", "write_us", "redo_mbps", "max_rows", "write_rows_max", "wal_tail", "mem_mb", "conn_kb", "data_mb", "disk"],
+        "http-load" => &["target", "targets", "mode", "users", "think_ms", "think", "rps", "start_rps", "arrival", "ramp_ms", "delay_ms", "duration_ms", "requests", "timeout_ms", "connect_timeout_ms", "keepalive", "max_conns", "balance", "mix", "retry", "cookies"],
+        "lb" => &["mode", "port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb", "queue", "queue_timeout_ms", "sticky", "slow_start_ms", "outlier", "breaker", "retry", "limit", "pools", "routes"],
+        "db" => &["port", "tables", "seed", "pool_mb", "page_kb", "fanout", "max_conns", "durability", "flush_ms", "isolation", "lock_timeout_ms", "txn_idle_ms", "checkpoint_s", "touched_max", "stmt_us", "page_us", "row_us", "write_us", "redo_mbps", "max_rows", "write_rows_max", "wal_tail", "mem_mb", "conn_kb", "data_mb", "disk", "replication"],
         "kv" => &["nodes", "port", "hb_port", "cpu_us", "mem_mb", "conn_kb", "data_mb", "vnodes", "rf", "w", "r", "consistency", "read_repair", "timeout_ms", "heartbeat_ms", "down_ms", "disk"],
         "cache" => &["backend", "port", "entries", "max_kb", "ttl_ms", "cache_control", "hit_us", "collapse", "timeout_ms", "connect_timeout_ms", "mem_mb", "conn_kb", "data_mb"],
         "worker" => &["queue", "topic", "concurrency", "time_ms", "cpu_ms", "mem_mb", "conn_kb", "data_mb", "jitter_ms", "error_rate", "wait_ms", "idle_ms", "timeout_ms"],
         "mq" => &["port", "visibility_ms", "max_deliveries", "max_depth", "durable", "topics"],
+        "proxy" => &["port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb", "queue", "queue_timeout_ms", "sticky", "slow_start_ms", "outlier", "breaker", "retry", "limit", "pools", "routes", "tls", "handshake_us", "resume_us", "tls_kb_us", "session_reuse", "session_ttl_ms", "max_requests", "keepalive_ms", "cache"],
+        "dbpool" => &["port", "db", "pool", "mode", "queue", "queue_timeout_ms", "idle_txn_ms", "timeout_ms", "connect_timeout_ms", "cpu_us", "mem_mb", "conn_kb", "data_mb"],
         _ => return None,
     })
 }
@@ -438,6 +467,7 @@ impl Axis {
             "hw" => format!("hw {}", who),
             "config" => format!("{} {}", who, self.path),
             "backends" => format!("backends {}", who),
+            "link" => format!("Kabel {} {} ms", who, self.path),
             k => String::from(k),
         }
     }
@@ -558,6 +588,36 @@ pub fn patch_config(p: &mut Project, a: &Axis, i: usize) -> Result<(), Msg> {
             set_path(&mut s.config, rest, v.clone())?;
         }
     }
+    Ok(())
+}
+
+/// a delay in ms of an axis' value (decimals allowed) in ns
+fn delay_of(v: &Value) -> Option<u64> {
+    let text = match v {
+        Value::Number(n) => String::from(n.as_str()),
+        Value::String(t) => String::from(t.trim()),
+        _ => return None,
+    };
+    let (whole, frac) = text.split_once('.').unwrap_or((text.as_str(), ""));
+    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) || !frac.bytes().all(|b| b.is_ascii_digit()) || frac.len() > 6 {
+        return None;
+    }
+    let mut ns = whole.parse::<u64>().ok()?.checked_mul(1_000_000)?;
+    let mut scale = 100_000;
+    for b in frac.bytes() {
+        ns += (b - b'0') as u64 * scale;
+        scale /= 10;
+    }
+    Some(ns)
+}
+
+/// a link axis: the one-way delay of the cable at the device's port (SA5)
+pub fn patch_link(p: &mut Project, a: &Axis, i: usize) -> Result<(), Msg> {
+    let v = a.values.get(i).ok_or_else(|| msg!("Diesen Wert gibt es nicht."))?;
+    let ns = delay_of(v).ok_or_else(|| msg!("Eine Verzögerung ist eine Zahl in Millisekunden."))?;
+    let dev = p.find(&a.dev).map(|d| d.id).ok_or_else(|| msg!("Das Gerät \u{201e}{}\u{201c} gibt es nicht.", a.dev))?;
+    let l = p.links.iter_mut().find(|l| (l.a.dev == dev && l.a.port == a.path) || (l.b.dev == dev && l.b.port == a.path)).ok_or_else(|| msg!("An {} {} hängt kein Kabel.", a.dev.clone(), a.path))?;
+    l.delay_ns = ns;
     Ok(())
 }
 
@@ -697,7 +757,20 @@ fn check_axis(a: &Axis, p: &Project) -> Result<(), Msg> {
             }
         }
         "backends" => {}
-        k => return Err(msg!("Die Art \u{201e}{}\u{201c} gibt es nicht (hw, config, backends).", k)),
+        "link" => {
+            dev_named(&a.dev)?;
+            let dev = p.find(&a.dev).map_or(0, |d| d.id);
+            if !p.links.iter().any(|l| (l.a.dev == dev && l.a.port == a.path) || (l.b.dev == dev && l.b.port == a.path)) {
+                return Err(msg!("An {} {} hängt kein Kabel.", a.dev.clone(), a.path));
+            }
+            if a.values.is_empty() {
+                return Err(msg!("\u{201e}values\u{201c} ist leer."));
+            }
+            if a.values.iter().any(|v| delay_of(v).is_none()) {
+                return Err(msg!("Eine Verzögerung ist eine Zahl in Millisekunden."));
+            }
+        }
+        k => return Err(msg!("Die Art \u{201e}{}\u{201c} gibt es nicht (hw, config, backends, link).", k)),
     }
     if a.kind == "hw" {
         for id in targets(a, p) {
@@ -884,6 +957,19 @@ impl Experiment {
         for n in &self.cost_exclude {
             if p.find(n).is_none() {
                 out.push(msg!("Kosten: das Gerät \u{201e}{}\u{201c} gibt es nicht.", n));
+            }
+        }
+        // the figures: their devices and services
+        for f in &self.figures {
+            match p.find(&f.dev) {
+                None => out.push(msg!("Spalte {}: das Gerät \u{201e}{}\u{201c} gibt es nicht.", f.name.clone(), f.dev.clone())),
+                Some(d) if !d.services.iter().any(|s| s.name.eq_ignore_ascii_case(&f.svc)) => out.push(msg!("Spalte {}: {} hat keinen Dienst \u{201e}{}\u{201c}.", f.name.clone(), d.name.clone(), f.svc.clone())),
+                _ => {}
+            }
+            for d in [&f.off, &f.promote] {
+                if !d.is_empty() && p.find(d).is_none() {
+                    out.push(msg!("Spalte {}: das Gerät \u{201e}{}\u{201c} gibt es nicht.", f.name.clone(), d.clone()));
+                }
             }
         }
         // the axes

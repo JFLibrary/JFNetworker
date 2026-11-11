@@ -46,9 +46,12 @@ Windows and Linux · German and English · MIT licence
   English.
 - **Architecture lab:** load generators, web servers, load balancers, a sharded key-value store,
   caches, queues and workers, and a relational-style database with SQL-shaped statements, a buffer
-  pool, row locks, MVCC, a write-ahead log and crash recovery; CPU and RAM per device, fault
-  injection, metrics with percentiles and experiments that sweep the load to compare scaling up with
-  scaling out.
+    pool, row locks, MVCC, a write-ahead log and crash recovery, replicated over the simulated network
+    (async, semi-sync or sync, lag, stale reads, promotion and fencing); a reverse proxy with routes, TLS
+    termination and a cache, a database pooler, DNS round robin, and traffic management: rate limits,
+    retries with backoff and a budget, circuit breakers, outlier ejection, slow start, sticky sessions
+    and load shedding; CPU and RAM per device, fault injection, metrics with percentiles and
+    experiments that sweep the load to compare scaling up with scaling out.
 - **Everything else:** a start page with templates and recent files, a physical view with buildings,
   rooms and racks (cable lengths with the limits of their medium), labs and graded assessments,
   autosave, keyboard operation throughout, screen reader names for devices and cables, light and

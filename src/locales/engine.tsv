@@ -1949,7 +1949,7 @@ Es fehlt „dev“ oder „group“.	“dev” or “group” is missing.
 Die Gruppe „{}“ gibt es nicht.	There is no group “{}”.
 Die Gruppe „{}“ hat keine Geräte.	The group “{}” has no devices.
 „values“ ist leer.	“values” is empty.
-Die Art „{}“ gibt es nicht (hw, config, backends).	There is no kind “{}” (hw, config, backends).
+Die Art „{}“ gibt es nicht (hw, config, backends, link).	There is no kind “{}” (hw, config, backends, link).
 {} hat keinen Dienst „{}“ (es gibt: {}).	{} has no service “{}” (there are: {}).
 Ein Dienst der Art {} kennt „{}“ nicht (es gibt: {}).	A service of kind {} does not know “{}” (there are: {}).
 Der Dienst „{}“ ist kein Load Balancer, sondern {}.	The service “{}” is no load balancer but {}.
@@ -2050,3 +2050,166 @@ Die Anweisung „{}“: {}	The statement "{}": {}
 „db.addr“: „{}“ ist keine IPv4-Adresse.	"db.addr": "{}" is no IPv4 address.
 Eine Route fragt die Datenbank, aber „db“ fehlt.	A route asks the database, but "db" is missing.
 Noch keine Tabellen: die Datenbank hat nichts, worauf sich eine Anweisung beziehen könnte.	No tables yet: the database has nothing a statement could refer to.
+# SA5: replication of the database (dbrepl.rs, cli/lab.rs dbctl, trace.rs notes)
+die Replikation: Rolle, Epoche, Positionen, Rückstand, die Replikate	replication: role, epoch, positions, lag, the replicas
+ein Replikat wird Primary, nachdem es angewendet hat, was es schon hat	a replica becomes primary after it applied what it already has
+{} wird Primary: wendet zuerst an, was es schon hat, dann hören die anderen Mitglieder davon.	{} becomes primary: it first applies what it already has, then the other members hear of it.
+Diese Datenbank hat keine Replikation.	This database has no replication.
+Primary in Epoche {}, Modus {} (wartet auf {} Replikate), Log-Port {}	Primary in epoch {}, mode {} (waits for {} replicas), log port {}
+Fragt nach einem Neustart erst seine Mitglieder, ob es einen neueren Primary gibt: nimmt bis dahin keine Schreibzugriffe an.	After a restart it first asks its members whether there is a newer primary: until then it takes no writes.
+Fällt gerade auf async zurück: kein Replikat hat rechtzeitig bestätigt.	Falling back to async: no replica acknowledged in time.
+Split Brain: auch {} nimmt Schreibzugriffe an.	Split brain: {} takes writes too.
+Log: Stand {}, auf der Platte {}	Log: at {}, on the disk {}
+Kein Replikat verbunden.	No replica connected.
+Replikat|empfangen|geschrieben|angewendet|Rückstand|Bytes|Zustand	Replica|received|written|applied|lag|bytes|state
+folgt	follows
+Replikat von {} in Epoche {}, Log-Port {}	Replica of {} in epoch {}, log port {}
+Wird Primary: wendet zuerst an, was es schon hat.	Becoming primary: it first applies what it already has.
+Bekommt eine Kopie der Daten ({} %): beantwortet bis dahin keine Lesezugriffe.	Getting a copy of the data ({} %): it answers no reads until then.
+Erreicht seinen Primary nicht: versucht es weiter.	Does not reach its primary: it keeps trying.
+War Primary und wurde abgegrenzt: ein neuerer Primary ist da.	Was primary and was fenced: a newer primary is there.
+Position: empfangen {}, geschrieben {}, angewendet {}; Rückstand {} ms ({} Bytes)	Position: received {}, written {}, applied {}; lag {} ms ({} bytes)
+Vom Commit auf dem Primary bis hier angewendet: p50 {}, p99 {}	From the commit on the primary to applied here: p50 {}, p99 {}
+Sätze gesendet {}, empfangen {}, angewendet {}; Commits angewendet {}; veraltete Lesezugriffe {}, gewartet {}	Records sent {}, received {}, applied {}; commits applied {}; stale reads {}, waited {}
+Commits gewartet {}, auf async zurückgefallen {}; Kopien {}; Schreibzugriffe abgewiesen {}	Commits waited {}, fell back to async {}; copies {}; writes refused {}
+Verloren beim Failover {}, beim Abgrenzen {}; Commits im Split Brain {} (die andere Seite {})	Lost in a failover {}, when fenced {}; commits in split brain {} (the other side {})
+Epochen (Epoche@Position): {}	Epochs (epoch@position): {}
+„replication“ ist ein Objekt.	"replication" is an object.
+„replication.primary“: „{}“ ist keine IPv4-Adresse.	"replication.primary": "{}" is no IPv4 address.
+„replication.role“ kennt {} nicht (primary, replica).	"replication.role" does not know {} (primary, replica).
+Ein Replikat braucht „replication.primary“: die Adresse seines Primary.	A replica needs "replication.primary": the address of its primary.
+„replication.mode“ kennt {} nicht (async, semi, sync, apply).	"replication.mode" does not know {} (async, semi, sync, apply).
+Das Log braucht einen eigenen Port, nicht {}.	The log needs a port of its own, not {}.
+Diese Datenbank ist schon Primary.	This database is primary already.
+Diese Datenbank wird schon Primary.	This database is becoming primary already.
+Das Replikat hat noch keine vollständige Kopie der Daten: es kann nicht Primary werden.	The replica has no complete copy of the data yet: it cannot become primary.
+Das Replikat erreicht seinen Primary {} nicht.	The replica does not reach its primary {}.
+Port {}: wird Primary, wendet zuerst an, was es hat	Port {}: becoming primary, first applies what it has
+Port {}: Replikat, bekommt eine Kopie der Daten ({} %)	Port {}: replica, getting a copy of the data ({} %)
+Port {}: Replikat, erreicht seinen Primary {} nicht	Port {}: replica, does not reach its primary {}
+Port {}: abgegrenzt (ein neuerer Primary ist da), folgt {}, Rückstand {} ms	Port {}: fenced (a newer primary is there), follows {}, lag {} ms
+Port {}: Replikat von {}, Rückstand {} ms ({} Bytes), {} Commits angewendet	Port {}: replica of {}, lag {} ms ({} bytes), {} commits applied
+Port {}: Primary nach einem Neustart, fragt erst seine Mitglieder	Port {}: primary after a restart, first asks its members
+Port {}: Split Brain, auch {} nimmt Schreibzugriffe an	Port {}: split brain, {} takes writes too
+Port {}: Primary (Epoche {}), {} statt {}: kein Replikat hat rechtzeitig bestätigt	Port {}: primary (epoch {}), {} instead of {}: no replica acknowledged in time
+Port {}: Primary (Epoche {}, {}), {} Replikate, Rückstand bis {} ms	Port {}: primary (epoch {}, {}), {} replicas, lag up to {} ms
+Rolle, Primary und Port der Replikation ändern sich nur mit einem Neustart.	Role, primary and port of replication change only with a restart.
+„db.read“: „{}“ ist keine IPv4-Adresse.	"db.read": "{}" is no IPv4 address.
+Die Datenbank läuft nicht.	The database is not running.
+Der Dienst {}: {}	The service {}: {}
+Replikation: folgt dem Primary {} ab Position {}.	Replication: follows the primary {} from position {}.
+Replikation: bekommt eine Kopie der Daten ({}).	Replication: gets a copy of the data ({}).
+Replikation: hat aufgeholt, Position {}.	Replication: caught up, position {}.
+Replikation: liegt {} ms hinter dem Primary.	Replication: {} ms behind the primary.
+Replikation: {} folgt jetzt diesem Primary.	Replication: {} follows this primary now.
+Replikation: die Verbindung zum Replikat {} ist weg.	Replication: the connection to the replica {} is gone.
+Replikation: ist jetzt Primary in Epoche {}.	Replication: is primary now in epoch {}.
+Replikation: ein Primary in Epoche {} ist da, diese Datenbank nimmt keine Schreibzugriffe mehr an.	Replication: a primary in epoch {} is there, this database takes no more writes.
+Replikation: folgt dem neuen Primary {} in Epoche {}.	Replication: follows the new primary {} in epoch {}.
+Replikation: kein Replikat hat rechtzeitig bestätigt, Commits gehen jetzt async.	Replication: no replica acknowledged in time, commits go async now.
+Replikation: die Replikate haben aufgeholt, Commits warten wieder auf sie.	Replication: the replicas caught up, commits wait for them again.
+# SA5: the study's link axis and figures (jfn_model experiment.rs)
+Eine Verzögerung ist eine Zahl in Millisekunden.	A delay is a number of milliseconds.
+An {} {} hängt kein Kabel.	No cable is plugged into {} {}.
+Spalte {}: das Gerät „{}“ gibt es nicht.	Column {}: there is no device "{}".
+Spalte {}: {} hat keinen Dienst „{}“.	Column {}: {} has no service "{}".
+# SA6: traffic management (lb.rs, traffic.rs, dbpool.rs, their console and forms)
+seine Pools mit ihren Regeln und seine Routen	its pools with their policies and its routes
+proxyctl [status] [-s DIENST]	proxyctl [status] [-s SERVICE]
+zeigt den Reverse Proxy: TLS, Cache, Regeln, Zahlen und jedes Backend	shows the reverse proxy: TLS, cache, policies, numbers and every backend
+was sein Cache hält	what its cache holds
+dbpoolctl [status] [-s DIENST]	dbpoolctl [status] [-s SERVICE]
+zeigt den DB-Pooler: belegte Verbindungen, Wartende, offene Transaktionen	shows the database pooler: connections in use, what waits, open transactions
+Abgewiesen: Rate-Limit {}, Warteschlange voll {}, zu lange gewartet {}, Breaker offen {}; Retry-Budget verbraucht {}, Backends ausgeschlossen {}	Refused: rate limit {}, queue full {}, waited too long {}, breaker open {}; retry budget used up {}, backends ejected {}
+TLS: aus	TLS: off
+TLS: {} volle Handshakes, {} wieder aufgenommen, {} CPU	TLS: {} full handshakes, {} resumed, {} CPU
+Cache: {} Einträge, Treffer {} (davon abgelaufen {}), Fehlschläge {} ({} Treffer), gespart {}	Cache: {} entries, hits {} (stale {}), misses {} ({} hits), saved {}
+Backend|Pool|Adresse|Gewicht|Zustand|Breaker|seit|offen|gesamt|Fehler|p99	Backend|Pool|Address|Weight|State|Breaker|since|open|total|Errors|p99
+ausgeschlossen	ejected
+Pool|Verfahren|Regeln|wartend|höchstens|abgewiesen|zu lange|p99 Warten	Pool|Algorithm|Policies|waiting|at most|refused|too long|p99 wait
+Keine Routen: alles geht an den Pool default.	No routes: everything goes to the pool default.
+Route|Pool|Anfragen|begrenzt|Umschreiben|Cache	Route|Pool|Requests|limited|Rewrite|Cache
+ja	yes
+proxyctl: auf diesem Gerät läuft kein Reverse Proxy	proxyctl: no reverse proxy runs on this device
+Schlüssel|Status|Bytes|Alter|frisch bis	Key|Status|Bytes|Age|fresh until
+dbpoolctl: auf diesem Gerät läuft kein DB-Pooler	dbpoolctl: no database pooler runs on this device
+Anweisung	statement
+DB-Pooler {}: Port {} vor {}:{}, Verbindung je {}, höchstens {} Verbindungen	Database pooler {}: port {} before {}:{}, a connection per {}, at most {} connections
+Transaktion	transaction
+Belegt {} (höchstens {}), Verbindungen zur Datenbank {}, wartend {} (höchstens {}), offene Transaktionen {}	In use {} (at most {}), connections to the database {}, waiting {} (at most {}), open transactions {}
+Anweisungen {}, gewartet {}, Warteschlange voll {}, zu lange gewartet {}, im Modus abgelehnt {}, stille Transaktionen beendet {}	Statements {}, waited {}, queue full {}, waited too long {}, refused by the mode {}, silent transactions ended {}
+Warten p50 {}, p99 {}; Antwortzeit p99 {}	Wait p50 {}, p99 {}; response time p99 {}
+Transaktion|offen seit|still seit|in Arbeit	Transaction|open for|silent for|in flight
+Port und Datenbank des Poolers ändern sich nur mit einem Neustart.	The pooler's port and database change only with a restart.
+Der Modus des Poolers ändert sich nur ohne offene Transaktionen.	The pooler's mode changes only without open transactions.
+DB-Pooler Port {} ({}): {} von {} Verbindungen belegt, {} warten, {} Transaktionen offen	Database pooler port {} ({}): {} of {} connections in use, {} waiting, {} transactions open
+„db“ fehlt: der Pooler braucht die Adresse der Datenbank.	"db" is missing: the pooler needs the database's address.
+„db.addr“ braucht eine IP-Adresse.	"db.addr" needs an IP address.
+„pool“ braucht mindestens eine Verbindung.	"pool" needs one connection at least.
+„mode“ kennt {} nicht (statement, transaction).	"mode" does not know {} (statement, transaction).
+Die URL {} taugt nicht.	The URL {} does not work.
+Das Zertifikat des Proxys ändert sich nur mit einem Neustart.	The proxy's certificate changes only with a restart.
+Pools und Routen ändern sich nur mit einem Neustart.	Pools and routes change only with a restart.
+Eine Warteschlange kommt oder geht nur mit einem Neustart.	A queue comes or goes only with a restart.
+Das Backend {} gehört jetzt zu einem anderen Pool: es braucht einen anderen Namen.	The backend {} belongs to another pool now: it needs another name.
+mit TLS	with TLS
+ohne TLS	without TLS
+Proxy Port {} {}, {} Routen: {} von {} Backends verfügbar, {}, {} Fehler	Proxy port {} {}, {} routes: {} of {} backends available, {}, {} errors
+„queue“ ist eine Zahl von Anfragen.	"queue" is a number of requests.
+„queue“ braucht „max_conns“: ohne Grenze wartet niemand.	"queue" needs "max_conns": without a limit nobody waits.
+Ein Proxy spricht nur HTTP, nicht {}.	A proxy speaks HTTP only, not {}.
+„{}“ gibt es nur beim Proxy (Dienstart proxy).	"{}" exists only for the proxy (kind proxy).
+„{}“ gibt es nur im HTTP-Modus.	"{}" exists only in HTTP mode.
+Pool {} braucht „name“.	Pool {} needs "name".
+Den Pool {} gibt es zweimal.	The pool {} is there twice.
+Der Pool {} hat keine Backends.	The pool {} has no backends.
+„{}“ braucht ein Objekt.	"{}" needs an object.
+„backends“ oder „pools“ fehlt.	"backends" or "pools" is missing.
+Route {} braucht ein Objekt.	Route {} needs an object.
+Route {}: „{}“ gibt es nur beim Proxy (Dienstart proxy).	Route {}: "{}" exists only for the proxy (kind proxy).
+Route {}: der Pfad {} beginnt nicht mit /.	Route {}: the path {} does not start with /.
+Route {}: den Pool {} gibt es nicht.	Route {}: there is no pool {}.
+Route {}: „add“ beginnt nicht mit /.	Route {}: "add" does not start with /.
+Route {}: den Header {} setzt der Proxy nicht.	Route {}: the proxy does not set the header {}.
+Noch keine Backends: der Proxy hat niemanden, an den er weitergeben kann.	No backends yet: the proxy has nobody to pass requests on to.
+Noch keine Datenbank: der Pooler weiß nicht, wohin.	No database yet: the pooler does not know where to go.
+„retry.jitter“ kennt {} nicht (none, full, equal).	"retry.jitter" does not know {} (none, full, equal).
+„retry.budget“ ist ein Anteil zwischen 0 und 1.	"retry.budget" is a share between 0 and 1.
+„retry.on“ ist eine Liste aus connect, timeout, reset, 5xx.	"retry.on" is a list of connect, timeout, reset, 5xx.
+„retry.on“ kennt {} nicht (connect, timeout, reset, 5xx).	"retry.on" does not know {} (connect, timeout, reset, 5xx).
+geschlossen	closed
+halb offen	half-open
+„outlier.max_ejected“ ist ein Anteil zwischen 0 und 1.	"outlier.max_ejected" is a share between 0 and 1.
+„limit.rate“ ist eine Zahl je Sekunde.	"limit.rate" is a number per second.
+„limit“ braucht „rate“ (Anfragen je Sekunde).	"limit" needs "rate" (requests per second).
+„limit.key“ kennt {} nicht (all, client, route, header:NAME).	"limit.key" does not know {} (all, client, route, header:NAME).
+„limit.status“: {} ist kein Fehlerstatus (400 bis 599).	"limit.status": {} is no error status (400 to 599).
+„sticky.name“: {} taugt nicht als Name eines Cookies.	"sticky.name": {} does not work as the name of a cookie.
+„sticky.type“ kennt {} nicht (cookie, client).	"sticky.type" does not know {} (cookie, client).
+Proxy: Route {} führt zum Pool {}.	Proxy: route {} leads to the pool {}.
+Pool {}: alle Backends am Limit, die Anfrage wartet ({} in der Warteschlange).	Pool {}: every backend at its limit, the request waits ({} in the queue).
+Pool {}: Warteschlange voll, 503 sofort (Load Shedding).	Pool {}: queue full, 503 at once (load shedding).
+Pool {}: zu lange gewartet, 503.	Pool {}: waited too long, 503.
+Rate-Limit für {}: kein Token frei, {} mit Retry-After {} s.	Rate limit for {}: no token left, {} with Retry-After {} s.
+Circuit Breaker von {}: jetzt {}.	Circuit breaker of {}: {} now.
+Pool {}: alle Circuit Breaker offen, 503 ohne Versuch.	Pool {}: every circuit breaker open, 503 without trying.
+{} fällt zu oft aus und ist für {} ms ausgeschlossen.	{} fails too often and is ejected for {} ms.
+{} nimmt wieder Anfragen an.	{} takes requests again.
+{} fällt aus, bleibt aber drin: mehr Backends dürfen nicht ausgeschlossen sein.	{} fails but stays in: no more backends may be ejected.
+Versuch bei {} gescheitert, Wiederholung {} nach {} ms.	Attempt at {} failed, retry {} after {} ms.
+Retry-Budget erschöpft: keine Wiederholung.	Retry budget used up: no retry.
+Sticky Session: {} ist weg, die Sitzung zieht zu {}.	Sticky session: {} is gone, the session moves to {}.
+Proxy: {} aus dem Cache beantwortet.	Proxy: {} answered from the cache.
+Proxy: {} abgelaufen aus dem Cache beantwortet, wird im Hintergrund erneuert.	Proxy: {} answered stale from the cache, renewed in the background.
+Proxy: Antwort für {} für {} ms im Cache.	Proxy: the answer for {} kept for {} ms.
+TLS-Handshake kostet {} µs CPU.	TLS handshake costs {} µs CPU.
+TLS-Sitzung wieder aufgenommen: {} µs CPU.	TLS session resumed: {} µs CPU.
+DB-Pooler: keine Verbindung frei, die Anweisung wartet ({} in der Warteschlange).	Database pooler: no connection free, the statement waits ({} in the queue).
+DB-Pooler: Transaktion {} hält eine Verbindung.	Database pooler: transaction {} holds a connection.
+DB-Pooler: Transaktion {} gibt ihre Verbindung zurück.	Database pooler: transaction {} gives its connection back.
+Reverse Proxy {}: {} auf Port {}, Verfahren {}, {}	Reverse proxy {}: {} on port {}, algorithm {}, {}
+Dienst {}, Pool {}: der langsame Start wirkt nur bei round-robin und weighted, nicht bei {}.	Service {}, pool {}: slow start acts only with round-robin and weighted, not with {}.
+Dienst {}, Pool {}: bei {} Backends darf mit max_ejected {} ‰ keines ausgeschlossen werden.	Service {}, pool {}: with {} backends and max_ejected {} ‰ none may be ejected.
+Dienst {}: ein Retry-Budget von 0 lässt keine Wiederholung zu.	Service {}: a retry budget of 0 allows no retry.
+Dienst {}: auf {}:{} läuft keine Datenbank.	Service {}: no database runs at {}:{}.
+Dienst {}: der Pooler öffnet bis zu {} Verbindungen, die Datenbank auf {} nimmt nur {}.	Service {}: the pooler opens up to {} connections, the database at {} takes only {}.

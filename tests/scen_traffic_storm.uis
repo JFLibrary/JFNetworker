@@ -1,0 +1,7 @@
+#!args tests/fixtures/traffic_storm.jfnet --scenario tests/scen/traffic_storm.scn --golden tests/scen/traffic_storm.report
+# golden scenario of traffic management (SA6, jfn_sim's lb.rs and traffic.rs): a retry storm at a load balancer
+# whose web servers fail every third request (the load at them grows by 1 + p + p^2 + p^3), a retry budget that caps
+# it at 1.1 times, a circuit breaker that takes a web server that fails completely out and lets it back after a
+# probe succeeds, lbctl with what it refused and its breakers.  The GUI program runs tests/scen/traffic_storm.scn on
+# tests/fixtures/traffic_storm.jfnet without a window and ends with the report, which must equal
+# tests/scen/traffic_storm.report byte for byte on every target (the script itself is not run)

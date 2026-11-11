@@ -1,0 +1,7 @@
+#!args tests/experiments/overload.jfnet --sweep tests/experiments/overload.jfnex --threads 2 --golden tests/experiments/overload.report
+# the study of traffic management (SA6) through the GUI program, without a window: two web servers where every tenth
+# request fails after its CPU, behind a load balancer without retries, with three retries, with a retry budget and
+# with retries and load shedding, at three loads up to just below capacity.  Retries hide the failures until the
+# extra load tips the servers over; a budget or shedding keeps them up.  The table must equal
+# tests/experiments/overload.report byte for byte on every target and for any number of threads (the script itself
+# is not run)

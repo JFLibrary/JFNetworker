@@ -160,7 +160,7 @@ fn file_and_checks(t: &mut T) {
         let got = found(&p, &text);
         t.eq(name, got.first().cloned(), Some(format!("Achse 1: {}", want)));
     };
-    axis(t, "an unknown kind", r#"{"kind": "gpu", "dev": "WEB", "values": [1]}"#, "Die Art \u{201e}gpu\u{201c} gibt es nicht (hw, config, backends).");
+    axis(t, "an unknown kind", r#"{"kind": "gpu", "dev": "WEB", "values": [1]}"#, "Die Art \u{201e}gpu\u{201c} gibt es nicht (hw, config, backends, link).");
     axis(t, "no device", r#"{"kind": "hw", "values": [{"cores": 2}]}"#, "Es fehlt \u{201e}dev\u{201c} oder \u{201e}group\u{201c}.");
     axis(t, "another device", r#"{"kind": "hw", "dev": "NIX", "values": [{"cores": 2}]}"#, "Das Gerät \u{201e}NIX\u{201c} gibt es nicht.");
     axis(t, "another group", r#"{"kind": "hw", "group": "NIX", "values": [{"cores": 2}]}"#, "Die Gruppe \u{201e}NIX\u{201c} gibt es nicht.");
@@ -189,7 +189,7 @@ fn file_and_checks(t: &mut T) {
     lb_axis(t, "a host that is not there", r#"{"kind": "backends", "dev": "LB", "svc": "lb", "pool": ["W9"], "counts": [1]}"#, "Das Gerät \u{201e}W9\u{201c} gibt es nicht.");
     // an axis in a series names it
     let got = found(&p, &exp_rps("1", 1, r#", "series": [{"name": "a", "axes": [{"kind": "gpu"}]}]"#));
-    t.eq("an axis in a series", got.first().cloned(), Some(String::from("Reihe a, Achse 1: Die Art \u{201e}gpu\u{201c} gibt es nicht (hw, config, backends).")));
+    t.eq("an axis in a series", got.first().cloned(), Some(String::from("Reihe a, Achse 1: Die Art \u{201e}gpu\u{201c} gibt es nicht (hw, config, backends, link).")));
     let got = found(&p, &exp_rps("1", 1, r#", "series": [{"name": "a"}, {"name": "a"}]"#));
     t.eq("a series twice", got.first().cloned(), Some(String::from("Die Reihe \u{201e}a\u{201c} steht zweimal da.")));
     // a plan says the same; a value only the service itself can judge is found when it is built

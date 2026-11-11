@@ -1,0 +1,7 @@
+#!args tests/fixtures/traffic_proxy.jfnet --scenario tests/scen/traffic_proxy.scn --golden tests/scen/traffic_proxy.report
+# golden scenario of the reverse proxy (SA6, kind proxy of jfn_sim's lb.rs) on a metered project: TLS terminated with
+# a certificate of the lab CA and its CPU on the proxy, a path rewritten for its pool, routes by Host and by path,
+# 404 without a route, a rate limit with 429 and Retry-After, the cache with X-Cache and Age, kept-alive connections
+# against a full handshake per request, proxyctl and proxyctl routes.  The GUI program runs
+# tests/scen/traffic_proxy.scn on tests/fixtures/traffic_proxy.jfnet without a window and ends with the report, which
+# must equal tests/scen/traffic_proxy.report byte for byte on every target (the script itself is not run)

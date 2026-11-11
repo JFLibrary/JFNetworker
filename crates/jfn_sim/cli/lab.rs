@@ -1,13 +1,18 @@
 // lab -- the console commands that show the lab's services (our own tools, our own words):
 //
-//   lbctl [status] [-s NAME]                 a load balancer: settings, numbers, every backend
+//   lbctl [status|routes] [-s NAME]          a load balancer: settings, numbers, every backend; with traffic
+//                                            management (SA6) also its pools, policies and routes
+//   proxyctl [status|routes|cache] [-s NAME] a reverse proxy: the same, its TLS and its cache
+//   dbpoolctl [status] [-s NAME]             a database pooler: its slots, what waits, the open transactions
 //   kvctl [status|ring|where KEY|get KEY|keys] [-s NAME]
 //                                            a KV node: members as it sees them, the ring, the
 //                                            replicas of a key and what each one holds, its
 //                                            own entries
-//   dbctl [status|tables|locks|explain SQL] [-s NAME]
+//   dbctl [status|tables|locks|explain SQL|replication|promote] [-s NAME]
 //                                            a database: state and figures, its tables, the row locks
-//                                            held and waited for, how a statement would go
+//                                            held and waited for, how a statement would go; its
+//                                            replication (role, epoch, positions, lag, replicas); a
+//                                            replica becomes primary (Engine::db_promote, SA5)
 //   cachectl [status|keys] [-s NAME]         a cache: hits, misses, its entries
 //   mqctl [status] [-s NAME]                 a queue: its topics
 //   workerctl [status] [-s NAME]             a worker: its slots
@@ -28,6 +33,7 @@ use jfn_model::msg::{dur, phrase, Msg};
 
 use crate::cache::Cache;
 use crate::db::Db;
+use crate::dbpool::DbPool;
 use crate::disk::size_text;
 use crate::kernel::{Engine, Ns};
 use crate::kv::KvNode;
@@ -88,7 +94,20 @@ fn port_msg(port: u16, listening: bool) -> Msg {
 }
 
 fn lb_help() -> Vec<(Msg, Msg)> {
+    // (lbctl routes is in the man page: this usage stays as old reports have it)
     alloc::vec![(phrase("lbctl [status] [-s DIENST]"), phrase("zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend"))]
+}
+
+fn proxy_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![
+        (phrase("proxyctl [status] [-s DIENST]"), phrase("zeigt den Reverse Proxy: TLS, Cache, Regeln, Zahlen und jedes Backend")),
+        (Msg::plain("proxyctl routes"), phrase("seine Pools mit ihren Regeln und seine Routen")),
+        (Msg::plain("proxyctl cache"), phrase("was sein Cache hält")),
+    ]
+}
+
+fn dbpool_help() -> Vec<(Msg, Msg)> {
+    alloc::vec![(phrase("dbpoolctl [status] [-s DIENST]"), phrase("zeigt den DB-Pooler: belegte Verbindungen, Wartende, offene Transaktionen"))]
 }
 
 fn kv_help() -> Vec<(Msg, Msg)> {
@@ -107,6 +126,8 @@ fn db_help() -> Vec<(Msg, Msg)> {
         (Msg::plain("dbctl tables"), phrase("ihre Tabellen: Zeilen, geänderte Zeilen, Seiten, Indizes")),
         (Msg::plain("dbctl locks"), phrase("die Zeilensperren, wer sie hält und wie viele warten")),
         (phrase("dbctl explain ANWEISUNG"), phrase("wie eine Anweisung liefe: Index oder alle Seiten, Zeilen, Seiten, warum")),
+        (Msg::plain("dbctl replication"), phrase("die Replikation: Rolle, Epoche, Positionen, Rückstand, die Replikate")),
+        (Msg::plain("dbctl promote"), phrase("ein Replikat wird Primary, nachdem es angewendet hat, was es schon hat")),
     ]
 }
 
@@ -192,23 +213,45 @@ impl Engine {
 
     // ---------------------------------------------------------------- lbctl
 
+    /// a balancer or proxy of the device by its kind: its name
+    fn lab_pick_lb(&self, ni: usize, name: Option<&str>, kind: &str) -> Option<String> {
+        let dev = self.dev_of(ni);
+        let of = |n: &str| self.service::<Lb>(dev, n).is_some_and(|l| l.kind() == kind);
+        match name {
+            Some(n) => self.service::<Lb>(dev, n).map(|_| String::from(n)),
+            None => self.service_ids(dev).into_iter().map(|s| s.1).find(|n| of(n)),
+        }
+    }
+
     pub(crate) fn sh_lbctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let Ok((svc, rest)) = Engine::lab_args(args) else {
             let h = self.help_text(&lb_help());
             self.out(ni, &h);
             return Ok(());
         };
-        if rest.iter().any(|w| w != "status") {
+        if rest.iter().any(|w| w != "status" && w != "routes") {
             return self.lab_unknown(ni, "lbctl", &rest, &lb_help());
         }
-        let Some(name) = self.lab_pick::<Lb>(ni, svc.as_deref()) else {
+        let Some(name) = self.lab_pick_lb(ni, svc.as_deref(), "lb").or_else(|| self.lab_pick::<Lb>(ni, svc.as_deref())) else {
             return self.lab_no(ni, msg!("lbctl: auf diesem Gerät läuft kein Loadbalancer"));
         };
         let dev = self.dev_of(ni);
-        let Some(v) = self.lb_view(dev, &name) else {
+        if rest.iter().any(|w| w == "routes") {
+            let t = self.lb_routes_text(dev, &name);
+            self.out(ni, &t);
             return Ok(());
+        }
+        let t = self.lb_text(dev, &name);
+        self.out(ni, &t);
+        Ok(())
+    }
+
+    /// what lbctl and proxyctl show of a balancer or proxy
+    fn lb_text(&self, dev: u32, name: &str) -> String {
+        let Some(v) = self.lb_view(dev, name) else {
+            return String::new();
         };
-        let lb = self.service::<Lb>(dev, &name);
+        let lb = self.service::<Lb>(dev, name);
         let health = match lb.map(|l| l.health.clone()) {
             Some(h) if h.kind != CheckKind::None => {
                 let how = if h.kind == CheckKind::Http { format!("http GET {}", h.path) } else { String::from("tcp") };
@@ -217,7 +260,11 @@ impl Engine {
             _ => phrase("ohne Health Checks"),
         };
         let http = v.mode == LbMode::Http;
-        let head = msg!("Loadbalancer {}: {} auf Port {}, Verfahren {}, {}", name, if http { "HTTP" } else { "TCP" }, port_msg(v.port, v.listening), v.algo.name(), health);
+        let head = if v.proxy {
+            msg!("Reverse Proxy {}: {} auf Port {}, Verfahren {}, {}", name, if v.tls { "HTTPS" } else { "HTTP" }, port_msg(v.port, v.listening), v.algo.name(), health)
+        } else {
+            msg!("Loadbalancer {}: {} auf Port {}, Verfahren {}, {}", name, if http { "HTTP" } else { "TCP" }, port_msg(v.port, v.listening), v.algo.name(), health)
+        };
         let counts = if http {
             msg!("Anfragen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}", v.requests, v.responses, v.active, v.errors, v.no_backend, v.retried)
         } else {
@@ -228,10 +275,28 @@ impl Engine {
         } else {
             msg!("Verbindungsaufbau p50 {}, p95 {}, p99 {}", opt_ns(v.p50), opt_ns(v.p95), opt_ns(v.p99))
         };
-        let mut s = format!("{}\n{}\n{}\n\n", self.tx(&head), self.tx(&counts), self.tx(&lat));
-        let mut rows = alloc::vec![self.head(phrase("Backend|Adresse|Gewicht|Zustand|seit|offen|gesamt|Fehler|p99"))];
+        let mut s = format!("{}\n{}\n{}\n", self.tx(&head), self.tx(&counts), self.tx(&lat));
+        if v.ext {
+            // traffic management (SA6): what it refused and why, the proxy's TLS and cache
+            let refused = msg!("Abgewiesen: Rate-Limit {}, Warteschlange voll {}, zu lange gewartet {}, Breaker offen {}; Retry-Budget verbraucht {}, Backends ausgeschlossen {}", v.limited, v.pools.iter().map(|p| p.shed).sum::<u64>(), v.pools.iter().map(|p| p.queue_timeouts).sum::<u64>(), v.pools.iter().map(|p| p.fail_fast).sum::<u64>(), v.budget_denied, v.ejections);
+            s.push_str(&self.tx(&refused));
+            s.push('\n');
+            if v.proxy {
+                let tls = if v.tls { msg!("TLS: {} volle Handshakes, {} wieder aufgenommen, {} CPU", v.handshakes, v.resumed, dur(v.tls_cpu as i64)) } else { msg!("TLS: aus") };
+                s.push_str(&self.tx(&tls));
+                s.push('\n');
+                let hits = v.cache_hits + v.cache_stale;
+                let all = hits + v.cache_misses;
+                let cache = msg!("Cache: {} Einträge, Treffer {} (davon abgelaufen {}), Fehlschläge {} ({} Treffer), gespart {}", v.cache_entries, hits, v.cache_stale, v.cache_misses, pm(if all == 0 { 0 } else { hits * 1000 / all }), size_text(v.bytes_saved));
+                s.push_str(&self.tx(&cache));
+                s.push('\n');
+            }
+        }
+        s.push('\n');
+        let mut rows = alloc::vec![if v.ext { self.head(phrase("Backend|Pool|Adresse|Gewicht|Zustand|Breaker|seit|offen|gesamt|Fehler|p99")) } else { self.head(phrase("Backend|Adresse|Gewicht|Zustand|seit|offen|gesamt|Fehler|p99")) }];
         for b in &v.backends {
             let state = match b.admin {
+                Admin::Active if b.ejected_until.is_some() => phrase("ausgeschlossen"),
                 Admin::Active if b.up => phrase("verfügbar"),
                 Admin::Active => phrase("ausgefallen"),
                 Admin::Draining { .. } => phrase("leert sich"),
@@ -239,9 +304,113 @@ impl Engine {
                 Admin::Removed => phrase("entfernt"),
             };
             let at = if b.addr.is_v4() { format!("{}:{}", b.addr, b.port) } else { format!("[{}]:{}", b.addr, b.port) };
-            rows.push(alloc::vec![b.name.clone(), at, format!("{}", b.weight), self.tx(&state), self.tx(&dur(b.since as i64)), format!("{}", b.active), format!("{}", b.total), format!("{}", b.errors), self.tx(&opt_ns(b.p99))]);
+            if v.ext {
+                // the weight now: slow start shows as a fraction
+                let w = if b.weight_pm % 1000 == 0 { format!("{}", b.weight_pm / 1000) } else { format!("{}.{:03}", b.weight_pm / 1000, b.weight_pm % 1000) };
+                rows.push(alloc::vec![b.name.clone(), b.pool.clone(), at, w, self.tx(&state), self.tx(&b.breaker.word()), self.tx(&dur(b.since as i64)), format!("{}", b.active), format!("{}", b.total), format!("{}", b.errors), self.tx(&opt_ns(b.p99))]);
+            } else {
+                rows.push(alloc::vec![b.name.clone(), at, format!("{}", b.weight), self.tx(&state), self.tx(&dur(b.since as i64)), format!("{}", b.active), format!("{}", b.total), format!("{}", b.errors), self.tx(&opt_ns(b.p99))]);
+            }
         }
         s.push_str(&table(&rows));
+        s
+    }
+
+    /// the pools with their policies and the routes of a balancer or proxy
+    fn lb_routes_text(&self, dev: u32, name: &str) -> String {
+        let Some(v) = self.lb_view(dev, name) else {
+            return String::new();
+        };
+        let mut rows = alloc::vec![self.head(phrase("Pool|Verfahren|Regeln|wartend|höchstens|abgewiesen|zu lange|p99 Warten"))];
+        for p in &v.pools {
+            let pol = if p.policies.is_empty() { String::from("-") } else { p.policies.clone() };
+            rows.push(alloc::vec![p.name.clone(), String::from(p.algo.name()), pol, format!("{}", p.waiting), format!("{}", p.max_waiting), format!("{}", p.shed), format!("{}", p.queue_timeouts), self.tx(&opt_ns(p.wait_p99))]);
+        }
+        let mut s = table(&rows);
+        if v.routes.is_empty() {
+            s.push_str(&self.tx(&msg!("Keine Routen: alles geht an den Pool default.")));
+            s.push('\n');
+            return s;
+        }
+        s.push('\n');
+        let mut rows = alloc::vec![self.head(phrase("Route|Pool|Anfragen|begrenzt|Umschreiben|Cache"))];
+        for r in &v.routes {
+            let rw = if r.rewrite.is_empty() { String::from("-") } else { r.rewrite.clone() };
+            rows.push(alloc::vec![r.label.clone(), r.pool.clone(), format!("{}", r.requests), format!("{}", r.limited), rw, self.tx(&if r.cache { phrase("ja") } else { phrase("nein") })]);
+        }
+        s.push_str(&table(&rows));
+        s
+    }
+
+    // ---------------------------------------------------------------- proxyctl
+
+    pub(crate) fn sh_proxyctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
+        let Ok((svc, rest)) = Engine::lab_args(args) else {
+            let h = self.help_text(&proxy_help());
+            self.out(ni, &h);
+            return Ok(());
+        };
+        let Some(name) = self.lab_pick_lb(ni, svc.as_deref(), "proxy") else {
+            return self.lab_no(ni, msg!("proxyctl: auf diesem Gerät läuft kein Reverse Proxy"));
+        };
+        let dev = self.dev_of(ni);
+        let now = self.now;
+        let words: Vec<&str> = rest.iter().map(String::as_str).collect();
+        let text = match words.as_slice() {
+            [] | ["status"] => self.lb_text(dev, &name),
+            ["routes"] => self.lb_routes_text(dev, &name),
+            ["cache"] => {
+                let mut rows = alloc::vec![self.head(phrase("Schlüssel|Status|Bytes|Alter|frisch bis"))];
+                if let Some(l) = self.service::<Lb>(dev, &name) {
+                    for (k, e) in l.cached().into_iter().rev().take(100) {
+                        rows.push(alloc::vec![k, format!("{}", e.status), format!("{}", e.body.len()), self.tx(&dur(now.saturating_sub(e.stored) as i64)), self.tx(&dur(e.expires as i64))]);
+                    }
+                }
+                table(&rows)
+            }
+            _ => return self.lab_unknown(ni, "proxyctl", &rest, &proxy_help()),
+        };
+        self.out(ni, &text);
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------- dbpoolctl
+
+    pub(crate) fn sh_dbpoolctl(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
+        let Ok((svc, rest)) = Engine::lab_args(args) else {
+            let h = self.help_text(&dbpool_help());
+            self.out(ni, &h);
+            return Ok(());
+        };
+        if rest.iter().any(|w| w != "status") {
+            return self.lab_unknown(ni, "dbpoolctl", &rest, &dbpool_help());
+        }
+        let Some(name) = self.lab_pick::<DbPool>(ni, svc.as_deref()) else {
+            return self.lab_no(ni, msg!("dbpoolctl: auf diesem Gerät läuft kein DB-Pooler"));
+        };
+        let dev = self.dev_of(ni);
+        let Some(v) = self.dbpool_view(dev, &name) else {
+            return Ok(());
+        };
+        let lines = [
+            msg!("DB-Pooler {}: Port {} vor {}:{}, Verbindung je {}, höchstens {} Verbindungen", name, port_msg(v.port, v.listening), v.db.0, v.db.1, if v.mode == crate::dbpool::PoolMode::Transaction { phrase("Transaktion") } else { phrase("Anweisung") }, v.size),
+            msg!("Belegt {} (höchstens {}), Verbindungen zur Datenbank {}, wartend {} (höchstens {}), offene Transaktionen {}", v.in_use, v.max_in_use, v.db_conns, v.waiting, v.max_waiting, v.txns.len()),
+            msg!("Anweisungen {}, gewartet {}, Warteschlange voll {}, zu lange gewartet {}, im Modus abgelehnt {}, stille Transaktionen beendet {}", v.requests, v.waited, v.refused, v.queue_timeouts, v.mode_refused, v.idle_kills),
+            msg!("Warten p50 {}, p99 {}; Antwortzeit p99 {}", opt_ns(v.wait_p50), opt_ns(v.wait_p99), opt_ns(v.p99)),
+        ];
+        let mut s = String::new();
+        for l in lines {
+            s.push_str(&self.tx(&l));
+            s.push('\n');
+        }
+        if !v.txns.is_empty() {
+            s.push('\n');
+            let mut rows = alloc::vec![self.head(phrase("Transaktion|offen seit|still seit|in Arbeit"))];
+            for (id, open, silent, inflight) in &v.txns {
+                rows.push(alloc::vec![format!("{}", id), self.tx(&dur(*open as i64)), self.tx(&dur(*silent as i64)), format!("{}", inflight)]);
+            }
+            s.push_str(&table(&rows));
+        }
         self.out(ni, &s);
         Ok(())
     }
@@ -408,6 +577,14 @@ impl Engine {
                 Some(Err(e)) => return self.lab_err(ni, &format!("dbctl: {}\n", e.line())),
                 None => String::new(),
             },
+            ["replication"] => self.db_repl_text(dev, &name),
+            ["promote"] => match self.db_promote(dev, &name) {
+                Ok(()) => format!("{}\n", self.tx(&msg!("{} wird Primary: wendet zuerst an, was es schon hat, dann hören die anderen Mitglieder davon.", name))),
+                Err(e) => {
+                    let t = format!("dbctl: {}\n", self.tx(&e.msg()));
+                    return self.lab_err(ni, &t);
+                }
+            },
             _ => return self.lab_unknown(ni, "dbctl", &rest, &db_help()),
         };
         self.out(ni, &text);
@@ -443,6 +620,74 @@ impl Engine {
         let mut s = String::new();
         for l in lines {
             s.push_str(&self.tx(&l));
+            s.push('\n');
+        }
+        s
+    }
+
+    fn db_repl_text(&self, dev: u32, name: &str) -> String {
+        let (Some(v), Some(d)) = (self.db_repl_view(dev, name), self.db_view(dev, name)) else {
+            return format!("{}\n", self.tx(&phrase("Diese Datenbank hat keine Replikation.")));
+        };
+        let st = v.stats;
+        let addr = |a: Option<netpkt::Ipv4>| format!("{}", a.unwrap_or(netpkt::Ipv4::UNSPECIFIED));
+        let mut lines = Vec::new();
+        let mut table_rows: Vec<Vec<String>> = Vec::new();
+        match v.role {
+            crate::db::ReplRole::Primary => {
+                lines.push(msg!("Primary in Epoche {}, Modus {} (wartet auf {} Replikate), Log-Port {}", v.epoch, v.mode.name(), v.sync_count, v.port));
+                if v.checking {
+                    lines.push(phrase("Fragt nach einem Neustart erst seine Mitglieder, ob es einen neueren Primary gibt: nimmt bis dahin keine Schreibzugriffe an."));
+                }
+                if v.fallback {
+                    lines.push(phrase("Fällt gerade auf async zurück: kein Replikat hat rechtzeitig bestätigt."));
+                }
+                if v.rival.is_some() {
+                    lines.push(msg!("Split Brain: auch {} nimmt Schreibzugriffe an.", addr(v.rival)));
+                }
+                lines.push(msg!("Log: Stand {}, auf der Platte {}", d.lsn, d.flushed));
+                if v.followers.is_empty() {
+                    lines.push(phrase("Kein Replikat verbunden."));
+                } else {
+                    table_rows.push(self.head(phrase("Replikat|empfangen|geschrieben|angewendet|Rückstand|Bytes|Zustand")));
+                    for f in &v.followers {
+                        let state = if f.copying { phrase("kopiert") } else { phrase("folgt") };
+                        table_rows.push(alloc::vec![format!("{}", f.addr), format!("{}", f.received), format!("{}", f.flushed), format!("{}", f.applied), format!("{} ms", f.lag_ms), format!("{}", f.lag_bytes), self.tx(&state)]);
+                    }
+                }
+            }
+            crate::db::ReplRole::Replica => {
+                lines.push(msg!("Replikat von {} in Epoche {}, Log-Port {}", addr(v.primary), v.epoch, v.port));
+                if v.promoting {
+                    lines.push(phrase("Wird Primary: wendet zuerst an, was es schon hat."));
+                } else if let Some(p) = v.copying {
+                    lines.push(msg!("Bekommt eine Kopie der Daten ({} %): beantwortet bis dahin keine Lesezugriffe.", p));
+                } else if !v.connected {
+                    lines.push(phrase("Erreicht seinen Primary nicht: versucht es weiter."));
+                }
+                if v.fenced {
+                    lines.push(phrase("War Primary und wurde abgegrenzt: ein neuerer Primary ist da."));
+                }
+                lines.push(msg!("Position: empfangen {}, geschrieben {}, angewendet {}; Rückstand {} ms ({} Bytes)", d.lsn, d.flushed, v.applied, v.lag_ms, v.lag_bytes));
+                lines.push(msg!("Vom Commit auf dem Primary bis hier angewendet: p50 {}, p99 {}", opt_ns(v.lag_p50), opt_ns(v.lag_p99)));
+            }
+        }
+        let mut tail = Vec::new();
+        tail.push(msg!("Sätze gesendet {}, empfangen {}, angewendet {}; Commits angewendet {}; veraltete Lesezugriffe {}, gewartet {}", st.records_out, st.records_in, st.applied_records, st.applied_commits, st.stale_reads, st.read_waits));
+        tail.push(msg!("Commits gewartet {}, auf async zurückgefallen {}; Kopien {}; Schreibzugriffe abgewiesen {}", st.sync_waits, st.sync_fallbacks, st.copies, st.refused_writes));
+        tail.push(msg!("Verloren beim Failover {}, beim Abgrenzen {}; Commits im Split Brain {} (die andere Seite {})", st.failover_lost, st.fenced_lost, st.split_commits, st.rival_commits));
+        let hist: Vec<String> = v.history.iter().map(|(e, at)| format!("{}@{}", e, at)).collect();
+        tail.push(msg!("Epochen (Epoche@Position): {}", hist.join(", ")));
+        let mut s = String::new();
+        for l in &lines {
+            s.push_str(&self.tx(l));
+            s.push('\n');
+        }
+        if !table_rows.is_empty() {
+            s.push_str(&table(&table_rows));
+        }
+        for l in &tail {
+            s.push_str(&self.tx(l));
             s.push('\n');
         }
         s

@@ -1,0 +1,92 @@
+#!args --verify-dirty --open tests/fixtures/lab_forms.jfnet
+# replication in the database's form (workspace/devwin/svcform.rs, jfn_sim's dbrepl.rs): the group and its help, a
+# replica without its primary refused with its words, a role that takes a restart said before, what the form wrote
+# comes back, the status of a replica that does not reach its primary, the costs folded away with their
+# assumptions, the keyboard, one undo step.  Ids as in db_forms.uis; the fields of replication 140544 + 2 i from
+# i = 22: Rolle 140588, Primary 140590, Commit wartet auf 140592, Replikate je Commit 140594, Höchstens warten
+# 140596, Fencing 140598, Selbst Primary nach 140600; the group is folded (140295), so is its rarer one (140296)
+size 1500 1800
+theme light
+wait 2000
+# ---- a database with a table, as db_forms.uis makes it
+dblclick listitem:"HOST1" shift
+expect window 26624 open
+resizewin 26624 900 1700
+click tab:"Dienste"
+click #140304
+click #140321
+click listitem:"Datenbank"
+click button:"Hinzufügen"
+wait 200
+click #141056
+wait 50
+click #140800
+type "users"
+click #140801
+type "1000"
+click #140803
+type "200"
+click #140288
+wait 300
+expect text:"Port 7100: 0 Anweisungen, Treffer im Puffer 0 ‰, 0 Transaktionen offen. Ohne Hardware kostet die CPU nichts: diese Zahlen sagen wenig." exists
+# ---- the group of replication, folded at first: its help, empty fields mean none
+click button:"Einstellungen …"
+expect text:"Ohne Rolle hat die Datenbank keine Replikation. Ein Replikat folgt seinem Primary über das Netz, wendet sein Log an und nimmt nur Lesezugriffe an." missing
+click #140295
+expect text:"Ohne Rolle hat die Datenbank keine Replikation. Ein Replikat folgt seinem Primary über das Netz, wendet sein Log an und nimmt nur Lesezugriffe an." exists
+expect #140588 exists
+expect #140590 text ""
+# ---- a replica without its primary is refused with its words
+click #140588
+click listitem:"Replikat: folgt einem Primary"
+wait 50
+expect text:"Dienst db: Ein Replikat braucht „replication.primary“: die Adresse seines Primary." exists
+expect #140288 disabled
+# its primary: the role takes a restart, and it says so first
+click #140590
+type "10.0.0.12"
+wait 50
+expect text:"HOST1 startet dafür neu." exists
+expect #140288 enabled
+click #140592
+click listitem:"sync: ein Replikat hat ihn geschrieben"
+click #140596
+type "2500"
+click #140288
+wait 400
+# ---- nobody answers at 10.0.0.12: the status says so
+expect text:"Port 7100: Replikat, erreicht seinen Primary 10.0.0.12 nicht" exists
+# ---- what the form wrote comes back
+click button:"Einstellungen …"
+click #140295
+expect #140590 text "10.0.0.12"
+expect #140596 text "2500"
+# a setting of replication that takes no restart: the wait of a commit
+click #140596
+key ctrl+a
+type "5000"
+wait 50
+expect text:"Gilt sofort: db läuft weiter, ohne Neustart." exists
+# the costs and times are folded away, assumptions say so
+expect text:"Annahme: jeder Satz des Logs, den ein Replikat anwendet, auf einem Referenzkern." missing
+click #140296
+expect text:"Annahme: jeder Satz des Logs, den ein Replikat anwendet, auf einem Referenzkern." exists
+expect text:"Über diesen Port spricht die Replikation; die Vorgabe ist der Port der Datenbank plus 1." exists
+click #140296
+# ---- the keyboard: Tab walks through the group
+focus #140590
+key tab
+expect #140592 focused
+key tab
+expect #140594 focused
+key tab
+expect #140596 focused
+click #140289
+# ---- one undo step takes the replication back
+cmd 10
+wait 300
+expect text:"Port 7100: 0 Anweisungen, Treffer im Puffer 0 ‰, 0 Transaktionen offen. Ohne Hardware kostet die CPU nichts: diese Zahlen sagen wenig." exists
+cmd 11
+wait 300
+expect text:"Port 7100: Replikat, erreicht seinen Primary 10.0.0.12 nicht" exists
+close window 26624

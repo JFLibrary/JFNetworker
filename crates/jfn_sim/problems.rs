@@ -54,6 +54,12 @@
 //   FwPolicyUnused      a policy no zone pair uses (warning)
 //   ServiceNotStarted   a service of the project that does not start: what it lacks, as a form
 //                       shows it (svcform::missing), else the refusal of its config (warning)
+//   ReplicaNoPrimary    a replica of the database that has not reached its primary for 5 s (warning;
+//                       dbrepl.rs: Db::repl_problem)
+//   TrafficSetup        traffic management that cannot do what it says (warning; traffic.rs): slow
+//                       start where the algorithm ignores it, a retry budget of 0, an ejection cap that
+//                       lets no backend go, a pooler before no database or before one that takes fewer
+//                       connections than the pool opens
 //
 // Problem::text is German; Problem::msg is the same as a template with arguments for the app's
 // catalogue (jfn_model::msg).
@@ -163,6 +169,10 @@ pub enum ProblemKind {
     SerialNoClock,
     /// a serial line whose ends run different encapsulations (serial.rs)
     SerialEncap,
+    /// a replica of the database that does not reach its primary (dbrepl.rs)
+    ReplicaNoPrimary,
+    /// traffic management that cannot do what it says (traffic.rs)
+    TrafficSetup,
 }
 
 /// a problem of the set-up
@@ -323,6 +333,7 @@ impl Engine {
         self.dot1x_problems(&mut out);
         self.fw_problems(&mut out);
         self.service_problems(&mut out);
+        self.traffic_problems(&mut out);
         out.sort_by(|a, b| (a.severity, a.dev, a.port, a.kind, &a.text).cmp(&(b.severity, b.dev, b.port, b.kind, &b.text)));
         out
     }
@@ -789,6 +800,12 @@ impl Engine {
             for s in &os.svcs {
                 if let Some(why) = s.svc.as_ref().and_then(|x| x.as_any().downcast_ref::<crate::db::Db>()).and_then(|d| d.disk_problem()) {
                     out.push(problem(ProblemKind::ServiceNotStarted, Severity::Warning, dev, None, None, Vec::new(), msg!("Der Dienst {} läuft nicht. {}", s.name.clone(), why)));
+                }
+                // a replica without its primary for seconds (replication)
+                if s.running
+                    && let Some(why) = s.svc.as_ref().and_then(|x| x.as_any().downcast_ref::<crate::db::Db>()).and_then(|d| d.repl_problem(self.now))
+                {
+                    out.push(problem(ProblemKind::ReplicaNoPrimary, Severity::Warning, dev, None, None, Vec::new(), msg!("Der Dienst {}: {}", s.name.clone(), why)));
                 }
             }
         }

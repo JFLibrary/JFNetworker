@@ -1,0 +1,110 @@
+# JFNetworker-Szenario traffic_proxy.scn: „Reverse Proxy mit TLS und Cache“, 7 Geräte, 6 Verbindungen, Seed 47
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/6 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/6 is up
+   0.000000000  --      run 2s
+   2.000000000  PC      root@PC:~# curl -s https://10.0.0.10/shop/hand
+   2.000000000  --      run 100ms
+   2.000453986  PC      /v2/hand von WEB2
+   2.100000000  ok      expect PC output contains "/v2/hand von WEB"
+   2.100000000  PC      root@PC:~# curl -s -i https://10.0.0.10/shop/hand
+   2.100000000  --      run 100ms
+   2.100448508  PC      HTTP/1.1 200 OK
+   2.100448508  PC      Content-Type: text/plain
+   2.100448508  PC      Content-Length: 18
+   2.100448508  PC      Connection: keep-alive
+   2.100448508  PC      Server: jfn-httpd/1.0
+   2.100448508  PC      Date: Thu, 01 Jan 2026 00:00:02 GMT
+   2.100448508  PC      X-Cache: HIT
+   2.100448508  PC      Age: 0
+   2.100448508  PC      
+   2.100448508  PC      /v2/hand von WEB2
+   2.200000000  ok      expect PC output contains "X-Cache: HIT"
+   2.200000000  ok      expect PC output contains "Age: 0"
+   2.200000000  PC      root@PC:~# curl -s -H "Host: blog.lab" https://10.0.0.10/post/7
+   2.200000000  --      run 100ms
+   2.200455188  PC      /post/7 von WEB3
+   2.300000000  ok      expect PC output contains "/post/7 von WEB3"
+   2.300000000  PC      root@PC:~# curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/sonst
+   2.300000000  --      run 100ms
+   2.300428619  PC      404
+   2.400000000  ok      expect PC output contains "404"
+   2.400000000  PC      root@PC:~# curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/api/a
+   2.400000000  --      run 50ms
+   2.400452895  PC      200
+   2.450000000  PC      root@PC:~# curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/api/b
+   2.450000000  --      run 50ms
+   2.450452895  PC      200
+   2.500000000  PC      root@PC:~# curl -s -i https://10.0.0.10/api/c
+   2.500000000  --      run 100ms
+   2.500428603  PC      HTTP/1.1 429 Too Many Requests
+   2.500428603  PC      Date: Thu, 01 Jan 2026 00:00:03 GMT
+   2.500428603  PC      Content-Type: text/plain
+   2.500428603  PC      Content-Length: 52
+   2.500428603  PC      Connection: keep-alive
+   2.500428603  PC      Retry-After: 1
+   2.500428603  PC      
+   2.500428603  PC      429 Too Many Requests: rate limit, try again in 1 s
+   2.600000000  ok      expect PC output contains "HTTP/1.1 429 Too Many Requests"
+   2.600000000  ok      expect PC output contains "Retry-After: 1"
+   8.000000000  ok      expect GEN svc load metric errors == 0 over 3s (0)
+   8.000000000  ok      expect GEN svc load metric responses >= 300 over 3s (995.333)
+   8.000000000  ok      expect PROXY svc proxy metric tls_handshakes <= 20 over 3s (19)
+   8.000000000  ok      expect PROXY svc proxy metric hit_pm >= 700 (881)
+   8.000000000  ok      expect PROXY svc proxy metric cache_misses <= 130 over 3s (118.666)
+   8.000000000  PROXY   root@PROXY:~# proxyctl
+   8.000000000  PROXY   Reverse Proxy proxy: HTTPS auf Port 443, Verfahren round-robin, Health Checks http GET / alle 1,000 s (Timeout 1,000 s, verfügbar nach 2, ausgefallen nach 3 Prüfungen)
+   8.000000000  PROXY   Anfragen 7807, beendet 7807, offen 0, Fehler 2 (ohne Backend 0), Wiederholungen 0
+   8.000000000  PROXY   Antwortzeit p50 40 µs, p95 56 µs, p99 647 µs
+   8.000000000  PROXY   Abgewiesen: Rate-Limit 1, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 0, Backends ausgeschlossen 0
+   8.000000000  PROXY   TLS: 164 volle Handshakes, 0 wieder aufgenommen, 67,875 ms CPU
+   8.000000000  PROXY   Cache: 842 Einträge, Treffer 6880 (davon abgelaufen 0), Fehlschläge 923 (88,1 % Treffer), gespart 112 KiB
+   8.000000000  PROXY   
+   8.000000000  PROXY   Backend  Pool  Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+   8.000000000  PROXY   shop1    shop  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      462     0       24 µs
+   8.000000000  PROXY   shop2    shop  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      462     0       24 µs
+   8.000000000  PROXY   blog1    blog  10.0.0.13:80  1        verfügbar  geschlossen  0 ns  0      1       0       26 µs
+   8.000000000  --      run 10ms
+   8.010000000  ok      expect PROXY output contains "Reverse Proxy proxy: HTTPS auf Port 443"
+   8.010000000  ok      expect PROXY output contains "TLS:"
+   8.010000000  ok      expect PROXY output contains "Cache:"
+   8.010000000  PROXY   root@PROXY:~# proxyctl routes
+   8.010000000  PROXY   Pool     Verfahren    Regeln  wartend  höchstens  abgewiesen  zu lange  p99 Warten
+   8.010000000  PROXY   default  round-robin  -       0        0          0           0         -
+   8.010000000  PROXY   shop     least-conn   -       0        0          0           0         -
+   8.010000000  PROXY   blog     round-robin  -       0        0          0           0         -
+   8.010000000  PROXY   
+   8.010000000  PROXY   Route      Pool  Anfragen  begrenzt  Umschreiben            Cache
+   8.010000000  PROXY   /shop/     shop  7822      0         -/shop +/v2 headers 1  ja
+   8.010000000  PROXY   blog.lab/  blog  1         0         -                      ja
+   8.010000000  PROXY   /api/      shop  3         1         -                      nein
+   8.010000000  --      run 10ms
+   8.020000000  ok      expect PROXY output contains "blog.lab/"
+   8.020000000  ok      expect PROXY output contains "-/shop +/v2"
+   8.020000000  --      svc set GEN load keepalive false users 5
+  12.000000000  ok      expect PROXY svc proxy metric tls_handshakes >= 150 over 3s (245)
+  12.000000000  ok      expect PROXY svc proxy metric tls_cpu_us >= 100000 (458583)
+  12.000000000  PROXY   root@PROXY:~# proxyctl
+  12.000000000  PROXY   Reverse Proxy proxy: HTTPS auf Port 443, Verfahren round-robin, Health Checks http GET / alle 1,000 s (Timeout 1,000 s, verfügbar nach 2, ausgefallen nach 3 Prüfungen)
+  12.000000000  PROXY   Anfragen 8802, beendet 8802, offen 0, Fehler 2 (ohne Backend 0), Wiederholungen 0
+  12.000000000  PROXY   Antwortzeit p50 40 µs, p95 438 µs, p99 581 µs
+  12.000000000  PROXY   Abgewiesen: Rate-Limit 1, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 0, Backends ausgeschlossen 0
+  12.000000000  PROXY   TLS: 1140 volle Handshakes, 0 wieder aufgenommen, 458,583 ms CPU
+  12.000000000  PROXY   Cache: 943 Einträge, Treffer 7734 (davon abgelaufen 0), Fehlschläge 1064 (87,9 % Treffer), gespart 126 KiB
+  12.000000000  PROXY   
+  12.000000000  PROXY   Backend  Pool  Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+  12.000000000  PROXY   shop1    shop  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      533     0       24 µs
+  12.000000000  PROXY   shop2    shop  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      532     0       24 µs
+  12.000000000  PROXY   blog1    blog  10.0.0.13:80  1        verfügbar  geschlossen  0 ns  0      1       0       26 µs
+  12.000000000  --      run 10ms
+  12.010000000  ok      expect PROXY output contains "volle Handshakes"
+# 20 von 20 Erwartungen erfüllt

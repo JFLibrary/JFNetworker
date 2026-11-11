@@ -37,8 +37,9 @@
 // ("deploy N: ...") after the run they fell into.
 // A project whose lab has start faults gets them before the first step, each with a line
 // "Startfehler N: ..." (the window applies the same actions: doc/sim.rs).
-// "load set", "lb ...", "kv set", "svc set" and "cache clear" change a running service through the
-// Actions the window uses too (HttpLoadSet, LbBackend, LbAlgorithm, KvSet, ServiceConfig, CacheClear),
+// "load set", "lb ...", "kv set", "svc set", "cache clear" and "db promote" change a running service through
+// the Actions the window uses too (HttpLoadSet, LbBackend, LbAlgorithm, KvSet, ServiceConfig, CacheClear,
+// DbPromote),
 // so they run under load and rewinding replays them; "svc set" keeps the project's definition with it,
 // so several steps add up, and a change that needs a restart gets its reason as a FEHLER line.
 // "resize DEV ..." gives a device other hardware (Action::Resize, res.rs): the figures it names on
@@ -665,6 +666,10 @@ pub fn run_scenario_in(p: &Project, sc: &Scenario, name: &str, pcap: bool, lang:
             StepKind::CacheClear { dev, svc } => {
                 let text = format!("cache clear {} {}", dev, svc);
                 step_act(&mut d, &mut r, &proj, dev, step.line, &mut ok, text, |id| Ok(Action::CacheClear { dev: id, svc: svc.clone() }));
+            }
+            StepKind::DbPromote { dev, svc } => {
+                let text = format!("db promote {} {}", dev, svc);
+                step_act(&mut d, &mut r, &proj, dev, step.line, &mut ok, text, |id| Ok(Action::DbPromote { dev: id, svc: svc.clone() }));
             }
             // a rolling deployment (deploy.rs)
             StepKind::Deploy(x) => {

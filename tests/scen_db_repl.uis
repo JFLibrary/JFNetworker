@@ -1,0 +1,8 @@
+#!args tests/fixtures/db_repl.jfnet --scenario tests/scen/db_repl.scn --golden tests/scen/db_repl.report
+# golden scenario: replication of the database (jfn_sim's dbrepl.rs) on a metered project: a primary (semi) with a
+# replica 2 ms away and one that takes a base copy when it starts, a write that both replicas have, the refusal of a
+# write on a replica, the health check for a load balancer, reads through the web server's read address, a
+# failover by db promote, the other replica following the new primary, and the old primary that returns, asks its
+# members and is fenced.  The GUI program runs tests/scen/db_repl.scn on tests/fixtures/db_repl.jfnet without a
+# window and ends with the report, which must equal tests/scen/db_repl.report byte for byte on every target (the
+# script itself is not run)

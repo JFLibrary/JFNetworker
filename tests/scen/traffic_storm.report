@@ -1,0 +1,78 @@
+# JFNetworker-Szenario traffic_storm.scn: „Retry-Sturm, Budget und Breaker“, 6 Geräte, 5 Verbindungen, Seed 43
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/1 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/2 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/3 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/4 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINK-3-UPDOWN: TenGigabitEthernet1/0/5 is up
+   0.000000000  SW1     *Mar  1 00:00:00.000: %LINEPROTO-5-UPDOWN: line protocol on TenGigabitEthernet1/0/5 is up
+   0.000000000  --      run 5s
+   5.000000000  ok      expect WEB1 svc web metric requests >= 130 over 3s (141)
+   5.000000000  ok      expect WEB1 svc web metric requests <= 154 over 3s (141)
+   5.000000000  ok      expect WEB2 svc web metric requests >= 130 over 3s (137.333)
+   5.000000000  ok      expect LB svc lb metric retries >= 75 over 3s (78.333)
+   5.000000000  ok      expect GEN svc load metric status_5xx <= 4 over 3s (1.333)
+   5.000000000  LB      root@LB:~# lbctl
+   5.000000000  LB      Loadbalancer lb: HTTP auf Port 80, Verfahren round-robin, ohne Health Checks
+   5.000000000  LB      Anfragen 1000, beendet 1000, offen 0, Fehler 0 (ohne Backend 0), Wiederholungen 394
+   5.000000000  LB      Antwortzeit p50 2,015 ms, p95 21,233 ms, p99 43,016 ms
+   5.000000000  LB      Abgewiesen: Rate-Limit 0, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 0, Backends ausgeschlossen 0
+   5.000000000  LB      
+   5.000000000  LB      Backend  Pool     Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+   5.000000000  LB      web1     default  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      708     188     2,007 ms
+   5.000000000  LB      web2     default  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      686     213     2,007 ms
+   5.000000000  --      run 10ms
+   5.010000000  ok      expect LB output contains "Abgewiesen: Rate-Limit 0"
+   5.010000000  --      svc set LB lb retry.budget 0.1
+   5.010000000  --      run 5s
+  10.010000000  ok      expect WEB1 svc web metric requests <= 112 over 3s (100)
+  10.010000000  ok      expect LB svc lb metric budget_denied >= 30 over 3s (61.333)
+  10.010000000  ok      expect GEN svc load metric status_5xx >= 30 over 3s (61.333)
+  10.010000000  LB      root@LB:~# lbctl
+  10.010000000  LB      Loadbalancer lb: HTTP auf Port 80, Verfahren round-robin, ohne Health Checks
+  10.010000000  LB      Anfragen 2002, beendet 2002, offen 0, Fehler 0 (ohne Backend 0), Wiederholungen 395
+  10.010000000  LB      Antwortzeit p50 2,015 ms, p95 9,043 ms, p99 43,016 ms
+  10.010000000  LB      Abgewiesen: Rate-Limit 0, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 299, Backends ausgeschlossen 0
+  10.010000000  LB      
+  10.010000000  LB      Backend  Pool     Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+  10.010000000  LB      web1     default  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      1209    341     2,007 ms
+  10.010000000  LB      web2     default  10.0.0.12:80  1        verfügbar  geschlossen  0 ns  0      1188    360     2,007 ms
+  10.010000000  --      run 10ms
+  10.020000000  ok      expect LB output contains "Retry-Budget verbraucht"
+  10.020000000  --      svc set LB lb breaker.failures 10 breaker.open_ms 2000
+  10.020000000  --      svc set WEB2 web error_rate 1
+  10.020000000  --      run 5s
+  15.020000000  ok      expect WEB2 svc web metric requests <= 5 over 3s (0.666)
+  15.020000000  ok      expect LB svc lb metric min breakers_open == 1 over 3s (1)
+  15.020000000  ok      expect LB svc lb metric fail_fast == 0 over 3s (0)
+  15.020000000  LB      root@LB:~# lbctl
+  15.020000000  LB      Loadbalancer lb: HTTP auf Port 80, Verfahren round-robin, ohne Health Checks
+  15.020000000  LB      Anfragen 3004, beendet 3004, offen 0, Fehler 0 (ohne Backend 0), Wiederholungen 593
+  15.020000000  LB      Antwortzeit p50 2,015 ms, p95 9,043 ms, p99 43,018 ms
+  15.020000000  LB      Abgewiesen: Rate-Limit 0, Warteschlange voll 0, zu lange gewartet 0, Breaker offen 0; Retry-Budget verbraucht 465, Backends ausgeschlossen 0
+  15.020000000  LB      
+  15.020000000  LB      Backend  Pool     Adresse       Gewicht  Zustand    Breaker      seit  offen  gesamt  Fehler  p99
+  15.020000000  LB      web1     default  10.0.0.11:80  1        verfügbar  geschlossen  0 ns  0      2396    698     2,007 ms
+  15.020000000  LB      web2     default  10.0.0.12:80  1        verfügbar  offen        0 ns  0      1201    373     2,007 ms
+  15.020000000  --      run 10ms
+  15.030000000  ok      expect LB output contains "offen"
+  15.030000000  --      svc set WEB2 web error_rate 0
+  15.030000000  --      run 5s
+  20.030000000  ok      expect LB svc lb metric breakers_open == 0 (0)
+  20.030000000  ok      expect WEB2 svc web metric requests >= 80 over 3s (100.333)
+  20.030000000  PC      root@PC:~# curl -s -i http://10.0.0.10/
+  20.030000000  --      run 100ms
+  20.032007854  PC      HTTP/1.1 200 OK
+  20.032007854  PC      Content-Type: text/plain
+  20.032007854  PC      Content-Length: 15
+  20.032007854  PC      Connection: keep-alive
+  20.032007854  PC      Server: jfn-httpd/1.0
+  20.032007854  PC      Date: Thu, 01 Jan 2026 00:00:21 GMT
+  20.032007854  PC      X-Served-By: web1
+  20.032007854  PC      
+  20.032007854  PC      Hallo von WEB1
+  20.130000000  ok      expect PC output contains "X-Served-By: web"
+# 17 von 17 Erwartungen erfüllt

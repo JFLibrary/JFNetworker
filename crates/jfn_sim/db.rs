@@ -15,7 +15,9 @@
 //   HTTP   POST /query    the body: the statement, or JSON {"sql": "..", "params": [1, "x", {"draw": true}],
 //                         "txn": 7}; "txn" also as ?txn=7 or the header X-Txn.  {"draw": true}: a key by the
 //                         table's distribution, the answer says which ("drawn")
-//          GET /_db/health  state, role and log positions (the seam of replication)
+//          GET /_db/health  state, role and log positions; with replication also epoch, applied position, lag
+//                           and the replicas (dbrepl.rs)
+//          GET /_db/health/replica?max_lag_ms=N   with replication: 200 for a replica within N ms, else 503
 //          GET /_db/stats   the numbers and the tables
 //   answer JSON: {"ok": true, "rows": [{..}], "count": 1, "txn": 7, "drawn": 5, "truncated": false, "figures":
 //          {"rows_examined": 1, "pages_hit": 3, "pages_missed": 1, "lock_wait_us": 0, "us": 180}}, an error
@@ -26,7 +28,11 @@
 //
 //   Db::view / Engine::db_view        what the window and dbctl show
 //   Db::wal_since(lsn), lsn(), flushed_lsn()   log positions and a bounded tail of records: what a replica
-//                                     will fetch and apply (SA5 builds on it; there is no replication here)
+//                                     fetches and applies
+//   "replication": {...}              a primary or a replica (dbrepl.rs, a child module: config, the wire,
+//                                     modes, lag, promotion, fencing, the base copy); Db::repl, Db::promote,
+//                                     Db::repl_view; without it nothing of replication runs and every path
+//                                     below is as it was
 //   Db::tables(), Db::explain(sql)    for dbctl and the tests
 //   Db::rows_of(...)                  a table's values as of now (the tests)
 //
@@ -64,7 +70,10 @@
 // deadlocks, lock_waits, lock_timeouts, idle_aborts, refused, requests, active, inflight, txns, p50_us, p95_us,
 // p99_us, pool_hits, pool_misses, pool_hit_pm, pool_use_pm, pool_bytes, dirty_pages, rows_examined, pages_read,
 // wal_flushes, group_pm (commits per flush, thousandths), wal_bytes, lsn, flushed_lsn, lost_commits, recoveries,
-// recovery_ms, touched_rows, forgotten, old_versions.
+// recovery_ms, touched_rows, forgotten, old_versions; with replication also role, epoch, replicas, lag_ms,
+// lag_bytes, applied_lsn, applied_records, applied_commits, stale_reads, read_waits, sync_waits, sync_waiting,
+// sync_fallbacks, repl_bytes_out, repl_bytes_in, copies, failover_lost, split_commits, fenced_lost, fenced,
+// lag_p50_us, lag_p99_us (dbrepl.rs).
 
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -88,6 +97,11 @@ use crate::httpsvc::decimal;
 use crate::kernel::{Engine, Ns, MS, SEC, US};
 use crate::os::{Metric, OsApi, Service, SvcEvent};
 use crate::series::{metric_kind_of, LatWindow, MetricKind, LAT};
+
+/// replication (SA5): a child module, it works on the database's own state
+#[path = "dbrepl.rs"]
+pub mod repl;
+pub use repl::{FollowerView, Mode as ReplMode, Repl, ReplCfg, ReplStats, ReplView, Role as ReplRole};
 
 /// timer keys: its own deadlines, the server side
 const K_OWN: u32 = 0;
@@ -120,6 +134,8 @@ enum DTimer {
     Recovered,
     /// an index is built
     Built(u64),
+    /// replication's own (dbrepl.rs)
+    Repl(repl::RT),
 }
 
 /// its settings
@@ -274,6 +290,8 @@ struct Waiter {
 pub struct WalRec {
     pub lsn: u64,
     pub txn: u64,
+    /// a commit with replication: when it counted on the primary (the lag of a replica counts from here)
+    pub at: Ns,
     pub kind: WalKind,
 }
 
@@ -281,6 +299,8 @@ pub struct WalRec {
 pub enum WalKind {
     Row { table: u16, key: u64, vals: Vec<(u16, Val)>, gone: bool },
     Commit,
+    /// a transaction that wrote ended without its commit (only with replication: a replica drops its rows)
+    Abort,
 }
 
 /// where a statement is
@@ -347,6 +367,8 @@ struct Exec {
     hits: u64,
     misses: u64,
     lock_wait: Ns,
+    /// a replica answers from a state older than the read asked for (replication)
+    stale: bool,
 }
 
 /// an index being built
@@ -427,6 +449,8 @@ pub struct Db {
     /// bound: hand over the tables
     forget_at: usize,
     close_next: bool,
+    /// replication (dbrepl.rs); None: none, and nothing of it runs
+    pub repl: Option<Box<Repl>>,
 }
 
 /// a table as the lab shows it
@@ -542,6 +566,7 @@ impl Db {
             seen: 0,
             forget_at: 0,
             close_next: false,
+            repl: None,
             cfg,
         }
     }
@@ -836,6 +861,15 @@ impl Db {
 
     fn request(&mut self, os: &mut OsApi, r: ReqIn) {
         let path = r.head.path();
+        // with replication its health says role, epoch, positions and lag, and a replica answers its own check
+        if self.repl.is_some()
+            && matches!(r.head.method.as_str(), "GET" | "HEAD")
+            && matches!(path, "/_db/health" | "/_db/health/replica")
+            && let Some((status, b)) = self.repl_health(os, &r)
+        {
+            self.reply(os, r.id, status, b, None);
+            return;
+        }
         match (r.head.method.as_str(), path) {
             ("POST", "/query") => self.query(os, r),
             ("GET" | "HEAD", "/_db/health") => {
@@ -879,6 +913,21 @@ impl Db {
             self.refuse(os, r.id, 503, "too_many_connections", &t, 0, true, Some(start));
             return;
         }
+        // a replica: its copy, the position a read needs
+        let (r, stale) = if self.repl.is_some() {
+            match self.repl_gate(os, r) {
+                Ok(x) => x,
+                Err(()) => return,
+            }
+        } else {
+            (r, false)
+        };
+        self.query_on(os, r, stale);
+    }
+
+    /// a request past its gates: its statement starts
+    fn query_on(&mut self, os: &mut OsApi, r: ReqIn, stale: bool) {
+        let start = r.at;
         let (sql, mut params, mut txn) = match Db::body_of(&r.body) {
             Ok(x) => x,
             Err(t) => {
@@ -950,6 +999,7 @@ impl Db {
             hits: 0,
             misses: 0,
             lock_wait: 0,
+            stale,
         };
         self.execs.insert(id, e);
         // its parsing first
@@ -1100,6 +1150,18 @@ impl Db {
     fn begin(&mut self, os: &mut OsApi, id: u64, e: &mut Exec) -> bool {
         self.stats.statements += 1;
         let stmt = e.stmt.clone();
+        // a replica (or a primary that is not one any more) takes no writes
+        if self.repl.is_some()
+            && let Some((code, text)) = self.repl_no_writes(&stmt)
+        {
+            if let Some(r) = self.repl.as_mut() {
+                r.stats.refused_writes += 1;
+            }
+            let retry = code != "read_only" && code != "fenced";
+            self.refuse(os, e.sid, 503, code, &text, 0, retry, Some(e.start));
+            self.statement_over(os, e);
+            return false;
+        }
         let r = match &*stmt {
             Stmt::Begin(iso) => self.do_begin(os, id, e, *iso),
             Stmt::Commit => self.do_commit(os, id, e),
@@ -1849,7 +1911,7 @@ impl Db {
         self.lsn += bytes;
         let lsn = self.lsn;
         self.stats.wal_bytes += bytes;
-        self.wal_rec(WalRec { lsn, txn, kind: WalKind::Row { table: ti as u16, key: k, vals: delta.clone(), gone } });
+        self.wal_rec(WalRec { lsn, txn, at: 0, kind: WalKind::Row { table: ti as u16, key: k, vals: delta.clone(), gone } });
         self.tables[ti].write(k, txn, lsn, delta, gone);
         if self.tables[ti].rows.get(&k).is_some_and(|r| r.vers.len() >= 2) {
             self.old.insert((ti as u16, k));
@@ -1867,7 +1929,10 @@ impl Db {
     }
 
     fn wal_rec(&mut self, r: WalRec) {
+        // (a replica keeps what it has not applied yet: its log is its queue)
+        let keep = self.repl.as_ref().filter(|x| x.role == ReplRole::Replica).map_or(u64::MAX, |x| x.applied);
         if self.wal_tail.len() >= self.cfg.wal_tail.max(1)
+            && self.wal_tail.front().is_some_and(|f| f.lsn <= keep)
             && let Some(old) = self.wal_tail.pop_front()
         {
             self.tail_floor = old.lsn;
@@ -1940,6 +2005,9 @@ impl Db {
         if e.truncated {
             b.push_str(",\"truncated\":true");
         }
+        if e.stale {
+            b.push_str(",\"stale\":true");
+        }
         b.push_str(&format!(",\"figures\":{{\"rows_examined\":{},\"pages_hit\":{},\"pages_missed\":{},\"lock_wait_us\":{},\"us\":{}}}}}\n", e.examined, e.hits, e.misses, e.lock_wait / US, now.saturating_sub(e.start) / US));
         b
     }
@@ -1967,7 +2035,7 @@ impl Db {
         self.lsn += REC_HEAD;
         let lsn = self.lsn;
         self.stats.wal_bytes += REC_HEAD;
-        self.wal_rec(WalRec { lsn, txn, kind: WalKind::Commit });
+        self.wal_rec(WalRec { lsn, txn, at: 0, kind: WalKind::Commit });
         if self.cfg.durable {
             e.phase = Phase::Flush;
             self.execs.insert(id, e);
@@ -1982,7 +2050,16 @@ impl Db {
         self.finalize(os, txn, lsn);
         self.acked.push_back((lsn, writes));
         let body = self.final_body(&mut e, os.now());
-        self.reply(os, e.sid, 200, body, Some(e.start));
+        if self.repl.is_some() {
+            // (it counts now: a replica's lag starts here)
+            let now = os.now();
+            if let Some(r) = self.wal_tail.back_mut() {
+                r.at = now;
+            }
+            self.repl_answer_commit(os, e.sid, body, e.start, lsn);
+        } else {
+            self.reply(os, e.sid, 200, body, Some(e.start));
+        }
         if !self.tick_armed {
             self.tick_armed = true;
             let at = os.now() + self.cfg.flush;
@@ -2020,6 +2097,7 @@ impl Db {
         let Some((to, group)) = self.flushing.take() else {
             return;
         };
+        let was = self.flushed;
         self.flushed = to;
         // what was answered without waiting is safe now
         while self.acked.front().is_some_and(|a| a.0 <= to) {
@@ -2033,7 +2111,11 @@ impl Db {
                 let txn = e.txn;
                 self.finalize(os, txn, to);
                 let body = self.final_body(&mut e, now);
-                self.reply(os, e.sid, 200, body, Some(e.start));
+                if self.repl.is_some() {
+                    self.repl_answer_commit(os, e.sid, body, e.start, to);
+                } else {
+                    self.reply(os, e.sid, 200, body, Some(e.start));
+                }
             }
         }
         if !self.pending.is_empty() {
@@ -2042,6 +2124,9 @@ impl Db {
         // what waited for the disk may go now
         self.prune_some(256);
         self.bound();
+        if self.repl.is_some() {
+            self.repl_flushed(os, was);
+        }
     }
 
     /// its versions count from here on, its locks go
@@ -2093,6 +2178,9 @@ impl Db {
         }
         if let Some(s) = t.snap {
             self.snap_drop(s);
+        }
+        if self.repl.is_some() && !t.writes.is_empty() {
+            self.repl_log_abort(txn);
         }
         for (ti, k) in &t.writes {
             if let Some(tb) = self.tables.get_mut(*ti as usize) {
@@ -2284,6 +2372,9 @@ impl Db {
         o.insert("max_rows", Value::u64(c.max_rows));
         o.insert("write_rows_max", Value::u64(c.write_rows_max));
         o.insert("seed", Value::u64(c.seed));
+        if let Some(r) = &self.repl {
+            o.insert("replication", r.cfg.value());
+        }
         mem_into(&mut o, &self.mem);
         o
     }
@@ -2358,6 +2449,7 @@ fn placeholder() -> Exec {
         hits: 0,
         misses: 0,
         lock_wait: 0,
+        stale: false,
     }
 }
 
@@ -2387,8 +2479,12 @@ impl Service for Db {
             }
         }
         self.recover_began = self.seen;
+        let restart = self.started;
         self.start_up(os);
         self.serve.start(os, "db");
+        if self.repl.is_some() {
+            self.repl_start(os, restart);
+        }
         self.wheel.arm(os);
     }
     fn on(&mut self, ev: SvcEvent, os: &mut OsApi) {
@@ -2416,11 +2512,19 @@ impl Service for Db {
                     }
                     DTimer::Checkpoint => self.checkpoint(os),
                     DTimer::CkptStep => self.ckpt_step(os),
-                    DTimer::Recovered => self.recovered(os),
+                    DTimer::Recovered => {
+                        self.recovered(os);
+                        if self.repl.is_some() {
+                            self.repl_apply_kick(os);
+                        }
+                    }
                     DTimer::Built(id) => self.build_step(os, id),
+                    DTimer::Repl(t) => self.repl_timer(os, t),
                 }
                 self.pump(os);
             }
+        } else if self.repl.as_ref().is_some_and(|r| r.owns(&ev)) {
+            self.repl_on(ev, os);
         } else if self.serve.on(&ev, os) {
             for r in self.serve.take() {
                 self.request(os, r);
@@ -2467,6 +2571,7 @@ impl Service for Db {
         self.recovering = None;
         self.serve.stop();
         self.wheel.clear();
+        self.repl_stop();
     }
     fn metrics(&self) -> Vec<Metric> {
         self.metrics_at(self.seen)
@@ -2477,7 +2582,7 @@ impl Service for Db {
         let (h, m) = self.recent_pool.sums(now);
         let (fl, gr) = self.recent_flush.sums(now);
         let used = self.pool.used();
-        alloc::vec![
+        let mut out = alloc::vec![
             Metric::new("requests", v(s.requests)),
             Metric::new("statements", v(s.statements)),
             Metric::new("selects", v(s.selects)),
@@ -2519,11 +2624,16 @@ impl Service for Db {
             Metric::new("touched_rows", v(self.touched())),
             Metric::new("forgotten", v(s.forgotten)),
             Metric::new("old_versions", self.old.iter().map(|(t, k)| self.tables.get(*t as usize).and_then(|x| x.rows.get(k)).map_or(0, |r| r.vers.len().saturating_sub(1))).sum::<usize>() as i64),
-        ]
+        ];
+        if self.repl.is_some() {
+            self.repl_metrics(now, &mut out);
+        }
+        out
     }
     fn metric_kind(&self, name: &str) -> MetricKind {
         match name {
             "txns" | "pool_bytes" | "dirty_pages" | "touched_rows" | "old_versions" | "lsn" | "flushed_lsn" => MetricKind::Gauge,
+            "role" | "epoch" | "replicas" | "lag_ms" | "lag_bytes" | "applied_lsn" | "sync_waiting" | "fenced" | "lag_p50_us" | "lag_p99_us" | "failover_lost" | "split_commits" | "fenced_lost" if self.repl.is_some() => MetricKind::Gauge,
             n => metric_kind_of(n),
         }
     }
@@ -2536,6 +2646,13 @@ impl Service for Db {
     fn status_msg(&self) -> Msg {
         if !self.serve.listening() {
             return msg!("Port {} ist nicht offen", self.cfg.port);
+        }
+        if self.repl.is_some()
+            && self.no_disk.is_none()
+            && self.recovering.is_none()
+            && let Some(m) = self.repl_status_msg()
+        {
+            return m;
         }
         if let Some((need, cap)) = self.no_disk {
             return msg!("Die Tabellen brauchen {}, die Platte hat {}", crate::disk::size_text(need), crate::disk::size_text(cap));
@@ -2565,7 +2682,7 @@ impl Service for Db {
     }
     fn footprint(&self) -> usize {
         // the pool's structure, the touched rows, what is on its way; the table's descriptions are shared
-        4096 + self.pool.bytes() + self.tables.iter().map(|t| t.bytes()).sum::<usize>() + self.execs.values().map(|e| 256 + e.body.len() + e.targets.len() * 8).sum::<usize>() + (self.txns.len() + self.locks.len()) * 128 + self.wal_tail.len() * 96 + self.lat.bytes()
+        4096 + self.pool.bytes() + self.tables.iter().map(|t| t.bytes()).sum::<usize>() + self.execs.values().map(|e| 256 + e.body.len() + e.targets.len() * 8).sum::<usize>() + (self.txns.len() + self.locks.len()) * 128 + self.wal_tail.len() * 96 + self.lat.bytes() + self.repl.as_ref().map_or(0, |r| r.footprint())
     }
     fn mem(&self) -> u64 {
         self.mem.bytes(self.serve.conns() as u64, self.pool.used() * self.cfg.layout.page)
@@ -2580,6 +2697,10 @@ impl Service for Db {
         };
         if self.cfg.port != f.cfg.port || self.cfg.layout != f.cfg.layout || self.cfg.seed != f.cfg.seed || self.tables_cfg != f.tables_cfg || self.disk_cfg != f.disk_cfg {
             return Err(msg!("Port, Seitengröße und Tabellen ändern sich nur mit einem Neustart."));
+        }
+        if self.repl.is_some() || f.repl.is_some() {
+            // (a copy that came keeps its seed: compare with the config's own)
+            self.repl_reconfigure(f.repl.as_deref())?;
         }
         let pool_was = self.cfg.pool_bytes;
         let keep = self.cfg.clone();
@@ -2689,7 +2810,13 @@ pub fn from_def_msg(c: &Value) -> Result<Box<dyn Service>, Msg> {
     let us = |k: &str, d: Ns| c.get(k).and_then(|v| decimal(v, US)).unwrap_or(d);
     let def = DbCfg::default();
     let list = c.get("tables").and_then(|v| v.as_array()).unwrap_or(&[]);
-    if list.is_empty() {
+    let port_cfg = c.get("port").and_then(|v| v.as_u64()).filter(|p| (1..=65535).contains(p)).unwrap_or(DB_PORT as u64) as u16;
+    let repl = match c.get("replication") {
+        Some(r) => Some(ReplCfg::of(r, port_cfg)?),
+        None => None,
+    };
+    // (a replica may leave its tables to the copy it gets from its primary)
+    if list.is_empty() && repl.as_ref().is_none_or(|r| r.role != ReplRole::Replica) {
         return Err(msg!("\u{201e}tables\u{201c} fehlt: eine Datenbank braucht mindestens eine Tabelle."));
     }
     let mut tables = Vec::with_capacity(list.len());
@@ -2737,12 +2864,21 @@ pub fn from_def_msg(c: &Value) -> Result<Box<dyn Service>, Msg> {
         redo_bps: c.get("redo_mbps").and_then(|v| decimal(v, 1_000_000)).unwrap_or(def.redo_bps).max(1),
         max_rows: num("max_rows", def.max_rows).clamp(1, 1_000_000),
         write_rows_max: num("write_rows_max", def.write_rows_max).clamp(1, 1_000_000),
-        wal_tail: num("wal_tail", def.wal_tail as u64).clamp(16, 1 << 20) as usize,
+        // (with replication the tail is what a primary can still send a replica that fell behind)
+        wal_tail: num("wal_tail", if repl.is_some() { 16_384 } else { def.wal_tail as u64 }).clamp(16, 1 << 20) as usize,
     };
     let mut d = Db::new(cfg, tables);
     d.mem = crate::res::SvcMem::of(c, 64, 256);
     d.disk_cfg = crate::disk::setup_of(c);
     d.tables_cfg = c.get("tables").cloned();
+    if let Some(r) = repl {
+        let mut x = Repl::new(r);
+        // a replica without tables of its own asks for a copy
+        if list.is_empty() {
+            x.need_copy_at_start();
+        }
+        d.repl = Some(Box::new(x));
+    }
     Ok(Box::new(d))
 }
 

@@ -122,7 +122,7 @@ fn hop_by_hop(name: &str) -> bool {
 }
 
 /// how long the backend lets an answer be kept: Some(0) for not at all, None: no word on it
-fn max_age(h: &Headers) -> Option<Ns> {
+pub(crate) fn max_age(h: &Headers) -> Option<Ns> {
     let cc = h.get("cache-control")?.to_ascii_lowercase();
     if ["no-store", "no-cache", "private"].iter().any(|t| cc.split(',').any(|p| p.trim() == *t)) {
         return Some(0);
