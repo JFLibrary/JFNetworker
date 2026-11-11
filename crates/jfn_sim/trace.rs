@@ -507,6 +507,26 @@ pub enum Note {
     Dot1x(crate::dot1xtrace::DNote),
     /// the zone firewall (fw.rs, fwtrace.rs)
     Fw(crate::fwtrace::FwNote),
+    /// replication of the database (dbrepl.rs): a replica streams from its primary from this position
+    DbReplConnected { primary: Ipv4, from: u64 },
+    /// a replica gets a base copy with this much data (most of it modelled)
+    DbReplCopy { bytes: u64 },
+    /// a replica's copy is complete, or it has caught up again after it fell behind
+    DbReplCaughtUp { lsn: u64 },
+    /// a replica fell behind its primary by more than a second
+    DbReplBehind { lag_ms: u64 },
+    /// a primary took a replica on / lost it
+    DbReplica { peer: Ipv4, up: bool },
+    /// a replica became primary in this epoch
+    DbPromoted { epoch: u64 },
+    /// a primary saw a higher epoch and takes no more writes (fencing)
+    DbFenced { epoch: u64 },
+    /// a replica follows the primary of a newer epoch
+    DbReplFollow { primary: Ipv4, epoch: u64 },
+    /// commits go async because no replica acknowledged in time (on), or back to their mode
+    DbSyncFallback { on: bool },
+    /// two primaries take writes
+    DbSplitBrain { other: Ipv4 },
 }
 
 /// the kind of DHCPREQUEST a client sends
@@ -709,6 +729,16 @@ impl Note {
                 | Note::MqAck { .. }
                 | Note::MqRedeliver { .. }
                 | Note::MqDead { .. }
+                | Note::DbReplConnected { .. }
+                | Note::DbReplCopy { .. }
+                | Note::DbReplCaughtUp { .. }
+                | Note::DbReplBehind { .. }
+                | Note::DbReplica { .. }
+                | Note::DbPromoted { .. }
+                | Note::DbFenced { .. }
+                | Note::DbReplFollow { .. }
+                | Note::DbSyncFallback { .. }
+                | Note::DbSplitBrain { .. }
         )
     }
     /// an HTTP decision (http.rs, httpsvc.rs)
@@ -1077,6 +1107,18 @@ impl Note {
             Note::MqAck { topic, id } => msg!("Queue {}: Nachricht {} bestätigt.", topic, id),
             Note::MqRedeliver { topic, id } => msg!("Queue {}: Nachricht {} nicht bestätigt, wieder in der Warteschlange.", topic, id),
             Note::MqDead { topic, id } => msg!("Queue {}: Nachricht {} zu oft zugestellt, aussortiert.", topic, id),
+            Note::DbReplConnected { primary, from } => msg!("Replikation: folgt dem Primary {} ab Position {}.", format!("{}", primary), from),
+            Note::DbReplCopy { bytes } => msg!("Replikation: bekommt eine Kopie der Daten ({}).", crate::disk::size_text(*bytes)),
+            Note::DbReplCaughtUp { lsn } => msg!("Replikation: hat aufgeholt, Position {}.", lsn),
+            Note::DbReplBehind { lag_ms } => msg!("Replikation: liegt {} ms hinter dem Primary.", lag_ms),
+            Note::DbReplica { peer, up: true } => msg!("Replikation: {} folgt jetzt diesem Primary.", format!("{}", peer)),
+            Note::DbReplica { peer, up: false } => msg!("Replikation: die Verbindung zum Replikat {} ist weg.", format!("{}", peer)),
+            Note::DbPromoted { epoch } => msg!("Replikation: ist jetzt Primary in Epoche {}.", epoch),
+            Note::DbFenced { epoch } => msg!("Replikation: ein Primary in Epoche {} ist da, diese Datenbank nimmt keine Schreibzugriffe mehr an.", epoch),
+            Note::DbReplFollow { primary, epoch } => msg!("Replikation: folgt dem neuen Primary {} in Epoche {}.", format!("{}", primary), epoch),
+            Note::DbSyncFallback { on: true } => msg!("Replikation: kein Replikat hat rechtzeitig bestätigt, Commits gehen jetzt async."),
+            Note::DbSyncFallback { on: false } => msg!("Replikation: die Replikate haben aufgeholt, Commits warten wieder auf sie."),
+            Note::DbSplitBrain { other } => msg!("Split Brain: auch {} nimmt Schreibzugriffe an.", format!("{}", other)),
             Note::ScriptBusy { svc, waiting } => msg!("Skript {} rechnet noch: das Ereignis wartet ({} vor ihm).", svc, waiting),
             Note::ScriptDropped { svc } => msg!("Skript {} überlastet: Datagramm verworfen.", svc),
             Note::ScriptError { svc, line, col, msg: text } => msg!("Skript {}: Fehler in Zeile {}, Spalte {}: {}", svc, line, col, text),

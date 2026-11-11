@@ -1,0 +1,73 @@
+{
+  "format": "jfnex",
+  "version": 1,
+  "name": "db_repl",
+  "title": "async, semi oder sync?",
+  "project": "db_repl.jfnet",
+  "load": {
+    "dev": "GEN",
+    "svc": "load",
+    "users": [
+      1,
+      8
+    ]
+  },
+  "timing": {
+    "warmup_s": 3,
+    "settle_s": 1,
+    "measure_s": 5,
+    "seeds": [
+      61
+    ]
+  },
+  "slo": {
+    "p99_ms": 50,
+    "errors_pct": 1
+  },
+  "series": [
+    {
+      "name": "Modus",
+      "axes": [
+        {
+          "kind": "config",
+          "name": "Commit",
+          "dev": "DB1",
+          "path": "db.replication.mode",
+          "values": [
+            "async",
+            "semi",
+            "sync"
+          ]
+        },
+        {
+          "kind": "link",
+          "name": "bis zum Replikat ms",
+          "dev": "DB2",
+          "path": "eth0",
+          "values": [
+            1,
+            10
+          ]
+        }
+      ]
+    }
+  ],
+  "figures": [
+    {
+      "name": "Rückstand p99 ms",
+      "dev": "DB2",
+      "svc": "db",
+      "metric": "lag_p99_us",
+      "div": 1000
+    },
+    {
+      "name": "verloren",
+      "dev": "DB2",
+      "svc": "db",
+      "metric": "failover_lost",
+      "off": "DB1",
+      "promote": "DB2",
+      "wait_s": 1
+    }
+  ]
+}

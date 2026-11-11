@@ -421,6 +421,8 @@ pub struct DbRoute {
     pub params: Vec<u16>,
     pub param: DbParam,
     pub retries: u32,
+    /// a plain SELECT (no FOR UPDATE): with a read address it goes there outside a transaction (SA5)
+    pub reads: Vec<bool>,
 }
 
 /// what a ? of a route's statement is
@@ -437,6 +439,14 @@ pub enum DbParam {
 pub struct DbBackend {
     pub host: String,
     pub port: u16,
+    /// replication (SA5): where plain SELECTs go outside a transaction (a replica or a load balancer in front
+    /// of replicas), how long a replica may wait for the position of this server's last write; the highest
+    /// position a write answered with, the reads sent there and those answered stale
+    pub read: Option<(String, u16)>,
+    pub read_wait: Ns,
+    pub lsn: u64,
+    pub reads: u64,
+    pub stale: u64,
 }
 
 /// how far a request is through its route's statements
@@ -926,11 +936,31 @@ impl HttpServer {
         if let Some(t) = run.txn {
             body.push_str(&format!(",\"txn\":{}", t));
         }
+        // a plain read outside a transaction goes to the read address, with the position of this server's last
+        // write (replication: a replica that has not applied it answers stale, or waits read_wait_ms first)
+        let mut to = (db.host.clone(), db.port);
+        let mut read = false;
+        if let Some((rh, rp)) = &db.read
+            && run.txn.is_none()
+            && run.route.reads.get(run.step).copied().unwrap_or(false)
+        {
+            to = (rh.clone(), *rp);
+            read = true;
+            if db.lsn > 0 {
+                body.push_str(&format!(",\"min_lsn\":{}", db.lsn));
+                if db.read_wait > 0 {
+                    body.push_str(&format!(",\"wait_ms\":{}", db.read_wait / MS));
+                }
+            }
+        }
         body.push('}');
         let mut h = Headers::new();
         h.add("Content-Type", "application/json");
-        let url = Url { host: db.host.clone(), port: db.port, target: String::from("/query") };
+        let url = Url { host: to.0, port: to.1, target: String::from("/query") };
         let id = up.http(os, "POST", url, h, body.into_bytes());
+        if read && let Some(d) = self.db.as_mut() {
+            d.reads += 1;
+        }
         self.backend_calls += 1;
         self.calls.insert(id, w);
     }
@@ -947,6 +977,18 @@ impl HttpServer {
         };
         if d.status >= 500 {
             self.backend_errors += 1;
+        }
+        // replication: the position of a write, a stale answer of a replica
+        if d.status == 200
+            && let Some(db) = self.db.as_mut()
+            && db.read.is_some()
+        {
+            if let Some(l) = number(&d.body, "lsn") {
+                db.lsn = db.lsn.max(l);
+            }
+            if d.body.windows(12).any(|x| x == b"\"stale\":true") {
+                db.stale += 1;
+            }
         }
         let Some(run) = w.db.as_mut() else {
             return;
@@ -1211,6 +1253,10 @@ impl Service for HttpServer {
             m.push(Metric::new("backend_errors", v(self.backend_errors)));
             m.push(Metric::new("failovers", v(up.stats.failovers)));
             m.push(Metric::new("backend_p99_us", us(up.latency(now).2)));
+        }
+        if let Some(d) = self.db.as_ref().filter(|d| d.read.is_some()) {
+            m.push(Metric::new("db_reads", v(d.reads)));
+            m.push(Metric::new("db_stale", v(d.stale)));
         }
         m
     }
@@ -2160,9 +2206,13 @@ fn db_route_of(r: &Value) -> Result<DbRoute, Msg> {
         return Err(msg!("Eine Route mit \u{201e}backend\u{201c} db braucht \u{201e}sql\u{201c}."));
     }
     let mut params = Vec::with_capacity(list.len());
+    let mut reads = Vec::with_capacity(list.len());
     for s in &list {
         match crate::dbsql::parse(s) {
-            Ok(st) => params.push(crate::dbsql::params_of(&st)),
+            Ok(st) => {
+                params.push(crate::dbsql::params_of(&st));
+                reads.push(matches!(&st, crate::dbsql::Stmt::Select(x) if !x.for_update));
+            }
             Err(e) => return Err(msg!("Die Anweisung \u{201e}{}\u{201c}: {}", s.clone(), e.line())),
         }
     }
@@ -2175,7 +2225,7 @@ fn db_route_of(r: &Value) -> Result<DbRoute, Msg> {
             None => return Err(msg!("\u{201e}param\u{201c} kennt {} nicht (rest, draw, query:NAME, none).", p)),
         },
     };
-    Ok(DbRoute { sql: list, params, param, retries: r.get("retries").and_then(|v| v.as_u64()).unwrap_or(0).min(1000) as u32 })
+    Ok(DbRoute { sql: list, params, param, retries: r.get("retries").and_then(|v| v.as_u64()).unwrap_or(0).min(1000) as u32, reads })
 }
 
 /// from_def, the reason as a message for the app's catalogue
@@ -2277,7 +2327,19 @@ pub fn from_def_msg(kind: &str, c: &Value) -> Result<Box<dyn Service>, Msg> {
                     p @ 1..=65535 => p as u16,
                     p => return Err(msg!("Port {} gibt es nicht.", p)),
                 };
-                s.db = Some(DbBackend { host: String::from(addr.trim()), port });
+                let mut b = DbBackend { host: String::from(addr.trim()), port, read: None, read_wait: 0, lsn: 0, reads: 0, stale: 0 };
+                if let Some(ra) = d.get("read").and_then(|v| v.as_str()) {
+                    if netpkt::Ipv4::parse(ra.trim()).is_none() {
+                        return Err(msg!("\u{201e}db.read\u{201c}: \u{201e}{}\u{201c} ist keine IPv4-Adresse.", ra));
+                    }
+                    let rp = match d.get("read_port").and_then(|v| v.as_u64()).unwrap_or(port as u64) {
+                        p @ 1..=65535 => p as u16,
+                        p => return Err(msg!("Port {} gibt es nicht.", p)),
+                    };
+                    b.read = Some((String::from(ra.trim()), rp));
+                    b.read_wait = d.get("read_wait_ms").and_then(|v| decimal(v, MS)).unwrap_or(0).min(60 * SEC);
+                }
+                s.db = Some(b);
                 s.db_cfg = Some(d.clone());
                 let up = s.upstream.get_or_insert_with(|| crate::kv::KvClient::new(K_UP));
                 up.timeout = up.timeout.max(d.get("timeout_ms").and_then(|v| decimal(v, MS)).unwrap_or(5000 * MS).max(MS));

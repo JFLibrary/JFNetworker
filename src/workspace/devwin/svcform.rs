@@ -133,6 +133,10 @@ const CH_DB_DIST: &[Ch] = &[Ch { word: "uniform", label: "gleichmäßig" }, Ch {
 const CH_DURABILITY: &[Ch] = &[Ch { word: "full", label: "voll: Antwort erst nach dem Schreiben" }, Ch { word: "relaxed", label: "locker: Antwort sofort, Verlust möglich" }];
 // i18n: label
 const CH_ISOLATION: &[Ch] = &[Ch { word: "read committed", label: "read committed: je Anweisung neu" }, Ch { word: "repeatable read", label: "repeatable read: ein Stand je Transaktion" }];
+// i18n: label
+const CH_REPL_ROLE: &[Ch] = &[Ch { word: "primary", label: "Primary: nimmt Schreibzugriffe an" }, Ch { word: "replica", label: "Replikat: folgt einem Primary" }];
+// i18n: label
+const CH_REPL_MODE: &[Ch] = &[Ch { word: "async", label: "async: nur das eigene Schreiben" }, Ch { word: "semi", label: "semi: ein Replikat hat den Satz empfangen" }, Ch { word: "sync", label: "sync: ein Replikat hat ihn geschrieben" }, Ch { word: "apply", label: "apply: ein Replikat hat ihn angewendet" }];
 
 // what holds a service in memory, the same in every form
 // i18n: label unit help
@@ -280,7 +284,7 @@ static KV: [Group; 2] = [
 ];
 
 // i18n: title label unit help
-static DB: [Group; 3] = [
+static DB: [Group; 5] = [
     Group {
         title: "Datenbank",
         rare: false,
@@ -319,6 +323,32 @@ static DB: [Group; 3] = [
             Field { key: "touched_max", label: "Geänderte Zeilen", unit: "", help: "Grenze des Simulators: darüber vergisst er die ältesten Werte und zählt das. Die Zeiten stimmen weiter, diese Werte nicht.", kind: Fk::Int },
             MEM_FIELDS[0],
             MEM_FIELDS[1],
+        ],
+    },
+    // (SA5: at the end, so the fields before keep their places)
+    Group {
+        title: "Replikation",
+        rare: false,
+        fields: &[
+            Field { key: "replication.role", label: "Rolle", unit: "", help: "Ohne Rolle hat die Datenbank keine Replikation. Ein Replikat folgt seinem Primary über das Netz, wendet sein Log an und nimmt nur Lesezugriffe an.", kind: Fk::Choice(CH_REPL_ROLE) },
+            Field { key: "replication.primary", label: "Primary", unit: "", help: "Die Adresse des Primary, dem ein Replikat folgt.", kind: Fk::Text },
+            Field { key: "replication.mode", label: "Commit wartet auf", unit: "", help: "Worauf ein Commit des Primary wartet, bevor er antwortet: je mehr, desto weniger geht bei einem Ausfall verloren und desto länger dauert die Antwort.", kind: Fk::Choice(CH_REPL_MODE) },
+            Field { key: "replication.sync_count", label: "Replikate je Commit", unit: "", help: "Auf so viele Replikate wartet ein Commit bei semi, sync und apply.", kind: Fk::Int },
+            Field { key: "replication.sync_timeout_ms", label: "Höchstens warten", unit: "ms", help: "Danach fällt der Primary auf async zurück und sagt es; 0 heißt: er wartet immer.", kind: Fk::Dec },
+            Field { key: "replication.fencing", label: "Fencing", unit: "", help: "Ein alter Primary, der von einem neueren hört, nimmt keine Schreibzugriffe mehr an. Ohne Fencing nehmen beide welche an: Split Brain.", kind: Fk::Flag },
+            Field { key: "replication.failover_ms", label: "Selbst Primary nach", unit: "ms", help: "Ein Replikat wird nach so langer Stille seines Primary selbst Primary; 0 heißt nie. Nur an einem Replikat einstellen.", kind: Fk::Dec },
+        ],
+    },
+    Group {
+        title: "Replikation: Kosten und Zeiten",
+        rare: true,
+        fields: &[
+            Field { key: "replication.apply_us", label: "CPU je Satz", unit: "µs", help: "Annahme: jeder Satz des Logs, den ein Replikat anwendet, auf einem Referenzkern.", kind: Fk::Dec },
+            Field { key: "replication.apply_row_us", label: "CPU je geänderter Zeile", unit: "µs", help: "Annahme: dazu jede Zeile, die ein Satz ändert.", kind: Fk::Dec },
+            Field { key: "replication.port", label: "Port des Logs", unit: "", help: "Über diesen Port spricht die Replikation; die Vorgabe ist der Port der Datenbank plus 1.", kind: Fk::Int },
+            Field { key: "replication.heartbeat_ms", label: "Lebenszeichen alle", unit: "ms", help: "So oft melden sich Primary und Replikate, wenn sonst nichts geht.", kind: Fk::Dec },
+            Field { key: "replication.timeout_ms", label: "Verbindung weg nach", unit: "ms", help: "So lange ohne ein Wort gilt die Verbindung als weg.", kind: Fk::Dec },
+            Field { key: "replication.fence_wait_ms", label: "Nach einem Neustart fragen", unit: "ms", help: "So lange fragt ein Primary nach einem Neustart seine Mitglieder nach einer neueren Epoche, bevor er Schreibzugriffe annimmt.", kind: Fk::Dec },
         ],
     },
 ];

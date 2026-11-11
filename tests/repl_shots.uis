@@ -1,0 +1,55 @@
+#!args --verify-dirty --open tests/fixtures/db_repl.jfnet
+# pictures of replication (workspace/devwin/svcform.rs, metrics.rs), light and dark, at 100 and 150 %, narrow: the
+# form of a replica with the group of replication, the Metriken panel of the replica under load with its lag.
+# build/jfnetworker/repl_*.png.  Ids as in repl_forms.uis
+size 1500 1000
+theme light
+wait 6000
+# ---- the form of the replica DB2
+dblclick listitem:"DB2" shift
+expect window 26624 open
+resizewin 26624 900 1400
+click tab:"Dienste"
+click button:"Einstellungen …"
+wait 100
+expect #140590 text "10.0.0.30"
+focus #140600
+wait 100
+shot build/jfnetworker/repl_form_light_100.png window 26624
+theme dark
+shot build/jfnetworker/repl_form_dark_100.png window 26624
+scale 150 window 26624
+wait 100
+shot build/jfnetworker/repl_form_dark_150.png window 26624
+theme light
+shot build/jfnetworker/repl_form_light_150.png window 26624
+scale 100 window 26624
+click #140296
+wait 100
+expect text:"Annahme: dazu jede Zeile, die ein Satz ändert." exists
+shot build/jfnetworker/repl_form_costs_light.png window 26624
+resizewin 26624 560 1000
+wait 100
+shot build/jfnetworker/repl_form_narrow.png window 26624
+resizewin 26624 900 1400
+click #140289
+close window 26624
+wait 100
+# ---- the Metriken panel: the replica's lag under load (DB2 chosen first: the panel takes its first service)
+click listitem:"DB2"
+key ctrl+shift+m
+wait 300
+expect text:"Rückstand der Replikation" exists
+shot build/jfnetworker/repl_metrics_light.png
+theme dark
+shot build/jfnetworker/repl_metrics_dark.png
+scale 150
+wait 100
+shot build/jfnetworker/repl_metrics_dark_150.png
+theme light
+shot build/jfnetworker/repl_metrics_light_150.png
+scale 100
+size 1000 800
+wait 100
+shot build/jfnetworker/repl_metrics_narrow.png
+size 1500 1000

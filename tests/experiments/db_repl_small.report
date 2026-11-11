@@ -1,0 +1,17 @@
+# JFNetworker-Experiment db_repl_small.jfnex: „Der kurze Lauf der Testsuite“
+# Konfigurationen: 2, Laststufen: 1, Seeds: 1; 2 s Warmlauf, je Stufe 1 s Übergang und 2 s Messung (virtuelle Zeit)
+# SLO: p99 bis 50 ms, Fehler bis 1 %
+# Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote
+
+Modus Commit async (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+4 Nutzer    3982.500     1.0     1.0     1.0       1.4      0.00    1.1  0.000159  Knie        -               6.4        20
+
+Modus Commit sync (2.290 €/h)
+Last      erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass  Rückstand p99 ms  verloren
+4 Nutzer     352.500    11.6    11.6    11.6      12.0      0.00    0.1  0.001804  Knie        -               6.0         0
+
+Zusammenfassung
+Konfiguration         €/h      Knie  Maximum/s  €/1000 am Knie  begrenzt durch
+Modus Commit async  2.290  4 Nutzer   3982.500        0.000159  -
+Modus Commit sync   2.290  4 Nutzer    352.500        0.001804  -

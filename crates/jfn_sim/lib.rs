@@ -63,7 +63,8 @@
 //            clones of the engine at full speed; results, knee, cost, CSV
 //   svcform  what the window's forms ask of the lab's services: their settings, what they lack (SA3)
 //   db       the database service: SQL-shaped statements over modelled tables, buffer pool, row locks,
-//            versions, a log with group commit and recovery (SA4); dbsql its statements, dbstore its tables
+//            versions, a log with group commit and recovery (SA4); dbsql its statements, dbstore its tables;
+//            dbrepl (db::repl) its replication over the network: modes, lag, promotion, fencing (SA5)
 //   units    services as units on Linux hosts: unit files, enable, restart policies
 //   deploy   rolling deployments: files and a unit, host by host, with a health check
 //   lb       load balancer: HTTP or TCP, round robin, least connections, weighted, consistent

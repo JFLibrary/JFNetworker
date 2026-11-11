@@ -96,6 +96,9 @@
 //                                                      (res.rs)
 //   ServiceConfig                                      a service takes a new config while it runs
 //                                                      (Service::reconfigure: lab.rs)
+//   DbPromote                                          a replica of the database becomes primary
+//                                                      (dbrepl.rs; the engine counts what the
+//                                                      failover loses)
 //   ConsoleLang                                        the language of the console's own tools
 //                                                      (lbctl, systemctl ...: Engine::console_lang;
 //                                                      the window's language, jfn-sim --lang)
@@ -334,6 +337,8 @@ pub enum Action {
     /// a service takes its whole config anew without a restart (Service::reconfigure; refused with
     /// the reason when it cannot, and then nothing has changed)
     ServiceConfig { dev: u32, svc: String, config: agent_core::jmap::Value },
+    /// a replica of the database becomes primary (dbrepl.rs: Db::promote; lab.rs)
+    DbPromote { dev: u32, svc: String },
 }
 
 /// why an action was refused (German text through Display)

@@ -54,6 +54,8 @@
 //   FwPolicyUnused      a policy no zone pair uses (warning)
 //   ServiceNotStarted   a service of the project that does not start: what it lacks, as a form
 //                       shows it (svcform::missing), else the refusal of its config (warning)
+//   ReplicaNoPrimary    a replica of the database that has not reached its primary for 5 s (warning;
+//                       dbrepl.rs: Db::repl_problem)
 //
 // Problem::text is German; Problem::msg is the same as a template with arguments for the app's
 // catalogue (jfn_model::msg).
@@ -163,6 +165,8 @@ pub enum ProblemKind {
     SerialNoClock,
     /// a serial line whose ends run different encapsulations (serial.rs)
     SerialEncap,
+    /// a replica of the database that does not reach its primary (dbrepl.rs)
+    ReplicaNoPrimary,
 }
 
 /// a problem of the set-up
@@ -789,6 +793,12 @@ impl Engine {
             for s in &os.svcs {
                 if let Some(why) = s.svc.as_ref().and_then(|x| x.as_any().downcast_ref::<crate::db::Db>()).and_then(|d| d.disk_problem()) {
                     out.push(problem(ProblemKind::ServiceNotStarted, Severity::Warning, dev, None, None, Vec::new(), msg!("Der Dienst {} läuft nicht. {}", s.name.clone(), why)));
+                }
+                // a replica without its primary for seconds (replication)
+                if s.running
+                    && let Some(why) = s.svc.as_ref().and_then(|x| x.as_any().downcast_ref::<crate::db::Db>()).and_then(|d| d.repl_problem(self.now))
+                {
+                    out.push(problem(ProblemKind::ReplicaNoPrimary, Severity::Warning, dev, None, None, Vec::new(), msg!("Der Dienst {}: {}", s.name.clone(), why)));
                 }
             }
         }

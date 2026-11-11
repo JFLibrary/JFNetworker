@@ -4151,6 +4151,91 @@ Die Vorlage „Größer oder mehr?“ nimmt jetzt auch die echte Datenbank: Jede
 
 Für Programme: `Db::{view, tables, lock_list, explain, lsn, flushed_lsn, wal_since, table, row_now, pool}`, `Engine::db_view`, `dbstore::{Table, Pool, Layout, Zipf}`, `dbsql::{parse, params_of}`, `catalog::preset_config`, `Serve::rank`, `KvClient::set_conns`. Geprüft wird in der Selbsttest-Gruppe `db` ([`src/dbtest.rs`](src/dbtest.rs)), mit `scen_db_basic.uis`, `db_scale_small.uis` und den Fensterskripten `db_forms.uis`, `db_forms_en.uis` und `db_shots.uis`.
 
+#### Replikation
+
+Eine Datenbank kann Primary sein oder Replikat. Das Replikat folgt seinem Primary über eine TCP-Verbindung im simulierten Netz, schreibt das Log, das es bekommt, auf seine eigene Platte und wendet es nacheinander auf seiner eigenen CPU an. Ohne `"replication"` gibt es nichts davon: kein Port, keine Zahl, kein Ereignis, kein Byte mehr auf dem Netz; alte Projekte laufen Byte für Byte wie vorher.
+
+```text
+db {"tables": [...], "replication": {"role": "primary", "mode": "sync", "sync_count": 1, "sync_timeout_ms": 10000}}
+db {"replication": {"role": "replica", "primary": "10.0.2.30"}}              ohne Tabellen: es holt sich eine Kopie
+db {"tables": [...], "replication": {"primary": "10.0.2.30", "apply_us": 2, "apply_row_us": 10}}
+   weitere: "port" (Vorgabe: Port der Datenbank + 1), "heartbeat_ms": 500, "timeout_ms": 3000, "retry_ms": 1000,
+   "fencing": true, "fence_wait_ms": 2000, "failover_ms": 0
+Webserver "db": {"addr": "10.0.2.30", "read": "10.0.2.40", "read_port": 7100, "read_wait_ms": 0}
+GET /_db/health/replica?max_lag_ms=N   200 für ein Replikat, das verbunden ist und höchstens N ms zurückliegt, sonst 503
+dbctl replication | dbctl promote          Szenario: db promote DB2 db          Action::DbPromote
+```
+
+| Einstellung | Vorgabe | Bedeutung |
+|---|---|---|
+| `role` | `primary` (mit `primary`: `replica`) | ein Primary nimmt Schreibzugriffe an, ein Replikat nur Lesezugriffe |
+| `primary` | – | die Adresse, der ein Replikat folgt |
+| `mode` | `async` | worauf ein Commit wartet: `async` nur auf das eigene Schreiben, `semi` bis `sync_count` Replikate den Satz empfangen haben, `sync` bis sie ihn geschrieben haben, `apply` bis sie ihn angewendet haben |
+| `sync_timeout_ms` | 10000 | so lange wartet ein Commit, dann fällt der Primary auf async zurück (0: er wartet immer) |
+| `apply_us`, `apply_row_us` | 2 µs, 10 µs | **Annahmen:** CPU je Satz des Logs und je geänderter Zeile beim Anwenden, auf dem Referenzkern |
+| `fencing` | an | ein alter Primary, der von einer höheren Epoche hört, nimmt keine Schreibzugriffe mehr an |
+| `failover_ms` | 0 (aus) | ein Replikat wird nach so langer Stille seines Primary selbst Primary |
+| `wal_tail` | 16 384 mit Replikation | so viele Sätze kann ein Primary einem Replikat noch nachschicken; wer weiter zurückliegt, bekommt eine Kopie |
+
+**Was echt ist.** Die Sätze des Logs gehen als echte Segmente über das Netz, und zwar so viele Bytes, wie sie im Log belegen (eine Zeile `row_bytes` + 64, ein Commit 64), also zählen Verzögerung, Verlust, Bandbreite und Partitionen. Ein Primary schickt nur, was seine Platte schon hat: Ein Absturz des Primary nimmt einem Replikat nichts zurück, was es schon hält. Das Replikat schreibt, was kommt, in Gruppen auf seine Platte und wendet an, was seine Platte hat, ein Auftrag nach dem anderen auf seiner CPU (`apply_us` je Satz, `apply_row_us` je Zeile, die Seite der Zeile durch seinen eigenen Puffer; ein Fehltreffer liest von seiner Platte). Die Zeilen einer Transaktion erscheinen mit ihrem Commit gemeinsam; ein Abbruch lässt sie fallen. Ein Replikat antwortet aus dem, was es angewendet hat, und hat seinen eigenen Puffer, der kalt beginnt. Sperren gibt der Primary schon beim lokalen Schreiben frei; ein Commit, der auf Replikate wartet, hält also keine Zeilen fest, nur seine Antwort wartet.
+
+**Was modelliert ist.** Die Kopie (Basiskopie): Die geänderten Zeilen gehen echt über das Netz, je so groß wie ein Satz des Logs. Die übrigen Daten (Heap und Indizes, `bulk`) laufen nicht als Gigabytes von Segmenten: Ihre ersten 4 MiB gehen echt und messen den Weg, der Rest dauert so lange, wie diese Rate ergibt, ohne das Kabel zu belasten, und die Platte des Replikats schreibt alles. Ein Replikat bekommt eine Kopie, wenn es keine oder andere Tabellen hat, wenn der Primary seine Position nicht mehr im Log hat oder wenn sein Log nach einer Beförderung anders weiterging. Bis es das Log bis zum Ende der Kopie angewendet hat, beantwortet es keine Lesezugriffe (503 `copying`). Ein Replikat mit denselben Tabellen und demselben Seed wie sein Primary beginnt mit demselben Stand, als wäre es vor dem Start kopiert worden.
+
+**Die Zahlen lesen.**
+
+| Zahl | wo | Bedeutung |
+|---|---|---|
+| `lag_ms`, `lag_bytes` | Replikat | jetzt: die Zeit seit dem Commit (auf dem Primary) des ältesten Commits, den es noch nicht angewendet hat, 0 ohne einen; die Position des Primary minus seine angewendete |
+| `lag_p50_us`, `lag_p99_us` | Replikat | je Commit: vom Commit auf dem Primary bis angewendet hier |
+| `lag_ms`, `lag_bytes` | Primary | das langsamste Replikat nach seinen Bestätigungen |
+| `applied_commits`, `applied_records` | Replikat | angewendet (ihre Rate ist das Tempo des Anwendens) |
+| `stale_reads`, `read_waits` | Replikat | Lesezugriffe, die einen älteren Stand bekamen als verlangt; die gewartet haben |
+| `sync_waits`, `sync_waiting`, `sync_fallbacks` | Primary | Commits, die gewartet haben, die gerade warten, wie oft er auf async zurückfiel |
+| `failover_lost` | neuer Primary | beantwortete Commits des alten Primary, die er nie bekam (gezählt bei der Beförderung) |
+| `split_commits`, `fenced_lost` | beide Seiten | Commits seit der Abzweigung im Split Brain; die ein abgegrenzter Primary verliert |
+| `role`, `epoch`, `replicas`, `fenced` | beide | 1 Primary, 2 Replikat; die Epoche; die Replikate, die folgen; abgegrenzt |
+
+**Veraltetes Lesen.** Mit Replikation nennt die Antwort eines Commits seine Position (`"lsn"`). Ein Lesezugriff kann `"min_lsn"` mitgeben: Ein Replikat, das weniger angewendet hat, antwortet sofort mit `"stale": true` und zählt das, oder es wartet bei `"wait_ms"` erst so lange. Der Webserver gibt seinen Lesezugriffen an die Leseadresse die Position seines letzten Schreibens mit, also misst `db_stale` am Webserver genau, was ein Client erlebt, der geschrieben hat und dann ein älteres Bild liest. Nur `apply` macht Lesen-was-ich-schrieb auf einem Replikat sicher.
+
+**Ein Replikat ist weg.** `semi`, `sync` und `apply` warten höchstens `sync_timeout_ms`; dann gehen Commits async, das sagen Status („async statt sync: kein Replikat hat rechtzeitig bestätigt“), Log und Mitschnitt. Sobald die Replikate aufgeholt haben, warten Commits wieder auf sie. Mit `sync_timeout_ms: 0` wartet ein Commit, bis ein Replikat kommt.
+
+**Epochen, Beförderung, Fencing.** Jeder Primary hat eine Epoche und weiß, wo im Log jede Epoche begann. `dbctl promote` (oder `db promote` im Szenario, `Action::DbPromote`) macht ein Replikat zum Primary: Es wendet zuerst an, was es schon hat (bis dahin 503 `promoting`), nimmt die höchste Epoche, die es kennt, plus eins, schreibt für offene Transaktionen einen Abbruch ins Log und sagt es jedem Mitglied, das es kennt (dem alten Primary und den Replikaten aus dessen Liste), immer wieder, bis jedes geantwortet hat. Replikate folgen der höheren Epoche. Ein alter Primary, der davon hört, nimmt mit Fencing keine Schreibzugriffe mehr an (503 `fenced`), folgt dem neuen und bekommt eine Kopie, weil sein Log abgezweigt ist; was er seit der Abzweigung angenommen hatte, ist verloren und gezählt. Ohne Fencing nehmen beide Schreibzugriffe an: Split Brain, beide Status sagen es, und wenn sie sich wieder erreichen, zählt jede Seite, was sie seit der Abzweigung genommen hat. Ein Primary, der nach einem Absturz wieder startet, fragt erst seine Mitglieder (`fence_wait_ms`, bis dahin 503 `fence_check`). `failover_ms` auf einem Replikat befördert es selbst nach so langer Stille; unter einer Partition zeigt das Split Brain, das Fencing beendet, sobald sich die Seiten wieder erreichen. Einen Zeugen, der Split Brain verhindert, gibt es nicht.
+
+**Lesen über einen Loadbalancer.** Ein `lb` mit der Prüfung `"health": {"type": "http", "path": "/_db/health/replica?max_lag_ms=200"}` schickt Lesezugriffe nur an Replikate, die frisch genug und mit ihrem Primary verbunden sind. Der Webserver schickt einfache `SELECT` außerhalb einer Transaktion an `db.read` (ein Replikat oder ein `lb`), alles andere an den Primary.
+
+**Geschlossene Formen** (Selbsttest-Gruppe `repl`, `--selftest --only=repl --numbers`):
+
+| Prüfung | Formel | gemessen | Formel ergibt | Abstand | Toleranz |
+|---|---|---|---|---|---|
+| async, ein Client | lokales Schreiben | 1,002 ms | 1,001 ms | 0,11 % | 3 % |
+| semi, 5 ms bis zum Replikat | lokales Schreiben + RTT | 11,003 ms | 11,001 ms | 0,02 % | 3 % |
+| sync | lokales Schreiben + RTT + Schreiben dort | 12,003 ms | 12,001 ms | 0,02 % | 3 % |
+| ein Client, sync | 1 / Latenz | 83,0 /s | 83,3 /s | 0,39 % | 3 % |
+| async, Rückstand je Commit | Einwegverzögerung + Schreiben dort + Anwenden (2 · 2 µs + 10 µs) | 6,015 ms | 6,015 ms | 0,01 % | 3 % |
+| Last λ · a = 0,5 | angewendet = λ, kein Wachsen | 10 000 /s | 10 000 /s | 0 % | 3 % |
+| Last λ · a = 1,6 | angewendet = 1 / a | 5000 /s | 5000 /s | 0 % | 3 % |
+| Last λ · a = 1,6 | Rückstand wächst um λ − 1 / a je Sekunde | 3000 /s | 3000 /s | 0 % | 3 % |
+
+Dazu ohne Toleranz: Fällt ein async-Primary aus, fehlen dem befördertem Replikat genau die beantworteten Commits, die es nie bekam, und `failover_lost` zählt genau diese; mit sync fehlt keiner. Nach einer Beförderung nimmt der alte Primary keinen Schreibzugriff mehr; ohne Fencing zählt jede Seite genau, was sie seit der Abzweigung genommen hat; mit Fencing verliert der alte genau diese. Ein Klon einer warmen Maschine mit Sätzen unterwegs läuft gleich weiter, ein Keyframe mit Sätzen unterwegs und eine Beförderung in der Aufzeichnung spielen zum selben Ergebnis.
+
+**Die Studie.** `tests/experiments/db_repl.jfnex` auf `db_repl.jfnet`: GEN schreibt direkt auf DB1, DB2 ist sein Replikat. Sie vergleicht `async`, `semi` und `sync` bei 1 und 10 ms bis zum Replikat und liest zwei eigene Spalten (`figures`): den Rückstand des Replikats und die Commits, die verloren gehen, wenn DB1 am Ende der Stufe ausfällt und DB2 Primary wird. **Die Ausgabe des Modells mit seinen Annahmen**:
+
+```text
+Konfiguration                            Last      erreicht/s  p50 ms  Rückstand p99 ms  verloren
+Modus Commit async bis zum Replikat 1    8 Nutzer    7956.000     1.0               2.4         8
+Modus Commit async bis zum Replikat 10   8 Nutzer    7956.000     1.0              11.4        80
+Modus Commit semi bis zum Replikat 1     8 Nutzer    2705.600     2.9               2.2         0
+Modus Commit semi bis zum Replikat 10    8 Nutzer     383.600    21.2              11.1         0
+Modus Commit sync bis zum Replikat 1     8 Nutzer    2311.800     3.5               2.0         0
+Modus Commit sync bis zum Replikat 10    8 Nutzer     374.000    21.7              11.1         0
+```
+
+Was sie zeigt: async ist unabhängig von der Entfernung schnell und verliert beim Ausfall, was gerade unterwegs ist, nämlich Durchsatz mal Einwegverzögerung (7956/s · 10 ms ≈ 80); semi und sync verlieren nichts und zahlen dafür bei jedem Commit die Rundreise, bei 10 ms also rund 21 ms und ein Zwanzigstel des Durchsatzes eines Nutzers. Den Unterschied zwischen semi und sync macht das Schreiben auf der Platte des Replikats (0,5 ms). Die Studie läuft in rund 5 s auf 4 Threads (12 Läufe), der kurze Lauf `db_repl_small` in 2 s.
+
+**Was es nicht modelliert:** kein echtes Produktprotokoll, keine Kaskaden (ein Replikat versorgt keine weiteren), keinen Zeugen und kein Quorum für die Beförderung, kein Zurückspulen eines abgezweigten Logs (ein alter Primary bekommt eine neue Kopie), keine Replikation von `CREATE INDEX` und `DROP INDEX`. Eine Transaktion, die länger ist als der Rest des Logs, lässt sich nach einem Absturz eines Replikats nicht wieder zusammensetzen. Der Bulk der Kopie belastet das Kabel nicht.
+
+Für Programme: `db::{Repl, ReplCfg, ReplView, FollowerView, ReplStats, ReplRole, ReplMode}`, `Db::{promote, repl_view, repl_problem, answered_after}`, `Engine::{db_promote, db_lost_at, db_at, db_repl_view}`, `Action::DbPromote`, `Note::{DbReplConnected, DbReplCopy, DbReplCaughtUp, DbReplBehind, DbReplica, DbPromoted, DbFenced, DbReplFollow, DbSyncFallback, DbSplitBrain}`, `ProblemKind::ReplicaNoPrimary`, die Experiment-Achse `link` und `Experiment::figures`. Geprüft in der Selbsttest-Gruppe `repl` ([`src/repltest.rs`](src/repltest.rs)), mit `scen_db_repl.uis`, `db_repl_small.uis` und den Fensterskripten `repl_forms.uis`, `repl_forms_en.uis` und `repl_shots.uis`.
+
 ### Experimente: Parameter-Sweeps
 
 Ein Experiment vergleicht Konfigurationen eines Projekts unter steigender Last: mehr Kerne gegen mehr Server, ein anderer
@@ -4226,6 +4311,8 @@ die Zahlen haben in beiden Sprachen den Dezimalpunkt, `Sweep::table_in`). Die GU
 | Achse `hw` | `dev` oder `group`, `values`: `preset` (ein Modell aus dem Katalog), `cores`, `speed` (Tempo gegen den Referenzkern), `ram_gb`, `swap_gb`, `disk`, `disk_gb`, einzeln auf dem, was das Gerät hat |
 | Achse `config` | `dev` oder `group`, `path`: Art oder Name eines Dienstes und die Einstellung, etwa `http-server.workers`, `lb.algorithm`, `web.routes.0.cpu_ms`, `values` |
 | Achse `backends` | `dev`, `svc` (ein `lb`), `counts`, dazu `pool` (die ersten N Hosts stehen dahinter, die anderen sind aus und kosten nichts) oder `template` (N Kopien eines Geräts mit den nächsten Adressen an den nächsten freien Ports seines Switchs) |
+| Achse `link` | `dev`, `path`: sein Port, `values`: die Verzögerung des Kabels an diesem Port in eine Richtung, in ms (Dezimalstellen erlaubt; SA5) |
+| `figures` | eigene Spalten nach „Engpass“: `name`, `dev`, `svc`, `metric` (eine Zahl des Dienstes nach der Messung der Stufe), `div` (geteilt mit einer Dezimale, etwa 1000 für µs als ms); vorher, in ihrer Reihenfolge auf der Maschine der Stufe, optional `off` (ein Gerät aus), `promote` (ein Replikat wird Primary) und `wait_s`. Ohne `figures` bleibt jede Tabelle, wie sie war |
 | `prices`, `cost_exclude` | Euro je Stunde statt der angenommenen Preise, nach Name (`core`, `big`, `huge`, `ram_gb`, `hdd_gb`, `sata_gb`, `nvme_gb`, `nvme_fast_gb`, `host`, `switch`, `router`); Geräte, die nicht mitzählen |
 
 Was nicht passt, sagt `jfn-sim sweep` vor dem ersten Lauf, mit Achse und Grund: „Reihe mehr, Achse 1: Ein Dienst der Art http-server kennt „worker“ nicht

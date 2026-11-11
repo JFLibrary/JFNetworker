@@ -1,0 +1,5 @@
+#!args tests/experiments/db_repl.jfnet --sweep tests/experiments/db_repl_small.jfnex --threads 2 --golden tests/experiments/db_repl_small.report
+# a short sweep of the replication study through the GUI program, without a window: async against sync at 5 ms to
+# the replica, with the replica's lag and the commits a failover at the end of the level loses as columns of their
+# own.  The table must equal tests/experiments/db_repl_small.report byte for byte on every target and for any number
+# of threads (the script itself is not run)
