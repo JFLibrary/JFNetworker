@@ -2144,3 +2144,9 @@ TLS-Sitzung wieder aufgenommen: {} µs CPU.	TLS session resumed: {} µs CPU.
 DB-Pooler: keine Verbindung frei, die Anweisung wartet ({} in der Warteschlange).	Database pooler: no connection free, the statement waits ({} in the queue).
 DB-Pooler: Transaktion {} hält eine Verbindung.	Database pooler: transaction {} holds a connection.
 DB-Pooler: Transaktion {} gibt ihre Verbindung zurück.	Database pooler: transaction {} gives its connection back.
+Reverse Proxy {}: {} auf Port {}, Verfahren {}, {}	Reverse proxy {}: {} on port {}, algorithm {}, {}
+Dienst {}, Pool {}: der langsame Start wirkt nur bei round-robin und weighted, nicht bei {}.	Service {}, pool {}: slow start acts only with round-robin and weighted, not with {}.
+Dienst {}, Pool {}: bei {} Backends darf mit max_ejected {} ‰ keines ausgeschlossen werden.	Service {}, pool {}: with {} backends and max_ejected {} ‰ none may be ejected.
+Dienst {}: ein Retry-Budget von 0 lässt keine Wiederholung zu.	Service {}: a retry budget of 0 allows no retry.
+Dienst {}: auf {}:{} läuft keine Datenbank.	Service {}: no database runs at {}:{}.
+Dienst {}: der Pooler öffnet bis zu {} Verbindungen, die Datenbank auf {} nimmt nur {}.	Service {}: the pooler opens up to {} connections, the database at {} takes only {}.

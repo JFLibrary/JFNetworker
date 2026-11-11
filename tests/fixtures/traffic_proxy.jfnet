@@ -1,0 +1,367 @@
+{
+  "format": "jfn",
+  "version": 1,
+  "title": "Reverse Proxy mit TLS und Cache",
+  "description": "Ein Reverse Proxy mit TLS: PROXY beendet TLS mit einem Zertifikat der Lab-CA und kostet dafür CPU (2 Kerne), leitet /shop/ an den Pool shop (aus /shop/k1 wird /v2/k1), den Host blog.lab an den Pool blog und /api/ mit einem Rate-Limit von 1 je Sekunde. GET-Antworten hält er 3 s im Cache. GEN holt mit 20 Nutzern über https und hält die Verbindungen offen, bis der Proxy sie nach 50 Anfragen schließt.",
+  "seed": 47,
+  "next_id": 200,
+  "strict_mdix": false,
+  "metered": true,
+  "devices": [
+    {
+      "id": 1,
+      "name": "GEN",
+      "model": "traffic-gen",
+      "x": 40,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname GEN\nip addr add 10.0.0.1/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-load",
+          "name": "load",
+          "disabled": false,
+          "config": {
+            "targets": [
+              "https://10.0.0.10/"
+            ],
+            "mode": "closed",
+            "users": 20,
+            "think_ms": 20,
+            "timeout_ms": 5000,
+            "mix": [
+              {
+                "path": "/shop/k{rand:40}",
+                "weight": 9
+              },
+              {
+                "path": "/shop/new/{seq}",
+                "weight": 1
+              }
+            ]
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 2,
+      "name": "SW1",
+      "model": "jf-s48x",
+      "x": 220,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname SW1\n",
+      "services": [],
+      "comment": ""
+    },
+    {
+      "id": 3,
+      "name": "PROXY",
+      "model": "load-balancer",
+      "x": 400,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname PROXY\nip addr add 10.0.0.10/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "proxy",
+          "name": "proxy",
+          "disabled": false,
+          "config": {
+            "tls": {
+              "names": [
+                "10.0.0.10",
+                "proxy.lab"
+              ]
+            },
+            "handshake_us": 400,
+            "resume_us": 50,
+            "tls_kb_us": 1,
+            "max_requests": 50,
+            "cpu_us": 20,
+            "health": {
+              "type": "http",
+              "interval_ms": 1000
+            },
+            "pools": [
+              {
+                "name": "shop",
+                "algorithm": "least-conn",
+                "backends": [
+                  {
+                    "name": "shop1",
+                    "addr": "10.0.0.11"
+                  },
+                  {
+                    "name": "shop2",
+                    "addr": "10.0.0.12"
+                  }
+                ]
+              },
+              {
+                "name": "blog",
+                "backends": [
+                  {
+                    "name": "blog1",
+                    "addr": "10.0.0.13"
+                  }
+                ]
+              }
+            ],
+            "routes": [
+              {
+                "path": "/shop/",
+                "pool": "shop",
+                "strip": "/shop",
+                "add": "/v2",
+                "set_headers": {
+                  "X-Shop": "1"
+                }
+              },
+              {
+                "host": "blog.lab",
+                "path": "/",
+                "pool": "blog"
+              },
+              {
+                "path": "/api/",
+                "pool": "shop",
+                "cache": false,
+                "limit": {
+                  "rate": 1,
+                  "burst": 2,
+                  "key": "client"
+                }
+              }
+            ],
+            "cache": {
+              "ttl_ms": 3000,
+              "entries": 1000
+            }
+          }
+        }
+      ],
+      "comment": "",
+      "hw": {
+        "cores": 2,
+        "speed_pm": 1000,
+        "ram_mb": 4096,
+        "swap_mb": 0,
+        "disk": "sata",
+        "disk_gb": 240
+      }
+    },
+    {
+      "id": 4,
+      "name": "WEB1",
+      "model": "server-1u",
+      "x": 580,
+      "y": 80,
+      "off": false,
+      "startup_config": "hostname WEB1\nip addr add 10.0.0.11/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "routes": [
+              {
+                "path": "*",
+                "body": "{path} von {host}\n"
+              }
+            ]
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 5,
+      "name": "WEB2",
+      "model": "server-1u",
+      "x": 580,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname WEB2\nip addr add 10.0.0.12/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "routes": [
+              {
+                "path": "*",
+                "body": "{path} von {host}\n"
+              }
+            ]
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 6,
+      "name": "WEB3",
+      "model": "server-1u",
+      "x": 580,
+      "y": 320,
+      "off": false,
+      "startup_config": "hostname WEB3\nip addr add 10.0.0.13/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "routes": [
+              {
+                "path": "*",
+                "body": "{path} von {host}\n"
+              }
+            ]
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 7,
+      "name": "PC",
+      "model": "pc",
+      "x": 220,
+      "y": 380,
+      "off": false,
+      "startup_config": "hostname PC\nip addr add 10.0.0.5/24 dev eth0\n",
+      "services": [],
+      "comment": ""
+    }
+  ],
+  "links": [
+    {
+      "id": 101,
+      "a": {
+        "dev": 1,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/1"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 102,
+      "a": {
+        "dev": 3,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/2"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 103,
+      "a": {
+        "dev": 4,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/3"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 104,
+      "a": {
+        "dev": 5,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/4"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 105,
+      "a": {
+        "dev": 6,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/5"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 106,
+      "a": {
+        "dev": 7,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/6"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    }
+  ]
+}

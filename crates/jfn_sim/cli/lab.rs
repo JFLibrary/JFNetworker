@@ -92,7 +92,8 @@ fn port_msg(port: u16, listening: bool) -> Msg {
 }
 
 fn lb_help() -> Vec<(Msg, Msg)> {
-    alloc::vec![(phrase("lbctl [status] [-s DIENST]"), phrase("zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend")), (Msg::plain("lbctl routes"), phrase("seine Pools mit ihren Regeln und seine Routen"))]
+    // (lbctl routes is in the man page: this usage stays as old reports have it)
+    alloc::vec![(phrase("lbctl [status] [-s DIENST]"), phrase("zeigt den Loadbalancer: Einstellungen, Zahlen und jedes Backend"))]
 }
 
 fn proxy_help() -> Vec<(Msg, Msg)> {
@@ -255,7 +256,11 @@ impl Engine {
             _ => phrase("ohne Health Checks"),
         };
         let http = v.mode == LbMode::Http;
-        let head = msg!("Loadbalancer {}: {} auf Port {}, Verfahren {}, {}", name, if http { "HTTP" } else { "TCP" }, port_msg(v.port, v.listening), v.algo.name(), health);
+        let head = if v.proxy {
+            msg!("Reverse Proxy {}: {} auf Port {}, Verfahren {}, {}", name, if v.tls { "HTTPS" } else { "HTTP" }, port_msg(v.port, v.listening), v.algo.name(), health)
+        } else {
+            msg!("Loadbalancer {}: {} auf Port {}, Verfahren {}, {}", name, if http { "HTTP" } else { "TCP" }, port_msg(v.port, v.listening), v.algo.name(), health)
+        };
         let counts = if http {
             msg!("Anfragen {}, beendet {}, offen {}, Fehler {} (ohne Backend {}), Wiederholungen {}", v.requests, v.responses, v.active, v.errors, v.no_backend, v.retried)
         } else {

@@ -2792,7 +2792,7 @@ CPU je Wiederaufnahme	CPU per resumption
 Annahme: Ver- und Entschlüsseln je KiB, das durch TLS geht.	Assumption: encrypting and decrypting per KiB that goes through TLS.
 CPU je KiB	CPU per KiB
 Modell: eine neue Verbindung einer Adresse mit kurz zuvor vollem Handshake kostet nur die Wiederaufnahme.	Model: a new connection of an address with a full handshake shortly before costs only the resumption.
-Sitzungen wieder aufnehmen	Resume sessions
+Wiederaufnahme	Resumption
 Danach schließt er die Verbindung des Clients; 0 heißt ohne Grenze. So oft lohnt sich ein Handshake.	Then it closes the client's connection; 0 means no limit. That is how often a handshake pays off.
 Cache gültig für	Cache valid for
 GET-Antworten hält der Proxy so lange, wenn Cache-Control nichts anderes sagt. Leer: kein Cache.	The proxy keeps GET answers this long unless Cache-Control says otherwise. Empty: no cache.

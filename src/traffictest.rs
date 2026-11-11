@@ -46,6 +46,7 @@ use netpkt::http::{Headers, Version};
 use netpkt::{IpAddr, Ipv4, Mac, Prefix4};
 
 use crate::selftest::T;
+use crate::workspace::devwin::svcform::{fill, merged};
 
 const BUDGET: usize = 400_000_000;
 const SEED: u64 = 31;
@@ -290,6 +291,8 @@ pub fn run(t: &mut T) {
     dbpool_t(t);
     dns_t(t);
     reconfig_t(t);
+    forms_t(t);
+    problems_t(t);
     determinism_t(t);
 }
 
@@ -910,6 +913,60 @@ fn reconfig_t(t: &mut T) {
     let ok = add(&mut e, h[1], "dbpool", "pool", r#"{"db": {"addr": "10.0.0.3"}}"#);
     run_for(&mut e, 100 * MS);
     t.check("pool size live, database address not", ok && e.can_reconfigure(h[1], "pool", &cfg(r#"{"db": {"addr": "10.0.0.3"}, "pool": 20}"#)) && !e.can_reconfigure(h[1], "pool", &cfg(r#"{"db": {"addr": "10.0.0.4"}}"#)));
+}
+
+// ---------------------------------------------------------------- forms and problems
+
+/// what a form writes when these fields are typed into it
+fn after(kind: &str, base: &str, sets: &[(&str, &str)]) -> Result<String, String> {
+    let b = cfg(base);
+    let mut v = fill(kind, &b);
+    for (k, x) in sets {
+        if !v.set(kind, k, x) {
+            return Err(format!("no field {}", k));
+        }
+    }
+    merged(kind, &b, &v).map(|c| agent_core::json::stringify(&c).unwrap_or_default())
+}
+
+fn forms_t(t: &mut T) {
+    section("forms against JSON");
+    t.eq("lb: a retry policy", after("lb", "{}", &[("retry.max", "3"), ("retry.budget", "10")]), Ok(String::from(r#"{"retry":{"max":3,"budget":"10%"}}"#)));
+    t.eq("lb: a breaker and a queue", after("lb", r#"{"max_conns": 8}"#, &[("queue", "20"), ("breaker.failures", "5")]), Ok(String::from(r#"{"max_conns":8,"queue":20,"breaker":{"failures":5}}"#)));
+    t.eq("lb: emptied, the policy goes", after("lb", r#"{"breaker": {"failures": 5}, "port": 80}"#, &[("breaker.failures", "")]), Ok(String::from(r#"{"port":80}"#)));
+    t.eq("lb: sticky by cookie, a rate limit", after("lb", "{}", &[("sticky.type", "cookie"), ("limit.rate", "2,5")]), Ok(String::from(r#"{"sticky":{"type":"cookie"},"limit":{"rate":2.5}}"#)));
+    t.eq("lb: a budget reads as percent", fill("lb", &cfg(r#"{"retry": {"budget": 0.25}}"#)).texts.get(26).cloned(), Some(String::from("25")));
+    t.eq("proxy: TLS and a cache", after("proxy", r#"{"backends": [{"addr": "10.0.0.3"}]}"#, &[("tls.issuer", "lab"), ("cache.ttl_ms", "2000")]), Ok(String::from(r#"{"backends":[{"addr":"10.0.0.3"}],"tls":{"issuer":"lab"},"cache":{"ttl_ms":2000}}"#)));
+    t.eq("dbpool: its database and mode", after("dbpool", "{}", &[("db.addr", "10.0.0.30"), ("pool", "4"), ("mode", "statement")]), Ok(String::from(r#"{"db":{"addr":"10.0.0.30"},"pool":4,"mode":"statement"}"#)));
+    t.eq("http-load: retries and cookies", after("http-load", r#"{"targets": ["http://10.0.0.2/"]}"#, &[("retry.max", "2"), ("cookies", "true")]), Ok(String::from(r#"{"targets":["http://10.0.0.2/"],"retry":{"max":2},"cookies":true}"#)));
+    // what the forms write, the services take
+    for (kind, text) in [("lb", r#"{"backends": [{"addr": "10.0.0.3"}], "retry": {"max": 3, "budget": "10%"}, "max_conns": 8, "queue": 20, "breaker": {"failures": 5}, "sticky": {"type": "cookie"}, "limit": {"rate": 2.5}}"#), ("proxy", r#"{"backends": [{"addr": "10.0.0.3"}], "tls": {"issuer": "lab"}, "cache": {"ttl_ms": 2000}}"#), ("dbpool", r#"{"db": {"addr": "10.0.0.30"}, "pool": 4, "mode": "statement"}"#)] {
+        t.eq(&format!("{}: the form's JSON starts", kind), refused(kind, text), String::new());
+    }
+    // the defaults a form shows are the service's
+    let d = jfn_sim::svcform::defaults("proxy").unwrap_or(Value::Null);
+    t.eq("proxy: a handshake's default", d.get("handshake_us").map(|v| agent_core::json::stringify(v).unwrap_or_default()), Some(String::from("400")));
+    t.eq("dbpool: its defaults", jfn_sim::svcform::defaults("dbpool").map(|v| (v.get("port").and_then(|x| x.as_u64()), v.get("pool").and_then(|x| x.as_u64()), v.get("mode").and_then(|x| x.as_str().map(String::from)))), Some((Some(6432), Some(10), Some(String::from("transaction")))));
+}
+
+fn problems_t(t: &mut T) {
+    section("problems");
+    let (mut e, h) = net(4);
+    let _ = add(&mut e, h[1], "lb", "lb", &format!(r#"{{"backends": {}, "health": {{"type": "none"}}, "algorithm": "least-conn", "slow_start_ms": 5000, "outlier": {{"max_ejected": 0.3}}, "retry": {{"max": 2, "budget": 0}}}}"#, backends(2)));
+    let _ = add(&mut e, h[2], "db", "db", r#"{"tables": [{"name": "t", "rows": 10}], "max_conns": 5}"#);
+    let _ = add(&mut e, h[3], "dbpool", "a", r#"{"db": {"addr": "10.0.0.3"}, "pool": 8}"#);
+    let _ = add(&mut e, h[3], "dbpool", "b", r#"{"db": {"addr": "10.0.0.9"}, "port": 6433}"#);
+    let texts: Vec<String> = e.problems().into_iter().filter(|p| p.kind == jfn_sim::ProblemKind::TrafficSetup).map(|p| p.text).collect();
+    for want in [
+        "Dienst lb, Pool default: der langsame Start wirkt nur bei round-robin und weighted, nicht bei least-conn.",
+        "Dienst lb, Pool default: bei 2 Backends darf mit max_ejected 300 ‰ keines ausgeschlossen werden.",
+        "Dienst lb: ein Retry-Budget von 0 lässt keine Wiederholung zu.",
+        "Dienst a: der Pooler öffnet bis zu 8 Verbindungen, die Datenbank auf 10.0.0.3 nimmt nur 5.",
+        "Dienst b: auf 10.0.0.9:7100 läuft keine Datenbank.",
+    ] {
+        t.check(&format!("problem: {}", want), texts.iter().any(|x| x == want));
+    }
+    t.eq("and nothing else", texts.len(), 5);
 }
 
 // ---------------------------------------------------------------- determinism

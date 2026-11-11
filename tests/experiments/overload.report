@@ -1,0 +1,35 @@
+# JFNetworker-Experiment overload.jfnex: „Überlast: Wiederholen oder abweisen“
+# Konfigurationen: 4, Laststufen: 3, Seeds: 1; 2 s Warmlauf, je Stufe 2 s Übergang und 3 s Messung (virtuelle Zeit)
+# SLO: p99 bis 500 ms, Fehler bis 1 %
+# Ergebnis des Modells mit seinen Annahmen; die Kosten sind angenommene Preise (catalog::Prices), keine Angebote
+
+Ohne Wiederholung (0.886 €/h)
+Last    erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass
+600/s      558.666     7.2     8.7    10.3      11.4     11.41   57.4  0.000440  nein  CPU WEB1
+950/s      883.333     9.8    18.0    23.8      28.5     10.86   90.0  0.000278  nein  CPU WEB1
+1050/s     972.333    29.6    56.0    60.2      66.5     10.74   98.9  0.000253  nein  CPU WEB1
+
+Wiederholen (0.886 €/h)
+Last    erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass
+600/s      630.333     7.2    22.2    33.2      58.1      0.00   65.2  0.000390    ok  CPU WEB2
+950/s      980.000    62.3   136.3   174.0     281.0      0.03  100.0  0.000251  Knie  CPU WEB1
+1050/s      82.666  1031.7  1048.5  1065.3    1065.3     89.73  100.0  0.002977  nein  CPU WEB1
+
+Mit Budget (0.886 €/h)
+Last    erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass
+600/s      587.333     7.2    12.4    23.8      41.4      6.92   60.4  0.000419  nein  CPU WEB2
+950/s      926.666    13.2    29.6    44.5      72.3      6.30   94.6  0.000265  nein  CPU WEB1
+1050/s     887.333   190.8   249.5   448.7     524.2     14.23  100.0  0.000277  nein  CPU WEB1
+
+Wiederholen und abweisen (0.886 €/h)
+Last    erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass
+600/s      630.333     7.2    22.2    33.2      58.1      0.00   65.2  0.000390  Knie  CPU WEB2
+950/s      979.666    34.0    76.5   114.2     174.0      1.07   99.7  0.000251  nein  CPU WEB1
+1050/s     983.333    55.0   112.1   140.5     190.8      9.73  100.0  0.000250  nein  CPU WEB1
+
+Zusammenfassung
+Konfiguration               €/h   Knie  Maximum/s  €/1000 am Knie  begrenzt durch
+Ohne Wiederholung         0.886      -    972.333               -  CPU WEB1
+Wiederholen               0.886  950/s    980.000        0.000251  CPU WEB1
+Mit Budget                0.886      -    926.666               -  CPU WEB2
+Wiederholen und abweisen  0.886  600/s    983.333        0.000390  CPU WEB1

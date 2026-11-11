@@ -633,6 +633,19 @@ impl Service for DbPool {
         self.mem = f.mem;
         self.agent.max_per_host = self.size as usize;
         if let Some(os) = os {
+            // a new limit on silence counts for the open transactions too, from their last statement
+            let now = os.now();
+            let ids: Vec<u64> = self.txns.keys().copied().collect();
+            for t in ids {
+                if let Some(x) = self.txns.get_mut(&t) {
+                    if let Some(id) = x.timer.take() {
+                        self.wheel.cancel(id);
+                    }
+                    if self.idle_txn > 0 {
+                        x.timer = Some(self.wheel.add((x.last + self.idle_txn).max(now), PTimer::Idle(t)));
+                    }
+                }
+            }
             self.next(os);
             self.wheel.arm(os);
         }

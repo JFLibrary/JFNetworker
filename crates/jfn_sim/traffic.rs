@@ -34,6 +34,7 @@
 //   Outcome / outcome_of(&Result<Resp, Fail>)   how an attempt ended
 //   idempotent(method) safe to repeat (RFC 9110 9.2.2)
 //   TrafficNote       the decisions as notes (Note::Traffic) with their sentences
+//   Engine::traffic_problems   ProblemKind::TrafficSetup: what cannot work (problems.rs)
 //
 // Nothing here draws a random number unless a jitter asks for one (the caller's generator).
 
@@ -48,6 +49,7 @@ use jfn_model::msg::Msg;
 use netpkt::decode::{P_HTTP, P_IPV4, P_TCP};
 
 use crate::http::{Fail, Resp};
+use crate::kernel::Engine;
 use crate::httpsvc::{decimal, rate_ppm};
 use crate::kernel::{Ns, MS, SEC, US};
 
@@ -669,6 +671,58 @@ impl TlsCost {
     /// the CPU of `bytes` through TLS
     pub fn bytes(&self, bytes: u64) -> Ns {
         (self.per_kb as u128 * bytes as u128 / 1024) as Ns
+    }
+}
+
+// ---------------------------------------------------------------- problems
+
+impl Engine {
+    /// traffic management that cannot do what it says (problems.rs, ProblemKind::TrafficSetup)
+    pub(crate) fn traffic_problems(&self, out: &mut Vec<crate::problems::Problem>) {
+        use crate::problems::{Problem, ProblemKind, Severity};
+        let mut warn = |dev: u32, m: Msg| out.push(Problem { kind: ProblemKind::TrafficSetup, severity: Severity::Warning, dev, port: None, link: None, others: Vec::new(), text: m.text(), msg: m });
+        for dev in self.devices() {
+            let Some(ni) = self.node_index(dev) else { continue };
+            let Some(os) = self.os(ni) else { continue };
+            for s in os.svcs.iter().filter(|s| s.enabled && !s.console) {
+                let Some(svc) = s.svc.as_ref() else { continue };
+                if let Some(lb) = svc.as_any().downcast_ref::<crate::lb::Lb>() {
+                    for p in &lb.pools {
+                        if p.slow_start > 0 && matches!(p.algo, crate::lb::Algo::LeastConn | crate::lb::Algo::Hash) {
+                            warn(dev, msg!("Dienst {}, Pool {}: der langsame Start wirkt nur bei round-robin und weighted, nicht bei {}.", s.name.clone(), p.name.clone(), p.algo.name()));
+                        }
+                        let n = lb.backends.iter().filter(|b| b.pool_name_is(&lb.pools, &p.name)).count();
+                        if let Some(o) = &p.outlier
+                            && n > 0
+                            && o.cap(n) == 0
+                        {
+                            warn(dev, msg!("Dienst {}, Pool {}: bei {} Backends darf mit max_ejected {} ‰ keines ausgeschlossen werden.", s.name.clone(), p.name.clone(), n, o.max_ejected_pm));
+                        }
+                    }
+                    let retries = lb.retry.iter().chain(lb.routes.iter().filter_map(|r| r.retry.as_ref()));
+                    if retries.into_iter().any(|r| r.max > 0 && r.budget_pm == Some(0) && r.min_per_s == 0) {
+                        warn(dev, msg!("Dienst {}: ein Retry-Budget von 0 lässt keine Wiederholung zu.", s.name.clone()));
+                    }
+                }
+                if let Some(p) = svc.as_any().downcast_ref::<crate::dbpool::DbPool>() {
+                    let (addr, port) = p.db;
+                    let db = self.devices().find_map(|d| {
+                        let n = self.node_index(d)?;
+                        if !self.is_mine_ip(n, addr) {
+                            return None;
+                        }
+                        self.os(n)?.svcs.iter().filter(|x| x.enabled).find_map(|x| x.svc.as_ref()?.as_any().downcast_ref::<crate::db::Db>().filter(|d| d.cfg.port == port))
+                    });
+                    match db {
+                        None => warn(dev, msg!("Dienst {}: auf {}:{} läuft keine Datenbank.", s.name.clone(), addr, port)),
+                        Some(d) if d.cfg.max_conns > 0 && d.cfg.max_conns < p.size => {
+                            warn(dev, msg!("Dienst {}: der Pooler öffnet bis zu {} Verbindungen, die Datenbank auf {} nimmt nur {}.", s.name.clone(), p.size, addr, d.cfg.max_conns))
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
     }
 }
 

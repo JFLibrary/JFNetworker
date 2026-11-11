@@ -9,8 +9,8 @@
     "svc": "load",
     "rps": [
       600,
-      1000,
-      1400
+      950,
+      1050
     ]
   },
   "timing": {
@@ -49,7 +49,7 @@
           "dev": "LB",
           "path": "lb.retry.max",
           "values": [
-            2
+            3
           ]
         }
       ]
@@ -63,7 +63,7 @@
           "dev": "LB",
           "path": "lb.retry.max",
           "values": [
-            2
+            3
           ]
         },
         {
@@ -72,14 +72,23 @@
           "dev": "LB",
           "path": "lb.retry.budget",
           "values": [
-            0.1
+            0.05
           ]
         }
       ]
     },
     {
-      "name": "Abweisen",
+      "name": "Wiederholen und abweisen",
       "axes": [
+        {
+          "kind": "config",
+          "name": "Versuche",
+          "dev": "LB",
+          "path": "lb.retry.max",
+          "values": [
+            3
+          ]
+        },
         {
           "kind": "config",
           "name": "Verbindungen",

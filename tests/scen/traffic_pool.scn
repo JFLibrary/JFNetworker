@@ -1,0 +1,71 @@
+# DNS Round Robin und ein DB-Pooler. Der Name web.lab hat drei Adressen (TTL 30 s), die der DNS-Server bei jeder
+# Antwort reihum an den Anfang stellt. POOL hält höchstens zwei Verbindungen zur Datenbank DB, je Transaktion.
+#
+# jede Antwort beginnt eine Adresse weiter: über drei Antworten ist jede einmal vorn
+run 1s
+PC1: dig +short web.lab
+run 200ms
+PC1: dig +short web.lab
+run 200ms
+PC1: dig +short web.lab
+run 200ms
+# drei Clients holen die Seite: jeder nimmt die erste Adresse seiner Antwort
+PC1: curl -s http://web.lab/
+run 200ms
+expect PC1 output contains "WEB1"
+PC2: curl -s http://web.lab/
+run 200ms
+expect PC2 output contains "WEB2"
+PC3: curl -s http://web.lab/
+run 200ms
+expect PC3 output contains "WEB3"
+# und behält sie für die TTL: PC1 bleibt bei WEB1, egal wie viele Anfragen es schickt
+PC1: curl -s http://web.lab/
+run 200ms
+PC1: curl -s http://web.lab/
+run 200ms
+expect PC1 output not contains "WEB2"
+expect WEB1 svc web metric requests == 3
+expect WEB2 svc web metric requests == 1
+# DNS kennt keine Last und keinen Ausfall: WEB2 aus, PC2 fragt weiter dort, bis die TTL abläuft
+power off WEB2
+PC2: curl -sS -m 2 http://web.lab/
+run 2500ms
+expect PC2 output contains "curl: ("
+expect PC2 output not contains "WEB"
+#
+# der Pooler: eine Transaktion bekommt eine der beiden Verbindungen und hält sie bis COMMIT
+PC1: curl -s -d "BEGIN" http://pool.lab:6432/query
+run 200ms
+expect PC1 output contains "\"txn\":1"
+PC2: curl -s -d "BEGIN" http://pool.lab:6432/query
+run 200ms
+expect PC2 output contains "\"txn\":2"
+# beide Verbindungen sind belegt: eine einfache Anweisung wartet, auch wenn beide Transaktionen schweigen
+PC3: curl -s -d "SELECT * FROM konten WHERE id = 5" http://pool.lab:6432/query
+run 500ms
+expect PC3 output not contains "\"id\":5"
+POOL: dbpoolctl
+run 10ms
+expect POOL output contains "Belegt 2"
+expect POOL output contains "wartend 1"
+expect POOL output contains "Transaktion"
+expect POOL svc pool metric db_conns <= 2
+# COMMIT gibt die Verbindung frei, die wartende Anweisung geht
+PC1: curl -s -H "X-Txn: 1" -d "COMMIT" http://pool.lab:6432/query
+run 200ms
+expect PC1 output contains "\"committed\":1"
+expect PC3 output contains "\"id\":5"
+# die andere Transaktion schweigt weiter: idle_txn_ms beendet sie und gibt ihre Verbindung zurück
+svc set POOL pool idle_txn_ms 1000
+run 2s
+expect POOL svc pool metric idle_kills == 1
+expect POOL svc pool metric txns == 0
+# im Modus je Anweisung gehen keine Transaktionen
+svc set POOL pool mode statement
+PC1: curl -s -d "BEGIN" http://pool.lab:6432/query
+run 200ms
+expect PC1 output contains "\"code\": \"pool_mode\""
+PC1: curl -s -d "SELECT COUNT(*) FROM konten" http://pool.lab:6432/query
+run 200ms
+expect PC1 output contains "\"count\":10000"

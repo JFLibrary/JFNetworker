@@ -299,7 +299,7 @@ static PROXY: [Group; 4] = [
             Field { key: "handshake_us", label: "CPU je Handshake", unit: "µs", help: "Annahme: ein voller TLS-Handshake auf einem Referenzkern. Zählt nur mit simulierter Hardware.", kind: Fk::Dec },
             Field { key: "resume_us", label: "CPU je Wiederaufnahme", unit: "µs", help: "Annahme: eine wieder aufgenommene Sitzung kostet so viel.", kind: Fk::Dec },
             Field { key: "tls_kb_us", label: "CPU je KiB", unit: "µs", help: "Annahme: Ver- und Entschlüsseln je KiB, das durch TLS geht.", kind: Fk::Dec },
-            Field { key: "session_reuse", label: "Sitzungen wieder aufnehmen", unit: "", help: "Modell: eine neue Verbindung einer Adresse mit kurz zuvor vollem Handshake kostet nur die Wiederaufnahme.", kind: Fk::Flag },
+            Field { key: "session_reuse", label: "Wiederaufnahme", unit: "", help: "Modell: eine neue Verbindung einer Adresse mit kurz zuvor vollem Handshake kostet nur die Wiederaufnahme.", kind: Fk::Flag },
             Field { key: "max_requests", label: "Anfragen je Verbindung", unit: "", help: "Danach schließt er die Verbindung des Clients; 0 heißt ohne Grenze. So oft lohnt sich ein Handshake.", kind: Fk::Int },
             Field { key: "cache.ttl_ms", label: "Cache gültig für", unit: "ms", help: "GET-Antworten hält der Proxy so lange, wenn Cache-Control nichts anderes sagt. Leer: kein Cache.", kind: Fk::Dec },
             Field { key: "cache.entries", label: "Einträge im Cache", unit: "", help: "So viele Antworten hält er, die am längsten unbenutzten gehen zuerst.", kind: Fk::Int },
@@ -639,7 +639,12 @@ fn rows_of(kind: &str, c: &Value) -> Vec<Row> {
 
 /// what a form shows for a config
 pub(crate) fn fill(kind: &str, c: &Value) -> Vals {
-    Vals { texts: fields(kind).map(|f| if f.kind == Fk::List { String::new() } else { text_of(f, get_path(c, f.key)) }).collect(), rows: rows_of(kind, c) }
+    // (a proxy's "tls" without "issuer" is signed by the lab CA: the choice says so)
+    let shown = |f: &Field| match get_path(c, f.key) {
+        None if f.key == "tls.issuer" && c.get("tls").is_some() => String::from("lab"),
+        v => text_of(f, v),
+    };
+    Vals { texts: fields(kind).map(|f| if f.kind == Fk::List { String::new() } else { shown(f) }).collect(), rows: rows_of(kind, c) }
 }
 
 /// the value of a field's text, or what is wrong with it

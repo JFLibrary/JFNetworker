@@ -294,6 +294,10 @@ impl Backend {
     fn gone(&self) -> bool {
         self.admin == Admin::Removed
     }
+    /// it belongs to the pool of this name and is not gone (problems.rs)
+    pub(crate) fn pool_name_is(&self, pools: &[Pool], name: &str) -> bool {
+        !self.gone() && pools.get(self.pool).is_some_and(|p| p.name == name)
+    }
 }
 
 /// a group of backends with its algorithm and policies (SA6; the top-level backends are pool 0,
