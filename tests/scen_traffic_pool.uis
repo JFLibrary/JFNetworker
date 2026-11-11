@@ -1,0 +1,7 @@
+#!args tests/fixtures/traffic_pool.jfnet --scenario tests/scen/traffic_pool.scn --golden tests/scen/traffic_pool.report
+# golden scenario of DNS round robin and the database pooler (SA6, jfn_sim's dnsd.rs and dbpool.rs): a zone that
+# rotates its records, three clients that each keep the first address for the TTL, one that stays with a server that
+# is gone; a pool of two connections held by transactions, a statement that waits until a COMMIT frees one, a silent
+# transaction ended by idle_txn_ms, statement mode refusing BEGIN, dbpoolctl.  The GUI program runs
+# tests/scen/traffic_pool.scn on tests/fixtures/traffic_pool.jfnet without a window and ends with the report, which
+# must equal tests/scen/traffic_pool.report byte for byte on every target (the script itself is not run)

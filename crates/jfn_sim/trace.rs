@@ -527,6 +527,8 @@ pub enum Note {
     DbSyncFallback { on: bool },
     /// two primaries take writes
     DbSplitBrain { other: Ipv4 },
+    /// traffic management of the balancer, the proxy and the pooler (traffic.rs, SA6)
+    Traffic(crate::traffic::TrafficNote),
 }
 
 /// the kind of DHCPREQUEST a client sends
@@ -661,6 +663,7 @@ impl Note {
             Note::OomKill { .. } => 3,
             Note::Dot1x(_) => 2,
             Note::Fw(_) => 3,
+            Note::Traffic(_) => 7,
             _ => 2,
         }
     }
@@ -739,7 +742,7 @@ impl Note {
                 | Note::DbReplFollow { .. }
                 | Note::DbSyncFallback { .. }
                 | Note::DbSplitBrain { .. }
-        )
+        ) || matches!(self, Note::Traffic(_))
     }
     /// an HTTP decision (http.rs, httpsvc.rs)
     pub fn is_http(&self) -> bool {
@@ -820,6 +823,7 @@ impl Note {
             || matches!(self, Note::Tls(n) if n.is_drop())
             || matches!(self, Note::Dot1x(n) if n.is_drop())
             || matches!(self, Note::Fw(n) if n.is_drop())
+            || matches!(self, Note::Traffic(n) if n.is_drop())
     }
     /// a TCP decision (tcp.rs)
     pub fn is_tcp(&self) -> bool {
@@ -1279,6 +1283,7 @@ impl Note {
             Note::OomKill { svc, bytes } => msg!("Speicher voll: Dienst {} mit {} beendet", svc, crate::disk::size_text(*bytes)),
             Note::Dot1x(n) => n.message(),
             Note::Fw(n) => n.message(),
+            Note::Traffic(n) => n.message(),
         }
     }
 }
@@ -1775,6 +1780,7 @@ impl Note {
             Note::OomKill { .. } => 0,
             Note::Dot1x(n) => n.mask(),
             Note::Fw(n) => n.mask(),
+            Note::Traffic(n) => n.mask(),
             _ => 0,
         }
     }

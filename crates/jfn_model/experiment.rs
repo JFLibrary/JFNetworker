@@ -378,13 +378,15 @@ pub fn fixed(v: u64, unit: u64) -> String {
 pub fn known_keys(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
         "http-server" => &["port", "root", "workers", "queue", "time_ms", "jitter_ms", "error_rate", "error_status", "keepalive_ms", "max_requests", "header_timeout_ms", "max_body", "backlog", "server", "routes", "kv", "db", "cpu_ms", "serial_us", "usl", "mem_mb", "conn_kb", "data_mb", "tls"],
-        "http-load" => &["target", "targets", "mode", "users", "think_ms", "think", "rps", "start_rps", "arrival", "ramp_ms", "delay_ms", "duration_ms", "requests", "timeout_ms", "connect_timeout_ms", "keepalive", "max_conns", "balance", "mix"],
-        "lb" => &["mode", "port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb"],
+        "http-load" => &["target", "targets", "mode", "users", "think_ms", "think", "rps", "start_rps", "arrival", "ramp_ms", "delay_ms", "duration_ms", "requests", "timeout_ms", "connect_timeout_ms", "keepalive", "max_conns", "balance", "mix", "retry", "cookies"],
+        "lb" => &["mode", "port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb", "queue", "queue_timeout_ms", "sticky", "slow_start_ms", "outlier", "breaker", "retry", "limit", "pools", "routes"],
         "db" => &["port", "tables", "seed", "pool_mb", "page_kb", "fanout", "max_conns", "durability", "flush_ms", "isolation", "lock_timeout_ms", "txn_idle_ms", "checkpoint_s", "touched_max", "stmt_us", "page_us", "row_us", "write_us", "redo_mbps", "max_rows", "write_rows_max", "wal_tail", "mem_mb", "conn_kb", "data_mb", "disk", "replication"],
         "kv" => &["nodes", "port", "hb_port", "cpu_us", "mem_mb", "conn_kb", "data_mb", "vnodes", "rf", "w", "r", "consistency", "read_repair", "timeout_ms", "heartbeat_ms", "down_ms", "disk"],
         "cache" => &["backend", "port", "entries", "max_kb", "ttl_ms", "cache_control", "hit_us", "collapse", "timeout_ms", "connect_timeout_ms", "mem_mb", "conn_kb", "data_mb"],
         "worker" => &["queue", "topic", "concurrency", "time_ms", "cpu_ms", "mem_mb", "conn_kb", "data_mb", "jitter_ms", "error_rate", "wait_ms", "idle_ms", "timeout_ms"],
         "mq" => &["port", "visibility_ms", "max_deliveries", "max_depth", "durable", "topics"],
+        "proxy" => &["port", "algorithm", "hash", "vnodes", "backends", "health", "retries", "timeout_ms", "connect_timeout_ms", "drain_ms", "max_conns", "keepalive", "tag", "cpu_us", "mem_mb", "conn_kb", "data_mb", "queue", "queue_timeout_ms", "sticky", "slow_start_ms", "outlier", "breaker", "retry", "limit", "pools", "routes", "tls", "handshake_us", "resume_us", "tls_kb_us", "session_reuse", "session_ttl_ms", "max_requests", "keepalive_ms", "cache"],
+        "dbpool" => &["port", "db", "pool", "mode", "queue", "queue_timeout_ms", "idle_txn_ms", "timeout_ms", "connect_timeout_ms", "cpu_us", "mem_mb", "conn_kb", "data_mb"],
         _ => return None,
     })
 }

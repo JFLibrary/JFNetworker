@@ -2113,3 +2113,103 @@ Eine Verzögerung ist eine Zahl in Millisekunden.	A delay is a number of millise
 An {} {} hängt kein Kabel.	No cable is plugged into {} {}.
 Spalte {}: das Gerät „{}“ gibt es nicht.	Column {}: there is no device "{}".
 Spalte {}: {} hat keinen Dienst „{}“.	Column {}: {} has no service "{}".
+# SA6: traffic management (lb.rs, traffic.rs, dbpool.rs, their console and forms)
+seine Pools mit ihren Regeln und seine Routen	its pools with their policies and its routes
+proxyctl [status] [-s DIENST]	proxyctl [status] [-s SERVICE]
+zeigt den Reverse Proxy: TLS, Cache, Regeln, Zahlen und jedes Backend	shows the reverse proxy: TLS, cache, policies, numbers and every backend
+was sein Cache hält	what its cache holds
+dbpoolctl [status] [-s DIENST]	dbpoolctl [status] [-s SERVICE]
+zeigt den DB-Pooler: belegte Verbindungen, Wartende, offene Transaktionen	shows the database pooler: connections in use, what waits, open transactions
+Abgewiesen: Rate-Limit {}, Warteschlange voll {}, zu lange gewartet {}, Breaker offen {}; Retry-Budget verbraucht {}, Backends ausgeschlossen {}	Refused: rate limit {}, queue full {}, waited too long {}, breaker open {}; retry budget used up {}, backends ejected {}
+TLS: aus	TLS: off
+TLS: {} volle Handshakes, {} wieder aufgenommen, {} CPU	TLS: {} full handshakes, {} resumed, {} CPU
+Cache: {} Einträge, Treffer {} (davon abgelaufen {}), Fehlschläge {} ({} Treffer), gespart {}	Cache: {} entries, hits {} (stale {}), misses {} ({} hits), saved {}
+Backend|Pool|Adresse|Gewicht|Zustand|Breaker|seit|offen|gesamt|Fehler|p99	Backend|Pool|Address|Weight|State|Breaker|since|open|total|Errors|p99
+ausgeschlossen	ejected
+Pool|Verfahren|Regeln|wartend|höchstens|abgewiesen|zu lange|p99 Warten	Pool|Algorithm|Policies|waiting|at most|refused|too long|p99 wait
+Keine Routen: alles geht an den Pool default.	No routes: everything goes to the pool default.
+Route|Pool|Anfragen|begrenzt|Umschreiben|Cache	Route|Pool|Requests|limited|Rewrite|Cache
+ja	yes
+proxyctl: auf diesem Gerät läuft kein Reverse Proxy	proxyctl: no reverse proxy runs on this device
+Schlüssel|Status|Bytes|Alter|frisch bis	Key|Status|Bytes|Age|fresh until
+dbpoolctl: auf diesem Gerät läuft kein DB-Pooler	dbpoolctl: no database pooler runs on this device
+Anweisung	statement
+DB-Pooler {}: Port {} vor {}:{}, Verbindung je {}, höchstens {} Verbindungen	Database pooler {}: port {} before {}:{}, a connection per {}, at most {} connections
+Transaktion	transaction
+Belegt {} (höchstens {}), Verbindungen zur Datenbank {}, wartend {} (höchstens {}), offene Transaktionen {}	In use {} (at most {}), connections to the database {}, waiting {} (at most {}), open transactions {}
+Anweisungen {}, gewartet {}, Warteschlange voll {}, zu lange gewartet {}, im Modus abgelehnt {}, stille Transaktionen beendet {}	Statements {}, waited {}, queue full {}, waited too long {}, refused by the mode {}, silent transactions ended {}
+Warten p50 {}, p99 {}; Antwortzeit p99 {}	Wait p50 {}, p99 {}; response time p99 {}
+Transaktion|offen seit|still seit|in Arbeit	Transaction|open for|silent for|in flight
+Port und Datenbank des Poolers ändern sich nur mit einem Neustart.	The pooler's port and database change only with a restart.
+Der Modus des Poolers ändert sich nur ohne offene Transaktionen.	The pooler's mode changes only without open transactions.
+DB-Pooler Port {} ({}): {} von {} Verbindungen belegt, {} warten, {} Transaktionen offen	Database pooler port {} ({}): {} of {} connections in use, {} waiting, {} transactions open
+„db“ fehlt: der Pooler braucht die Adresse der Datenbank.	"db" is missing: the pooler needs the database's address.
+„db.addr“ braucht eine IP-Adresse.	"db.addr" needs an IP address.
+„pool“ braucht mindestens eine Verbindung.	"pool" needs one connection at least.
+„mode“ kennt {} nicht (statement, transaction).	"mode" does not know {} (statement, transaction).
+Die URL {} taugt nicht.	The URL {} does not work.
+Das Zertifikat des Proxys ändert sich nur mit einem Neustart.	The proxy's certificate changes only with a restart.
+Pools und Routen ändern sich nur mit einem Neustart.	Pools and routes change only with a restart.
+Eine Warteschlange kommt oder geht nur mit einem Neustart.	A queue comes or goes only with a restart.
+Das Backend {} gehört jetzt zu einem anderen Pool: es braucht einen anderen Namen.	The backend {} belongs to another pool now: it needs another name.
+mit TLS	with TLS
+ohne TLS	without TLS
+Proxy Port {} {}, {} Routen: {} von {} Backends verfügbar, {}, {} Fehler	Proxy port {} {}, {} routes: {} of {} backends available, {}, {} errors
+„queue“ ist eine Zahl von Anfragen.	"queue" is a number of requests.
+„queue“ braucht „max_conns“: ohne Grenze wartet niemand.	"queue" needs "max_conns": without a limit nobody waits.
+Ein Proxy spricht nur HTTP, nicht {}.	A proxy speaks HTTP only, not {}.
+„{}“ gibt es nur beim Proxy (Dienstart proxy).	"{}" exists only for the proxy (kind proxy).
+„{}“ gibt es nur im HTTP-Modus.	"{}" exists only in HTTP mode.
+Pool {} braucht „name“.	Pool {} needs "name".
+Den Pool {} gibt es zweimal.	The pool {} is there twice.
+Der Pool {} hat keine Backends.	The pool {} has no backends.
+„{}“ braucht ein Objekt.	"{}" needs an object.
+„backends“ oder „pools“ fehlt.	"backends" or "pools" is missing.
+Route {} braucht ein Objekt.	Route {} needs an object.
+Route {}: „{}“ gibt es nur beim Proxy (Dienstart proxy).	Route {}: "{}" exists only for the proxy (kind proxy).
+Route {}: der Pfad {} beginnt nicht mit /.	Route {}: the path {} does not start with /.
+Route {}: den Pool {} gibt es nicht.	Route {}: there is no pool {}.
+Route {}: „add“ beginnt nicht mit /.	Route {}: "add" does not start with /.
+Route {}: den Header {} setzt der Proxy nicht.	Route {}: the proxy does not set the header {}.
+Noch keine Backends: der Proxy hat niemanden, an den er weitergeben kann.	No backends yet: the proxy has nobody to pass requests on to.
+Noch keine Datenbank: der Pooler weiß nicht, wohin.	No database yet: the pooler does not know where to go.
+„retry.jitter“ kennt {} nicht (none, full, equal).	"retry.jitter" does not know {} (none, full, equal).
+„retry.budget“ ist ein Anteil zwischen 0 und 1.	"retry.budget" is a share between 0 and 1.
+„retry.on“ ist eine Liste aus connect, timeout, reset, 5xx.	"retry.on" is a list of connect, timeout, reset, 5xx.
+„retry.on“ kennt {} nicht (connect, timeout, reset, 5xx).	"retry.on" does not know {} (connect, timeout, reset, 5xx).
+geschlossen	closed
+halb offen	half-open
+„outlier.max_ejected“ ist ein Anteil zwischen 0 und 1.	"outlier.max_ejected" is a share between 0 and 1.
+„limit.rate“ ist eine Zahl je Sekunde.	"limit.rate" is a number per second.
+„limit“ braucht „rate“ (Anfragen je Sekunde).	"limit" needs "rate" (requests per second).
+„limit.key“ kennt {} nicht (all, client, route, header:NAME).	"limit.key" does not know {} (all, client, route, header:NAME).
+„limit.status“: {} ist kein Fehlerstatus (400 bis 599).	"limit.status": {} is no error status (400 to 599).
+„sticky.name“: {} taugt nicht als Name eines Cookies.	"sticky.name": {} does not work as the name of a cookie.
+„sticky.type“ kennt {} nicht (cookie, client).	"sticky.type" does not know {} (cookie, client).
+Proxy: Route {} führt zum Pool {}.	Proxy: route {} leads to the pool {}.
+Pool {}: alle Backends am Limit, die Anfrage wartet ({} in der Warteschlange).	Pool {}: every backend at its limit, the request waits ({} in the queue).
+Pool {}: Warteschlange voll, 503 sofort (Load Shedding).	Pool {}: queue full, 503 at once (load shedding).
+Pool {}: zu lange gewartet, 503.	Pool {}: waited too long, 503.
+Rate-Limit für {}: kein Token frei, {} mit Retry-After {} s.	Rate limit for {}: no token left, {} with Retry-After {} s.
+Circuit Breaker von {}: jetzt {}.	Circuit breaker of {}: {} now.
+Pool {}: alle Circuit Breaker offen, 503 ohne Versuch.	Pool {}: every circuit breaker open, 503 without trying.
+{} fällt zu oft aus und ist für {} ms ausgeschlossen.	{} fails too often and is ejected for {} ms.
+{} nimmt wieder Anfragen an.	{} takes requests again.
+{} fällt aus, bleibt aber drin: mehr Backends dürfen nicht ausgeschlossen sein.	{} fails but stays in: no more backends may be ejected.
+Versuch bei {} gescheitert, Wiederholung {} nach {} ms.	Attempt at {} failed, retry {} after {} ms.
+Retry-Budget erschöpft: keine Wiederholung.	Retry budget used up: no retry.
+Sticky Session: {} ist weg, die Sitzung zieht zu {}.	Sticky session: {} is gone, the session moves to {}.
+Proxy: {} aus dem Cache beantwortet.	Proxy: {} answered from the cache.
+Proxy: {} abgelaufen aus dem Cache beantwortet, wird im Hintergrund erneuert.	Proxy: {} answered stale from the cache, renewed in the background.
+Proxy: Antwort für {} für {} ms im Cache.	Proxy: the answer for {} kept for {} ms.
+TLS-Handshake kostet {} µs CPU.	TLS handshake costs {} µs CPU.
+TLS-Sitzung wieder aufgenommen: {} µs CPU.	TLS session resumed: {} µs CPU.
+DB-Pooler: keine Verbindung frei, die Anweisung wartet ({} in der Warteschlange).	Database pooler: no connection free, the statement waits ({} in the queue).
+DB-Pooler: Transaktion {} hält eine Verbindung.	Database pooler: transaction {} holds a connection.
+DB-Pooler: Transaktion {} gibt ihre Verbindung zurück.	Database pooler: transaction {} gives its connection back.
+Reverse Proxy {}: {} auf Port {}, Verfahren {}, {}	Reverse proxy {}: {} on port {}, algorithm {}, {}
+Dienst {}, Pool {}: der langsame Start wirkt nur bei round-robin und weighted, nicht bei {}.	Service {}, pool {}: slow start acts only with round-robin and weighted, not with {}.
+Dienst {}, Pool {}: bei {} Backends darf mit max_ejected {} ‰ keines ausgeschlossen werden.	Service {}, pool {}: with {} backends and max_ejected {} ‰ none may be ejected.
+Dienst {}: ein Retry-Budget von 0 lässt keine Wiederholung zu.	Service {}: a retry budget of 0 allows no retry.
+Dienst {}: auf {}:{} läuft keine Datenbank.	Service {}: no database runs at {}:{}.
+Dienst {}: der Pooler öffnet bis zu {} Verbindungen, die Datenbank auf {} nimmt nur {}.	Service {}: the pooler opens up to {} connections, the database at {} takes only {}.

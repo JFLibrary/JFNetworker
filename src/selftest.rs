@@ -106,6 +106,8 @@
 // at the console, a fault hunt repaired and diagnosed, a quiz answered, what a lesson shows typed and compared).
 // repltest.rs: replication of the database (group repl: the modes, lag, failover and fencing against closed forms,
 // each naming its formula; refusals; determinism with the log in flight; an old project unchanged; dbctl).
+// traffictest.rs: traffic management (group traffic: jfn_sim::traffic, the balancer and proxy of lb.rs, dbpool.rs,
+// the load generator's retries, DNS round robin) against closed forms, refusals, live or restart.
 
 use alloc::format;
 use alloc::string::String;
@@ -241,9 +243,11 @@ mod expguitest;
 mod coursetest;
 #[path = "consolelangtest.rs"]
 mod consolelangtest;
+#[path = "traffictest.rs"]
+mod traffictest;
 
 pub fn run() -> i32 {
-    let groups: [(&'static str, fn(&mut T)); 72] = [
+    let groups: [(&'static str, fn(&mut T)); 73] = [
         ("catalog", catalog_t),
         ("ifname", ifname_t),
         ("cable", cable_t),
@@ -316,6 +320,7 @@ pub fn run() -> i32 {
         ("consolelang", consolelangtest::run),
         ("courses", coursetest::run),
         ("repl", repltest::run),
+        ("traffic", traffictest::run),
     ];
     let (mut total, mut failed) = (0, 0);
     let args = plat::args();

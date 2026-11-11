@@ -2,8 +2,9 @@
 // of help, the rarer settings folded away; a backend or a target chosen from the project's devices
 //
 //   form_of(kind) -> Option<&[Group]>     the form of a kind (http-server, http-load, lb, kv, cache, mq,
-//                                         worker, db), none for the others: their settings stay JSON;
-//                                         a database's tables are the form's list, one row each
+//                                         worker, db, proxy, dbpool), none for the others: their settings
+//                                         stay JSON; a database's tables are the form's list, one row each;
+//                                         a proxy's routes and pools stay JSON, its backends are its list
 //   fields(kind)                          its fields in the order of the widgets (ID_SF_FIELD + 2 i)
 //   fill(kind, &config) -> Vals           what the form shows for a config
 //   merged(kind, &base, &vals) -> Result<Value, String>   the config: only what changed in the form
@@ -107,7 +108,7 @@ pub(crate) struct Group {
     pub fields: &'static [Field],
 }
 
-const HTTP_TARGET: &[&str] = &["http-server", "lb", "cache"];
+const HTTP_TARGET: &[&str] = &["http-server", "lb", "cache", "proxy"];
 const QUEUE_TARGET: &[&str] = &["mq"];
 
 // i18n: label
@@ -137,6 +138,29 @@ const CH_ISOLATION: &[Ch] = &[Ch { word: "read committed", label: "read committe
 const CH_REPL_ROLE: &[Ch] = &[Ch { word: "primary", label: "Primary: nimmt Schreibzugriffe an" }, Ch { word: "replica", label: "Replikat: folgt einem Primary" }];
 // i18n: label
 const CH_REPL_MODE: &[Ch] = &[Ch { word: "async", label: "async: nur das eigene Schreiben" }, Ch { word: "semi", label: "semi: ein Replikat hat den Satz empfangen" }, Ch { word: "sync", label: "sync: ein Replikat hat ihn geschrieben" }, Ch { word: "apply", label: "apply: ein Replikat hat ihn angewendet" }];
+const CH_STICKY: &[Ch] = &[Ch { word: "cookie", label: "Cookie des Load Balancers" }, Ch { word: "client", label: "Adresse des Clients" }];
+// i18n: label
+const CH_TLS: &[Ch] = &[Ch { word: "lab", label: "Zertifikat der Lab-CA" }, Ch { word: "self", label: "selbst signiert" }];
+// i18n: label
+const CH_POOL_MODE: &[Ch] = &[Ch { word: "transaction", label: "je Transaktion" }, Ch { word: "statement", label: "je Anweisung" }];
+
+// traffic management (SA6), the same for the balancer and the proxy
+// i18n: label unit help
+const TRAFFIC_FIELDS: [Field; 13] = [
+    Field { key: "queue", label: "Warteschlange", unit: "Anfragen", help: "Mit „Verbindungen je Backend“: so viele warten auf ein freies Backend, die nächste bekommt sofort 503 (Load Shedding). Leer: keine eigene Warteschlange.", kind: Fk::Int },
+    Field { key: "queue_timeout_ms", label: "Warten höchstens", unit: "ms", help: "So lange wartet eine Anfrage in der Warteschlange, dann bekommt sie 503.", kind: Fk::Dec },
+    Field { key: "retry.max", label: "Wiederholungen mit Pause", unit: "", help: "So oft versucht er eine gescheiterte Anfrage noch einmal, nach einer wachsenden Pause; nur was sich gefahrlos wiederholen lässt.", kind: Fk::Int },
+    Field { key: "retry.backoff_ms", label: "Erste Pause", unit: "ms", help: "Vor der ersten Wiederholung; jede weitere wartet doppelt so lange, zufällig verteilt.", kind: Fk::Dec },
+    Field { key: "retry.budget", label: "Retry-Budget", unit: "%", help: "Höchstens so viele Wiederholungen wie dieser Anteil der Anfragen der letzten 10 s. Das hält einen Retry-Sturm auf.", kind: Fk::Pct },
+    Field { key: "breaker.failures", label: "Circuit Breaker nach", unit: "Fehlern", help: "So viele Fehler in Folge, dann bekommt dieses Backend eine Weile nichts mehr.", kind: Fk::Int },
+    Field { key: "breaker.open_ms", label: "Breaker offen für", unit: "ms", help: "Danach lässt er wenige Proben durch; gelingen sie, ist er wieder geschlossen.", kind: Fk::Dec },
+    Field { key: "outlier.consecutive", label: "Ausschluss nach", unit: "Fehlern", help: "So viele Fehler in Folge schließen ein Backend aus, jedes Mal länger, nie mehr als die Hälfte.", kind: Fk::Int },
+    Field { key: "outlier.base_ms", label: "Ausschluss für", unit: "ms", help: "Das erste Mal so lange, dann ein Vielfaches davon.", kind: Fk::Dec },
+    Field { key: "slow_start_ms", label: "Langsamer Start", unit: "ms", help: "Ein Backend, das dazukommt oder zurückkommt, bekommt in dieser Zeit langsam seinen vollen Anteil.", kind: Fk::Dec },
+    Field { key: "sticky.type", label: "Sticky Sessions", unit: "", help: "Ein Client bleibt bei seinem Backend, solange es da ist: per Cookie oder nach seiner Adresse.", kind: Fk::Choice(CH_STICKY) },
+    Field { key: "limit.rate", label: "Rate-Limit je Client", unit: "Anfragen/s", help: "Darüber bekommt ein Client 429 mit Retry-After.", kind: Fk::Dec },
+    Field { key: "limit.burst", label: "Spitze", unit: "Anfragen", help: "So viele darf ein Client auf einmal schicken, bevor das Rate-Limit greift.", kind: Fk::Int },
+];
 
 // what holds a service in memory, the same in every form
 // i18n: label unit help
@@ -210,12 +234,16 @@ static HTTP_LOAD: [Group; 2] = [
             Field { key: "requests", label: "Anfragen insgesamt", unit: "", help: "Danach hört er auf; 0 heißt ohne Grenze.", kind: Fk::Int },
             Field { key: "connect_timeout_ms", label: "Zeit für den Aufbau", unit: "ms", help: "So lange darf eine neue Verbindung dauern; 0 heißt nur die Zeitgrenze.", kind: Fk::Dec },
             Field { key: "keepalive", label: "Verbindungen weiter nutzen", unit: "", help: "Aus: jede Anfrage baut eine neue Verbindung auf.", kind: Fk::Flag },
+            Field { key: "retry.max", label: "Wiederholungen", unit: "", help: "So oft schickt der Generator eine gescheiterte Anfrage noch einmal. Unter Überlast wird daraus ein Retry-Sturm.", kind: Fk::Int },
+            Field { key: "retry.backoff_ms", label: "Erste Pause", unit: "ms", help: "Vor der ersten Wiederholung; jede weitere wartet doppelt so lange, zufällig verteilt.", kind: Fk::Dec },
+            Field { key: "retry.budget", label: "Retry-Budget", unit: "%", help: "Höchstens so viele Wiederholungen wie dieser Anteil der Anfragen der letzten 10 s.", kind: Fk::Pct },
+            Field { key: "cookies", label: "Cookies behalten", unit: "", help: "Bei geschlossener Last: jeder Nutzer schickt die Cookies seiner Antworten zurück, wie ein Browser.", kind: Fk::Flag },
         ],
     },
 ];
 
 // i18n: title label unit help
-static LB: [Group; 2] = [
+static LB: [Group; 3] = [
     Group {
         title: "Verteilen",
         rare: false,
@@ -246,6 +274,83 @@ static LB: [Group; 2] = [
             Field { key: "health.timeout_ms", label: "Zeit für die Prüfung", unit: "ms", help: "Keine Antwort bis dahin zählt als gescheitert.", kind: Fk::Dec },
             Field { key: "health.rise", label: "Wieder da nach", unit: "Prüfungen", help: "So viele Prüfungen in Folge müssen gelingen.", kind: Fk::Int },
             Field { key: "health.fall", label: "Ausgefallen nach", unit: "Prüfungen", help: "So viele Prüfungen in Folge müssen scheitern.", kind: Fk::Int },
+            MEM_FIELDS[0],
+            MEM_FIELDS[1],
+        ],
+    },
+    Group { title: "Verkehr steuern", rare: true, fields: &TRAFFIC_FIELDS },
+];
+
+// i18n: title label unit help
+static PROXY: [Group; 4] = [
+    Group {
+        title: "Weitergeben",
+        rare: false,
+        fields: &[
+            Field { key: "backends", label: "Backends", unit: "", help: "An diese Server gibt der Proxy weiter, wenn keine Route einen Pool nennt. Routen und Pools stehen im JSON.", kind: Fk::List },
+            Field { key: "port", label: "Port", unit: "", help: "Hier nimmt er Anfragen an; mit TLS 443, wenn hier nichts steht.", kind: Fk::Int },
+            Field { key: "algorithm", label: "Verfahren", unit: "", help: "Wie er das nächste Backend wählt.", kind: Fk::Choice(CH_ALGO) },
+            Field { key: "health.type", label: "Prüfung der Backends", unit: "", help: "Woran er merkt, dass ein Backend nicht mehr antwortet.", kind: Fk::Choice(CH_HEALTH) },
+            Field { key: "health.path", label: "Pfad der Prüfung", unit: "", help: "Diesen Pfad fragt die HTTP-Prüfung ab.", kind: Fk::Text },
+        ],
+    },
+    Group {
+        title: "TLS und Cache",
+        rare: false,
+        fields: &[
+            Field { key: "tls.issuer", label: "TLS", unit: "", help: "Der Proxy beendet TLS mit diesem Zertifikat; die Backends sprechen weiter HTTP. Leer: kein TLS.", kind: Fk::Choice(CH_TLS) },
+            Field { key: "handshake_us", label: "CPU je Handshake", unit: "µs", help: "Annahme: ein voller TLS-Handshake auf einem Referenzkern. Zählt nur mit simulierter Hardware.", kind: Fk::Dec },
+            Field { key: "resume_us", label: "CPU je Wiederaufnahme", unit: "µs", help: "Annahme: eine wieder aufgenommene Sitzung kostet so viel.", kind: Fk::Dec },
+            Field { key: "tls_kb_us", label: "CPU je KiB", unit: "µs", help: "Annahme: Ver- und Entschlüsseln je KiB, das durch TLS geht.", kind: Fk::Dec },
+            Field { key: "session_reuse", label: "Wiederaufnahme", unit: "", help: "Modell: eine neue Verbindung einer Adresse mit kurz zuvor vollem Handshake kostet nur die Wiederaufnahme.", kind: Fk::Flag },
+            Field { key: "max_requests", label: "Anfragen je Verbindung", unit: "", help: "Danach schließt er die Verbindung des Clients; 0 heißt ohne Grenze. So oft lohnt sich ein Handshake.", kind: Fk::Int },
+            Field { key: "cache.ttl_ms", label: "Cache gültig für", unit: "ms", help: "GET-Antworten hält der Proxy so lange, wenn Cache-Control nichts anderes sagt. Leer: kein Cache.", kind: Fk::Dec },
+            Field { key: "cache.entries", label: "Einträge im Cache", unit: "", help: "So viele Antworten hält er, die am längsten unbenutzten gehen zuerst.", kind: Fk::Int },
+            Field { key: "cache.stale_ms", label: "Abgelaufen noch nutzen", unit: "ms", help: "So lange nach Ablauf antwortet er noch aus dem Cache und holt im Hintergrund eine neue Antwort.", kind: Fk::Dec },
+        ],
+    },
+    Group { title: "Verkehr steuern", rare: true, fields: &TRAFFIC_FIELDS },
+    Group {
+        title: "Seltener gebraucht",
+        rare: true,
+        fields: &[
+            Field { key: "max_conns", label: "Verbindungen je Backend", unit: "", help: "Darüber nimmt er dieses Backend nicht; 0 heißt ohne Grenze.", kind: Fk::Int },
+            Field { key: "timeout_ms", label: "Zeitgrenze", unit: "ms", help: "So lange wartet er auf ein Backend, dann antwortet er 504.", kind: Fk::Dec },
+            Field { key: "connect_timeout_ms", label: "Zeit für den Aufbau", unit: "ms", help: "So lange darf eine Verbindung zum Backend dauern.", kind: Fk::Dec },
+            Field { key: "keepalive", label: "Verbindungen weiter nutzen", unit: "", help: "Aus: jede Anfrage baut eine neue Verbindung zum Backend auf.", kind: Fk::Flag },
+            Field { key: "keepalive_ms", label: "Client-Verbindung offen halten", unit: "ms", help: "So lange bleibt die Verbindung eines Clients ohne Anfrage offen.", kind: Fk::Dec },
+            Field { key: "tag", label: "Backend nennen", unit: "", help: "Die Antwort sagt in X-Served-By, wer sie gemacht hat.", kind: Fk::Flag },
+            Field { key: "cpu_us", label: "CPU je Anfrage", unit: "µs", help: "Auch ein Proxy kann der Engpass sein.", kind: Fk::Dec },
+            Field { key: "health.interval_ms", label: "Prüfen alle", unit: "ms", help: "So oft prüft er jedes Backend.", kind: Fk::Dec },
+            MEM_FIELDS[0],
+            MEM_FIELDS[1],
+        ],
+    },
+];
+
+// i18n: title label unit help
+static DBPOOL: [Group; 2] = [
+    Group {
+        title: "Pooler",
+        rare: false,
+        fields: &[
+            Field { key: "db.addr", label: "Datenbank", unit: "", help: "Die Adresse des Geräts mit dem Dienst db.", kind: Fk::Text },
+            Field { key: "db.port", label: "Port der Datenbank", unit: "", help: "Dort nimmt die Datenbank Anweisungen an.", kind: Fk::Int },
+            Field { key: "pool", label: "Verbindungen zur Datenbank", unit: "", help: "Mehr hält der Pooler nie offen, egal wie viele Clients fragen.", kind: Fk::Int },
+            Field { key: "mode", label: "Verbindung halten", unit: "", help: "Je Transaktion: von BEGIN bis COMMIT, auch wenn der Client schweigt. Je Anweisung: nur für eine Anweisung, dann gehen keine Transaktionen.", kind: Fk::Choice(CH_POOL_MODE) },
+            Field { key: "queue", label: "Warteschlange", unit: "Anweisungen", help: "So viele warten auf eine freie Verbindung, die nächste bekommt sofort 503.", kind: Fk::Int },
+            Field { key: "queue_timeout_ms", label: "Warten höchstens", unit: "ms", help: "So lange wartet eine Anweisung, dann bekommt sie 503.", kind: Fk::Dec },
+            Field { key: "idle_txn_ms", label: "Stille Transaktion beenden", unit: "ms", help: "So lange darf eine Transaktion ohne Anweisung ihre Verbindung halten; 0 heißt für immer.", kind: Fk::Dec },
+            Field { key: "port", label: "Port", unit: "", help: "Hier nimmt der Pooler Anweisungen an: POST /query wie bei der Datenbank.", kind: Fk::Int },
+        ],
+    },
+    Group {
+        title: "Seltener gebraucht",
+        rare: true,
+        fields: &[
+            Field { key: "timeout_ms", label: "Zeitgrenze", unit: "ms", help: "So lange wartet er auf die Datenbank.", kind: Fk::Dec },
+            Field { key: "connect_timeout_ms", label: "Zeit für den Aufbau", unit: "ms", help: "So lange darf eine Verbindung zur Datenbank dauern.", kind: Fk::Dec },
+            Field { key: "cpu_us", label: "CPU je Anweisung", unit: "µs", help: "Rechenzeit des Poolers; sie zählt nur mit simulierter Hardware.", kind: Fk::Dec },
             MEM_FIELDS[0],
             MEM_FIELDS[1],
         ],
@@ -435,6 +540,8 @@ pub(crate) fn form_of(kind: &str) -> Option<&'static [Group]> {
         "mq" => &MQ,
         "worker" => &WORKER,
         "db" => &DB,
+        "proxy" => &PROXY,
+        "dbpool" => &DBPOOL,
         _ => return None,
     })
 }
@@ -530,7 +637,7 @@ fn rows_of(kind: &str, c: &Value) -> Vec<Row> {
     match kind {
         "http-load" => c.get("target").into_iter().map(text).chain(list("targets").iter().map(text)).collect(),
         "kv" => list("nodes").iter().map(text).collect(),
-        "lb" => list("backends")
+        "lb" | "proxy" => list("backends")
             .iter()
             .enumerate()
             .map(|(i, b)| Row {
@@ -562,7 +669,12 @@ fn rows_of(kind: &str, c: &Value) -> Vec<Row> {
 
 /// what a form shows for a config
 pub(crate) fn fill(kind: &str, c: &Value) -> Vals {
-    Vals { texts: fields(kind).map(|f| if f.kind == Fk::List { String::new() } else { text_of(f, get_path(c, f.key)) }).collect(), rows: rows_of(kind, c) }
+    // (a proxy's "tls" without "issuer" is signed by the lab CA: the choice says so)
+    let shown = |f: &Field| match get_path(c, f.key) {
+        None if f.key == "tls.issuer" && c.get("tls").is_some() => String::from("lab"),
+        v => text_of(f, v),
+    };
+    Vals { texts: fields(kind).map(|f| if f.kind == Fk::List { String::new() } else { shown(f) }).collect(), rows: rows_of(kind, c) }
 }
 
 /// the value of a field's text, or what is wrong with it
@@ -599,7 +711,7 @@ fn write_rows(kind: &str, c: &mut Value, base: &Value, rows: &[Row]) -> Result<(
         remove_path(c, key);
         return Ok(());
     }
-    if kind != "lb" {
+    if kind != "lb" && kind != "proxy" {
         c.insert(key, Value::Array(used.iter().map(|r| Value::string(r.addr.trim())).collect()));
         return Ok(());
     }
@@ -812,7 +924,7 @@ fn url_of(d: &Device, addr: &str, kinds: &[&str]) -> String {
 fn chosen(n: &Net, kind: &str, f: &Field, pick: &Pick, addr: &str) -> Row {
     let d = n.doc.proj.device(pick.id);
     match (kind, f.kind, d) {
-        ("lb", _, Some(d)) => {
+        ("lb" | "proxy", _, Some(d)) => {
             let port = d.services.iter().find(|s| s.kind == "http-server").and_then(port_of).filter(|&p| p != 80).map_or(String::new(), |p| p.to_string());
             Row { name: pick.name.clone(), addr: String::from(addr), port, ..Row::default() }
         }
@@ -940,7 +1052,7 @@ fn list_rows(n: &mut Net, ui: &mut Ui, kind: &str, f: &Field, disabled: bool) {
     }
     let rows = n.devwin.svc.form.as_ref().map_or(0, |x| x.vals.rows.len());
     let mut gone = None;
-    let lb = kind == "lb";
+    let lb = kind == "lb" || kind == "proxy";
     let flags = if disabled { ST_DISABLED } else { 0 };
     for r in 0..rows.min(ROWS_MAX) {
         let id = ID_SF_ROW + r as u32 * 8;
@@ -1211,7 +1323,7 @@ struct AddKind {
 }
 
 // i18n: help
-const KINDS: [AddKind; 9] = [
+const KINDS: [AddKind; 11] = [
     AddKind { kind: "http-server", help: "Antwortet auf HTTP-Anfragen, mit Rechenzeit, Wartezeit und Fehlerrate." },
     AddKind { kind: "http-load", help: "Erzeugt Last: Nutzer, die warten, oder eine feste Rate." },
     AddKind { kind: "lb", help: "Verteilt Anfragen oder Verbindungen auf mehrere Backends." },
@@ -1220,6 +1332,9 @@ const KINDS: [AddKind; 9] = [
     AddKind { kind: "mq", help: "Hält Nachrichten, bis ein Worker sie abgeholt und bestätigt hat." },
     AddKind { kind: "worker", help: "Holt Nachrichten aus einer Queue und arbeitet sie ab." },
     AddKind { kind: "db", help: "Eine Datenbank mit Tabellen, Puffer, Sperren, Versionen und Log; sie nimmt SQL-artige Anweisungen über HTTP an." },
+    // (the DHCP server stays last: it is the one a Linux device adds to the lab's kinds)
+    AddKind { kind: "proxy", help: "Ein Reverse Proxy: Routen nach Host und Pfad zu Pools, Umschreiben, TLS, Cache, dazu Rate-Limits, Wiederholungen und Circuit Breaker." },
+    AddKind { kind: "dbpool", help: "Ein Pooler vor einer Datenbank: hält höchstens N Verbindungen und lässt die übrigen Anweisungen warten." },
     AddKind { kind: "dhcp-server", help: "Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz des LAN; die Einstellungen sind JSON: Pools mit Netz, Bereich, Router, DNS und Dauer." },
 ];
 

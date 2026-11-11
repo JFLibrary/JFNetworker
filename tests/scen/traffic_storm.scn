@@ -1,0 +1,42 @@
+# Ein Retry-Sturm von innen: GEN schickt 200 Anfragen je Sekunde an LB vor WEB1 und WEB2, die jede dritte
+# Anfrage mit 503 beantworten. LB wiederholt bis zu dreimal, nach 5, 10 und 20 ms.
+#
+# ohne Budget: an den Webservern kommt 1 + p + p^2 + p^3 = 1,417-mal so viel an, rund 142 je Sekunde und Server
+run 5s
+expect WEB1 svc web metric requests >= 130 over 3s
+expect WEB1 svc web metric requests <= 154 over 3s
+expect WEB2 svc web metric requests >= 130 over 3s
+expect LB svc lb metric retries >= 75 over 3s
+# beim Client kommt dafür fast nichts mehr als Fehler an: p^4 = 0,8 %
+expect GEN svc load metric status_5xx <= 4 over 3s
+LB: lbctl
+run 10ms
+expect LB output contains "Abgewiesen: Rate-Limit 0"
+# mit einem Budget von 10 %: höchstens 1,1-mal so viel, die übrigen Fehler kommen beim Client an
+svc set LB lb retry.budget 0.1
+run 5s
+expect WEB1 svc web metric requests <= 112 over 3s
+expect LB svc lb metric budget_denied >= 30 over 3s
+expect GEN svc load metric status_5xx >= 30 over 3s
+LB: lbctl
+run 10ms
+expect LB output contains "Retry-Budget verbraucht"
+# WEB2 fällt ganz aus: ein Circuit Breaker nimmt es nach 10 Fehlern in Folge für 2 s heraus (bei 5 in Folge
+# öffnete er bei jeder dritten Anfrage als Fehler alle paar Sekunden auch an WEB1: 0,3^5 = 0,24 %)
+svc set LB lb breaker.failures 10 breaker.open_ms 2000
+svc set WEB2 web error_rate 1
+run 5s
+expect WEB2 svc web metric requests <= 5 over 3s
+expect LB svc lb metric min breakers_open == 1 over 3s
+expect LB svc lb metric fail_fast == 0 over 3s
+LB: lbctl
+run 10ms
+expect LB output contains "offen"
+# es kommt zurück: die Probe gelingt, der Breaker schließt, WEB2 bekommt wieder seinen Teil
+svc set WEB2 web error_rate 0
+run 5s
+expect LB svc lb metric breakers_open == 0
+expect WEB2 svc web metric requests >= 80 over 3s
+PC: curl -s -i http://10.0.0.10/
+run 100ms
+expect PC output contains "X-Served-By: web"

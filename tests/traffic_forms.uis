@@ -1,0 +1,173 @@
+#!args --verify-dirty --open tests/fixtures/lab_forms.jfnet
+# traffic management in the forms (SA6, workspace/devwin/svcform.rs, jfn_sim's lb.rs and dbpool.rs): the balancer's
+# traffic policies folded away, a queue without max_conns refused with its words, a retry policy and a breaker taken
+# live, a budget as percent, the proxy and the pooler from "Dienst hinzufügen" with what they lack, TLS and a cache
+# on the proxy, form and JSON agree, the keyboard through the new fields, one undo step.  Ids: the first device
+# window 26624; "Dienst hinzufügen …" 140304, its kind 140321, its name 140322; the form: Übernehmen 140288,
+# Abbrechen 140289, Als JSON bearbeiten 140290, the rarer groups 140293 + g - 1, a field 140544 + 2 i (lb: queue
+# 140588, queue_timeout_ms 140590, retry.max 140592, retry.backoff_ms 140594, retry.budget 140596,
+# breaker.failures 140598, sticky.type 140608, limit.rate 140610, max_conns 140568; proxy: tls.issuer 140554,
+# handshake_us 140556, cache.ttl_ms 140566; dbpool: db.addr 140544, pool 140548, mode 140550, idle_txn_ms 140556),
+# a backend row 140800 + 8 r (device + 0, address + 1, name + 3), Backend hinzufügen 141056; "Einstellungen …" of
+# card i 51200 + i; the JSON 51456, its Abbrechen 51473
+size 1400 1200
+theme light
+wait 2000
+# ---- a balancer with a backend runs
+dblclick listitem:"HOST1" shift
+expect window 26624 open
+resizewin 26624 900 1100
+click tab:"Dienste"
+click #140304
+click #140321
+click listitem:"Loadbalancer"
+click button:"Hinzufügen"
+wait 200
+click #141056
+click #140800
+click listitem:"WEB1 (10.0.0.12)"
+wait 50
+focus #140288
+click #140288
+wait 300
+expect text:"HTTP Port 80, round-robin: 1 von 1 Backends verfügbar, 0 Anfragen, 0 Fehler" exists
+# ---- its traffic management is folded away; a queue alone is refused with its words
+click button:"Einstellungen …"
+expect text:"So viele Fehler in Folge, dann bekommt dieses Backend eine Weile nichts mehr." missing
+focus #140294
+click #140294
+expect text:"So viele Fehler in Folge, dann bekommt dieses Backend eine Weile nichts mehr." exists
+expect text:"Höchstens so viele Wiederholungen wie dieser Anteil der Anfragen der letzten 10 s. Das hält einen Retry-Sturm auf." exists
+focus #140588
+click #140588
+type "20"
+wait 50
+expect text:"Dienst lb: „queue“ braucht „max_conns“: ohne Grenze wartet niemand." exists
+expect #140288 disabled
+focus #140588
+click #140588
+key ctrl+a
+key delete
+wait 50
+expect text:"Noch nichts geändert." exists
+# ---- retries with a budget and a breaker change it live
+focus #140592
+click #140592
+type "3"
+focus #140596
+click #140596
+type "10"
+focus #140598
+click #140598
+type "5"
+wait 50
+expect text:"Gilt sofort: lb läuft weiter, ohne Neustart." exists
+expect #140288 enabled
+# the keyboard: Tab goes on through the fields of the group
+focus #140592
+key tab
+expect #140594 focused
+key tab
+expect #140596 focused
+# form and JSON agree: what is typed goes along
+focus #140290
+click #140290
+expect #51456 exists
+click #51473
+expect button:"Einstellungen …" exists
+click button:"Einstellungen …"
+focus #140294
+click #140294
+focus #140592
+click #140592
+type "3"
+focus #140596
+click #140596
+type "10"
+focus #140598
+click #140598
+type "5"
+focus #140608
+click #140608
+click listitem:"Cookie des Load Balancers"
+focus #140288
+click #140288
+wait 300
+expect text:"HTTP Port 80, round-robin: 1 von 1 Backends verfügbar, 0 Anfragen, 0 Fehler" exists
+click button:"Einstellungen …"
+focus #140294
+click #140294
+expect #140592 text "3"
+expect #140596 text "10"
+expect #140598 text "5"
+focus #140289
+click #140289
+# one undo step takes it back
+cmd 10
+wait 200
+click button:"Einstellungen …"
+focus #140294
+click #140294
+expect #140592 text ""
+focus #140289
+click #140289
+cmd 11
+wait 200
+# ---- the proxy: from the dialog, what it lacks, a backend, TLS and a cache
+click #140304
+click #140321
+click listitem:"Reverse Proxy"
+expect #140322 text "proxy"
+expect text:"Ein Reverse Proxy: Routen nach Host und Pfad zu Pools, Umschreiben, TLS, Cache, dazu Rate-Limits, Wiederholungen und Circuit Breaker." exists
+click button:"Hinzufügen"
+wait 200
+expect text:"Reverse Proxy · proxy" exists
+expect text:"Noch keine Backends: der Proxy hat niemanden, an den er weitergeben kann." exists
+click #141056
+click #140800
+click listitem:"WEB1 (10.0.0.12)"
+wait 50
+focus #140554
+click #140554
+click listitem:"Zertifikat der Lab-CA"
+focus #140566
+click #140566
+type "2000"
+wait 50
+expect text:"Annahme: ein voller TLS-Handshake auf einem Referenzkern. Zählt nur mit simulierter Hardware." exists
+focus #140288
+click #140288
+wait 300
+expect text:"Noch keine Backends: der Proxy hat niemanden, an den er weitergeben kann." missing
+expect text:"Proxy Port 443 mit TLS, 0 Routen: 1 von 1 Backends verfügbar, 0 Anfragen, 0 Fehler" exists
+click #51201
+expect #140566 text "2000"
+focus #140289
+click #140289
+# ---- the pooler: what it lacks, then its database; transaction or statement mode
+click #140304
+click #140321
+click listitem:"DB-Pooler"
+expect #140322 text "dbpool"
+click button:"Hinzufügen"
+wait 200
+expect text:"DB-Pooler · dbpool" exists
+expect text:"Noch keine Datenbank: der Pooler weiß nicht, wohin." exists
+click #140544
+type "10.0.0.13"
+click #140548
+type "4"
+focus #140550
+click #140550
+click listitem:"je Anweisung"
+wait 50
+focus #140288
+click #140288
+wait 300
+expect text:"DB-Pooler Port 6432 (statement): 0 von 4 Verbindungen belegt, 0 warten, 0 Transaktionen offen" exists
+click #51202
+expect #140548 text "4"
+expect text:"So lange darf eine Transaktion ohne Anweisung ihre Verbindung halten; 0 heißt für immer." exists
+focus #140289
+click #140289
+close window 26624

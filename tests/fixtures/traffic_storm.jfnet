@@ -1,0 +1,247 @@
+{
+  "format": "jfn",
+  "version": 1,
+  "title": "Retry-Sturm, Budget und Breaker",
+  "description": "Ein Retry-Sturm von innen: GEN schickt 200 Anfragen je Sekunde an LB, die Webserver lassen jede dritte mit 503 scheitern. LB wiederholt bis zu dreimal, erst ohne Budget, dann mit einem Budget von 10 %, dann fällt WEB2 ganz aus und ein Circuit Breaker nimmt es heraus. Das Szenario traffic_storm.scn misst die Last an den Webservern.",
+  "seed": 43,
+  "next_id": 200,
+  "strict_mdix": false,
+  "metered": false,
+  "devices": [
+    {
+      "id": 1,
+      "name": "GEN",
+      "model": "traffic-gen",
+      "x": 40,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname GEN\nip addr add 10.0.0.1/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-load",
+          "name": "load",
+          "disabled": false,
+          "config": {
+            "targets": [
+              "http://10.0.0.10/"
+            ],
+            "mode": "open",
+            "rps": 200,
+            "timeout_ms": 5000,
+            "max_conns": 512
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 2,
+      "name": "SW1",
+      "model": "jf-s48x",
+      "x": 220,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname SW1\n",
+      "services": [],
+      "comment": ""
+    },
+    {
+      "id": 3,
+      "name": "LB",
+      "model": "load-balancer",
+      "x": 400,
+      "y": 200,
+      "off": false,
+      "startup_config": "hostname LB\nip addr add 10.0.0.10/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "lb",
+          "name": "lb",
+          "disabled": false,
+          "config": {
+            "mode": "http",
+            "port": 80,
+            "backends": [
+              {
+                "name": "web1",
+                "addr": "10.0.0.11"
+              },
+              {
+                "name": "web2",
+                "addr": "10.0.0.12"
+              }
+            ],
+            "health": {
+              "type": "none"
+            },
+            "retry": {
+              "max": 3,
+              "backoff_ms": 5,
+              "jitter": "none"
+            }
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 4,
+      "name": "WEB1",
+      "model": "server-1u",
+      "x": 580,
+      "y": 120,
+      "off": false,
+      "startup_config": "hostname WEB1\nip addr add 10.0.0.11/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "time_ms": 2,
+            "error_rate": 0.3,
+            "error_status": 503
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 5,
+      "name": "WEB2",
+      "model": "server-1u",
+      "x": 580,
+      "y": 280,
+      "off": false,
+      "startup_config": "hostname WEB2\nip addr add 10.0.0.12/24 dev eth0\n",
+      "services": [
+        {
+          "kind": "http-server",
+          "name": "web",
+          "disabled": false,
+          "config": {
+            "port": 80,
+            "time_ms": 2,
+            "error_rate": 0.3,
+            "error_status": 503
+          }
+        }
+      ],
+      "comment": ""
+    },
+    {
+      "id": 6,
+      "name": "PC",
+      "model": "pc",
+      "x": 220,
+      "y": 380,
+      "off": false,
+      "startup_config": "hostname PC\nip addr add 10.0.0.5/24 dev eth0\n",
+      "services": [],
+      "comment": ""
+    }
+  ],
+  "links": [
+    {
+      "id": 101,
+      "a": {
+        "dev": 1,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/1"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 102,
+      "a": {
+        "dev": 3,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/2"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 103,
+      "a": {
+        "dev": 4,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/3"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 104,
+      "a": {
+        "dev": 5,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/4"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    },
+    {
+      "id": 105,
+      "a": {
+        "dev": 6,
+        "port": "eth0"
+      },
+      "b": {
+        "dev": 2,
+        "port": "TenGigabitEthernet1/0/5"
+      },
+      "cable": "copper",
+      "cable_fixed": false,
+      "kbps": 10000000,
+      "delay_ns": 50,
+      "jitter_ns": 0,
+      "loss_ppm": 0,
+      "down": false,
+      "route": "straight",
+      "waypoints": []
+    }
+  ]
+}

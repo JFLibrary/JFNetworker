@@ -1,0 +1,57 @@
+#!args --verify-dirty --open tests/fixtures/traffic_proxy.jfnet
+# pictures of traffic management (workspace/devwin/svcform.rs, metrics.rs, canvas/lab.rs), light and dark, narrow, at
+# 100 and 150 %: the proxy's form with TLS and cache and its traffic group unfolded, the Metriken panel of the proxy
+# under load with its cache and TLS charts, the pill on the canvas.  build/jfnetworker/traffic_*.png.  Ids as in
+# traffic_forms.uis; the proxy's traffic group 140294
+size 1500 1000
+theme light
+wait 6000
+# ---- the canvas with the pills of the proxy and its sparkline
+shot build/jfnetworker/traffic_canvas_light.png
+# ---- the form
+dblclick listitem:"PROXY" shift
+expect window 26624 open
+resizewin 26624 900 1100
+click tab:"Dienste"
+click button:"Einstellungen …"
+wait 100
+expect #140554 exists
+shot build/jfnetworker/traffic_form_light_100.png window 26624
+theme dark
+shot build/jfnetworker/traffic_form_dark_100.png window 26624
+scale 150 window 26624
+wait 100
+shot build/jfnetworker/traffic_form_dark_150.png window 26624
+scale 100 window 26624
+theme light
+focus #140294
+click #140294
+wait 100
+expect text:"So viele Fehler in Folge, dann bekommt dieses Backend eine Weile nichts mehr." exists
+shot build/jfnetworker/traffic_form_policies_light.png window 26624
+resizewin 26624 560 900
+wait 100
+shot build/jfnetworker/traffic_form_narrow.png window 26624
+resizewin 26624 900 1100
+focus #140289
+click #140289
+close window 26624
+wait 100
+# ---- the Metriken panel: the proxy under load
+key ctrl+shift+m
+wait 200
+click listitem:"Reverse Proxy proxy"
+wait 200
+shot build/jfnetworker/traffic_metrics_light.png
+theme dark
+shot build/jfnetworker/traffic_metrics_dark.png
+scale 150
+wait 100
+shot build/jfnetworker/traffic_metrics_dark_150.png
+theme light
+shot build/jfnetworker/traffic_metrics_light_150.png
+scale 100
+size 1000 800
+wait 100
+shot build/jfnetworker/traffic_metrics_narrow.png
+size 1500 1000

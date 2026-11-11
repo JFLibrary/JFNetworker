@@ -4698,3 +4698,133 @@ Verlust, und das ist echt. Eine Konsole mit IOS-artiger Zeile hält lange Ausgab
 einem Skript also `key space` tippen. Ein Dienst wie der Namensserver wird in einem Labor vorgegeben; was Lernende tippen sollen, muss
 sich tippen lassen. Eine doppelte Adresse zeigt sich erst, wenn jemand per ARP gefragt hat, also prüft die Bewertung die neue Adresse.
 Unter `lock.faults` lässt sich nur reparieren, was im Abschnitt zur Fehlersuche steht.
+
+### Verkehrssteuerung: Proxy, Pooler, Limits und Breaker
+
+Ein Backend, das langsam wird, reißt ohne Schutz alle mit: Anfragen stauen sich, laufen ab, werden wiederholt und verdoppeln die Last, bis nichts mehr durchkommt. Die Verkehrssteuerung dieser Stufe (SA6) gibt dem Loadbalancer die Mittel dagegen, dazu einen eigenen **Reverse Proxy** (`proxy`), einen **DB-Pooler** (`dbpool`) und **DNS Round Robin**. Jedes Mittel hat ein Verhalten, das man messen kann, und einen Fehler, gegen den es schützt. Aufbau: [`traffic.rs`](crates/jfn_sim/traffic.rs) (die Regeln: Wiederholung, Budget, Breaker, Ausschluss, Rate-Limit, Sticky, TLS-Kosten), [`lb.rs`](crates/jfn_sim/lb.rs) (Loadbalancer und Proxy sind derselbe Typ und teilen ihre Pools), [`dbpool.rs`](crates/jfn_sim/dbpool.rs), [`dnsd.rs`](crates/jfn_sim/dnsd.rs). Keines davon ist das Konfigurationsformat eines echten Produkts, und keines ist damit kompatibel.
+
+**Rückwärts gleich.** Ein `lb` oder `http-load` ohne die neuen Schlüssel läuft Byte für Byte wie zuvor: keine neuen Ereignisse, Zufallszahlen oder Einträge im Mitschnitt, dieselben Zahlen. Eine Zone rotiert nur mit `"rotate": true`. Alte Projekte laden unverändert.
+
+**Der Loadbalancer, erweitert.** Alles nur im HTTP-Modus; jeder Schlüssel darf fehlen, und dann geschieht nichts davon:
+
+```json
+{"kind": "lb", "name": "lb", "config": {
+  "backends": [{"name": "web1", "addr": "10.0.2.11"}, {"name": "web2", "addr": "10.0.2.12"}],
+  "max_conns": 16, "queue": 64, "queue_timeout_ms": 1000,
+  "sticky": {"type": "cookie", "name": "JFNLB"},
+  "slow_start_ms": 30000,
+  "outlier": {"consecutive": 5, "base_ms": 30000, "max_ms": 300000, "max_ejected": 0.5},
+  "breaker": {"failures": 5, "open_ms": 5000, "probes": 1},
+  "retry": {"max": 2, "backoff_ms": 25, "max_backoff_ms": 1000, "jitter": "full", "budget": 0.2, "min_per_s": 0,
+            "on": ["connect", "timeout", "reset", "5xx"]},
+  "limit": {"rate": 100, "burst": 20, "key": "client", "status": 429},
+  "pools": [{"name": "api", "algorithm": "least-conn", "backends": [{"name": "api1", "addr": "10.0.2.21"}],
+             "max_conns": 8, "queue": 100, "breaker": {"failures": 10}}],
+  "routes": [{"path": "/api/", "pool": "api", "retry": {"max": 1}, "limit": {"rate": 10, "key": "header:X-Key"}}]}}
+```
+
+| Schlüssel | Vorgabe | Was es tut | Wogegen |
+|---|---|---|---|
+| `max_conns` + `queue` | aus | Je Backend höchstens `max_conns` Anfragen gleichzeitig, die übrigen warten der Reihe nach, höchstens `queue` und `queue_timeout_ms` lang (1 s); dann 503 mit `Retry-After: 1` | ein Backend, das in seiner eigenen Warteschlange erstickt: lieber früh und billig abweisen (Load Shedding). Ohne `queue` bleibt `max_conns` wie bisher: Verbindungen je Backend, Anfragen warten unbegrenzt |
+| `sticky` | aus | `cookie`: der Balancer setzt `Set-Cookie: JFNLB=web2` und schickt jede Anfrage mit diesem Cookie dorthin; `client`: nach der Adresse des Clients (`ttl_ms`, 0 heißt für immer) | Sitzungen, die nur ein Backend kennt. Ist es weg oder voll, geht die Anfrage nach dem Verfahren woanders hin, ein neues Cookie kommt mit, `sticky_moved` zählt |
+| `slow_start_ms` | 0 | Ein Backend, das hochkommt (Prüfungen, hinzugefügt, wieder eingeschaltet, zurück aus dem Ausschluss), bekommt sein Gewicht linear von fast nichts bis voll | ein kalter Cache oder ein JIT, die bei vollem Anteil sofort umfallen. Wirkt bei `round-robin` und `weighted`; `least-conn` und `hash` übergehen es (das Problems-Tab sagt das) |
+| `outlier` | aus | `consecutive` Fehler in Folge schließen ein Backend aus, `base_ms` mal die Zahl seiner Ausschlüsse lang, höchstens `max_ms`; nie mehr als `max_ejected` der Backends eines Pools zugleich (abgerundet) | ein Backend, das schnell Fehler liefert und damit Anfragen anzieht. Passiv: es zählt echte Antworten, keine Prüfungen |
+| `breaker` | aus | Je Backend: geschlossen; nach `failures` Fehlern in Folge offen, `open_ms` lang bekommt es nichts; dann halb offen, `probes` Anfragen gehen durch; so viele Erfolge schließen ihn, ein Fehler öffnet ihn wieder. Sind alle Breaker eines Pools offen, gibt es sofort 503 (`fail_fast`) | Warten auf ein totes Backend: lieber sofort scheitern als nach dem Timeout |
+| `retry` | aus (dann gilt `retries` wie bisher) | Eine gescheiterte Anfrage geht nach einer Pause noch einmal, an ein anderes Backend, solange es eines gibt: Pause `backoff_ms` · 2^(n−1), höchstens `max_backoff_ms`, mit `jitter` `full` (0 bis Pause), `equal` (halbe Pause plus bis zu ihrer Hälfte) oder `none`. Nur was sich gefahrlos wiederholen lässt: GET, HEAD, OPTIONS, TRACE, PUT und DELETE; eine Anfrage, die nie ankam (`connect`), auch POST. `budget`: höchstens dieser Anteil der Anfragen der letzten 10 s als Wiederholung, plus `min_per_s` je Sekunde | kurze Störungen. Ohne Budget macht eine Wiederholung aus einem halben Ausfall einen ganzen: der Retry-Sturm |
+| `limit` | aus | Token Bucket je Schlüssel (`all`, `client`, `route`, `header:NAME`): `rate` je Sekunde, `burst` höchstens; ohne Token `status` (429) mit `Retry-After` in ganzen Sekunden | einzelne Clients, die alle anderen verdrängen |
+| `pools`, `routes` | ein Pool `default` | Weitere Pools mit eigenem Verfahren und eigenen Regeln; eine Route führt nach dem längsten passenden Pfadpräfix zu einem Pool (eine mit `host` vor einer ohne), mit eigenem `retry` und `limit`; ohne passende Route `default` | getrennte Dienste hinter einem Eingang |
+
+Die Prüfungen, `drain_ms`, `cpu_us` und alles andere bleiben, wie sie waren. Im Betrieb ändern sich alle Regeln (`reconfigure`); Pools und Routen selbst, ihre Namen, Präfixe und Hosts, brauchen einen Neustart, ebenso eine Warteschlange, die kommt oder geht. Was ein Fehler ist, sagt die Antwort: Status ab 500 oder keine Antwort (abgelehnt, Timeout, abgebrochen).
+
+**Der Reverse Proxy** (`proxy`) ist der Loadbalancer mit mehr: alle Schlüssel oben, dazu
+
+```json
+{"kind": "proxy", "name": "proxy", "config": {
+  "tls": {"names": ["shop.lab"]}, "handshake_us": 400, "resume_us": 50, "tls_kb_us": 1,
+  "session_reuse": false, "session_ttl_ms": 300000, "max_requests": 0, "keepalive_ms": 75000,
+  "cache": {"entries": 1000, "max_kb": 65536, "ttl_ms": 30000, "stale_ms": 0, "hit_us": 20},
+  "pools": [{"name": "shop", "backends": [{"name": "shop1", "addr": "10.0.2.11"}]},
+            {"name": "blog", "backends": [{"name": "blog1", "addr": "10.0.2.13"}]}],
+  "routes": [{"host": "shop.lab", "path": "/api/", "pool": "shop", "strip": "/api", "add": "/v2",
+              "set_headers": {"X-Env": "lab"}, "remove_headers": ["Cookie"], "cache": false},
+             {"host": "blog.lab", "path": "/", "pool": "blog"}]}}
+```
+
+- **Routen:** nach Host (ohne Port; leer: jeder) und Pfadpräfix; `strip` nimmt ein Präfix vorn weg, `add` setzt eines davor (aus `/api/cart` wird `/v2/cart`), `set_headers` und `remove_headers` ändern, was weitergeht. Dazu immer `X-Forwarded-For`, `X-Forwarded-Proto` und `X-Forwarded-Host`. Ohne passende Route und ohne Backends im Pool `default` gibt es 404. Der Proxy spricht nur HTTP; die Backends bleiben bei HTTP, wenn er TLS beendet.
+- **TLS:** Mit `tls` (wie beim Webserver, [`tlssim.rs`](crates/jfn_sim/tlssim.rs)) sind die Bytes ein echter TLS-1.3-Handshake und echte Datensätze. Auf einem Gerät mit Hardware kostet ein voller Handshake `handshake_us` CPU auf einem Referenzkern, und jedes KiB durch TLS `tls_kb_us`. Ohne Hardware kostet nichts davon etwas, gezählt wird trotzdem. `max_requests` begrenzt die Anfragen je Verbindung eines Clients; so oft lohnt sich ein Handshake. Gerechnet wird der Handshake mit der ersten Anfrage einer neuen Verbindung, die Bytes der Antwort, bevor sie geht.
+- **Wiederaufnahme, modelliert:** Mit `session_reuse` zählt eine neue Verbindung einer Adresse, die innerhalb von `session_ttl_ms` einen vollen Handshake hatte, als wieder aufgenommen und kostet `resume_us`. Das ist ein Modell: netpkt kennt keine Wiederaufnahme, auf dem Draht steht weiter ein voller Handshake.
+- **Cache:** GET und HEAD der Routen mit `cache` (Vorgabe: an, wenn es `cache` gibt), nach Methode, Route und Ziel. Antworten 200, 203, 204, 301, 404 und 410 bleiben `ttl_ms` lang oder so lange, wie `Cache-Control: max-age` sagt; `no-store`, `no-cache` und `private` halten nichts. `stale_ms` (oder `stale-while-revalidate` des Backends): so lange nach Ablauf antwortet er noch aus dem Cache (`X-Cache: STALE`) und holt mit genau einer Anfrage eine neue Antwort im Hintergrund. Sonst `X-Cache: HIT` mit `Age` oder `MISS`. LRU nach Einträgen und `max_kb`; ein Treffer kostet `hit_us` CPU (ohne Hardware eine schlichte Zeit). Der Cache zählt als Speicher des Dienstes. Den Cache vor einem einzelnen Backend gibt es weiter als `cache` ([`cache.rs`](crates/jfn_sim/cache.rs)).
+
+**Annahmen des Labors** für TLS, im Formular als Annahme markiert: ein voller Handshake 400 µs (ECDHE, eine Signatur, die Schlüssel; mit RSA-2048 wären es eher 1 bis 2 ms), eine Wiederaufnahme 50 µs, 1 µs je KiB (AEAD mit rund 1 GB/s).
+
+**Der Lastgenerator** (`http-load`) bekommt `"retry"` mit denselben Schlüsseln (so sieht man den Sturm von der Seite des Clients: offene Last kommt weiter, die Wiederholungen kommen dazu) und `"cookies": true` (geschlossene Last: jeder Nutzer schickt die Cookies seiner Antworten zurück, wie ein Browser, also funktionieren Sticky Sessions). Ziele dürfen `https://` sein. Die Latenz einer wiederholten Anfrage zählt ab dem ersten Versuch, `retries` und `budget_denied` stehen bei den Zahlen.
+
+**Der DB-Pooler** (`dbpool`): Clients schicken ihre Anweisungen an ihn wie an `db` (`POST /query`, dieselben Inhalte, dieselben Antworten, die Transaktion als `"txn"`, `?txn=` oder `X-Txn`). Er hält höchstens `pool` Verbindungen zu einer Datenbank, die übrigen Anweisungen warten der Reihe nach.
+
+```json
+{"kind": "dbpool", "name": "pool", "config": {"port": 6432, "db": {"addr": "10.0.2.30", "port": 7100}, "pool": 10,
+ "mode": "transaction", "queue": 1000, "queue_timeout_ms": 5000, "idle_txn_ms": 0, "timeout_ms": 30000, "cpu_us": 10}}
+```
+
+`transaction`: eine Anweisung ohne Transaktion belegt eine Verbindung für ihre Runde; `BEGIN` belegt eine für die ganze Transaktion, bis ihr `COMMIT` oder `ROLLBACK` beantwortet ist oder die Datenbank sie nicht mehr kennt (404). Auch wenn der Client schweigt: Eine stille Transaktion hält ihre Verbindung, und niemand sonst kann sie nutzen. `idle_txn_ms` beendet sie nach so langer Stille mit einem `ROLLBACK` (`idle_kills`); 0, die Vorgabe, wartet für immer. `statement`: jede Anweisung belegt eine Verbindung nur für sich, `BEGIN` und Anweisungen einer Transaktion gibt es dann nicht (400 `pool_mode`). Volle Warteschlange: 503 `pool_full`, zu lange gewartet: 503 `pool_timeout`. Die Verbindungen zur Datenbank bleiben offen, also sehen `max_conns` und `conn_kb` der Datenbank höchstens `pool` Verbindungen, egal wie viele Clients fragen. `GET /_pool/stats` gibt die Zahlen als JSON. Größe, Modus (ohne offene Transaktionen), Warteschlange und Zeiten ändern sich im Betrieb.
+
+**DNS Round Robin.** Eine Zone mit `"rotate": true` stellt bei jeder Antwort die nächste Adresse eines Namens an den Anfang (je Name und Typ gezählt, ohne Zufall): Über einen vollen Umlauf ist jede Adresse gleich oft vorn. Der Resolver eines Clients nimmt die erste und behält die Antwort für ihre TTL. Darum ist das **keine Lastverteilung**: Ein Client bleibt für die TTL bei einer Adresse, egal wie viel er schickt; bei vier Clients und drei Adressen bekommt eine doppelt so viele; und ein Server, der ausfällt, bekommt weiter Anfragen, bis die Caches ablaufen. Ohne `rotate` bleibt die Reihenfolge der Zone, wie bisher.
+
+```json
+{"kind": "dns-server", "name": "dns", "config": {"zones": [{"origin": "lab", "ttl": 30, "rotate": true,
+ "records": ["web A 10.0.2.11", "web A 10.0.2.12", "web A 10.0.2.13"]}]}}
+```
+
+**Was echt ist und was Modell.** Echt: die Wartenden und ihre Reihenfolge, die Zustände der Breaker, die Token der Buckets (exakt gezählt, in Billionstel Token), die Pausen der Wiederholungen auf virtueller Zeit, die Cookies, der umgeschriebene Pfad auf dem Draht, der TLS-Handshake, der Cache mit seinen Bytes, die Verbindungen des Poolers, die Reihenfolge der DNS-Antworten. Modell: die CPU-Kosten von TLS (Annahmen oben), die Wiederaufnahme von Sitzungen, der Jitter aus einem Strom des Projekt-Seeds (nur, wenn eine Regel ihn braucht). Was nicht dabei ist: Replikation und Lesen von Replikaten (SA5), Autoscaler, Canary und Blue-Green (SA7), ein CDN mit Regionen, ein Service Mesh, HTTP/2, Kompression, ein Cache, der `Vary` versteht.
+
+**Die Zahlen lesen.** Ein `lb` mit Regeln und jeder `proxy` zählen dazu `limited` (429), `queued`, `waiting`, `shed` (Warteschlange voll), `queue_timeouts`, `budget_denied`, `fail_fast`, `breakers_open`, `ejected`, `ejections`, `sticky_moved`, `wait_p99_us` und je Backend `b1_breaker` (0 geschlossen, 1 offen, 2 halb offen) und `b1_ejected`; der Proxy auch `cache_hits`, `cache_misses`, `cache_stale`, `hit_pm`, `bytes_saved`, `tls_handshakes`, `tls_resumed`, `tls_cpu_us`. Der Pooler: `in_use`, `waiting`, `txns`, `db_conns`, `waited`, `wait_mean_us`, `wait_p99_us`, `refused`, `queue_timeouts`, `mode_refused`, `idle_kills`. Das Panel Metriken hat dafür die Diagramme „Abgewiesen“, „Schutz der Backends“, „Cache“, „TLS“ und beim Pooler „Verbindungen“; auf der Zeichenfläche tragen Proxy und Pooler eine Pille. Die Shell: `lbctl [status|routes]` (mit Regeln auch, was abgewiesen wurde und warum, den Pool, den Breaker und das Gewicht jedes Backends, beim langsamen Start ein Bruchteil), `proxyctl [status|routes|cache]`, `dbpoolctl`. Der Simulationsmodus erklärt jede Entscheidung: geroutet, gewartet, abgewiesen, begrenzt, Breaker offen, ausgeschlossen, wiederholt, Budget erschöpft, aus dem Cache, Handshake, Verbindung gehalten. Das Problems-Tab warnt vor dem, was nicht wirken kann: langsamer Start bei `least-conn` oder `hash`, ein Budget von 0, eine Grenze für Ausschlüsse, die keinen erlaubt, ein Pooler vor keiner Datenbank oder vor einer, die weniger Verbindungen nimmt, als er öffnet. Sweeps variieren alle Schlüssel (`known_keys`), etwa `lb.retry.budget` oder `proxy.cache.ttl_ms`.
+
+**Geprüft gegen Formeln** (Selbsttest-Gruppe `traffic`, `--selftest --only=traffic --numbers`):
+
+| Vergleich | Formel | gemessen | Formel sagt | Abstand | Toleranz |
+|---|---|---|---|---|---|
+| Rate-Limit am Balancer: 800 Anfragen in 3,995 s, Rate 50, Spitze 10 | Spitze + Rate · Zeit | 209 | 209 | 0 | 1 Anfrage |
+| je Client ein eigener Bucket: 2 Clients, Rate 20, Spitze 5, 1,99 s | Spitze + Rate · Zeit, je Client | 44 · 44 | 44 · 44 | 0 | genau |
+| der Bucket allein: 1000 Ankünfte alle 5 ms, Rate 10, Spitze 5 | 5 + ⌊10 · 4,995⌋ | 54 | 54 | 0 | genau |
+| Wiederholung am Balancer, p 0,5 n 3 · p 0,2 n 2 · p 0,8 n 4 | Last = λ (1 + p + … + pⁿ) | 7515 · 4926 · 13 308 | 7500 · 4960 · 13 446 | 0,20 · 0,69 · 1,03 % | 4 % |
+| dieselben: was am Ende scheitert | λ pⁿ⁺¹ | 247 · 37 · 1283 | 250 · 32 · 1311 | 1,2 · 15,6 · 2,1 % | 3 σ der Binomialzahl (19 · 53 · 8,3 %) |
+| Budget 0,2 bei p 0,8, n 4 | Last ≤ λ (1 + b) | 4800 | ≤ 4800 | | genau |
+| das Budget allein: 1000 Anfragen | Wiederholungen ≤ b · Anfragen | 200 | 200 | 0 | genau |
+| Wiederholung beim Client, p 0,3 n 3 · p 0,6 n 2 | λ (1 + p + … + pⁿ) | 5669 · 7904 | 5668 · 7840 | 0,02 · 0,82 % | 4 % |
+| Client mit Budget 0,1 bei p 1 | ≤ λ (1 + b) | ≤ 4400 | ≤ 4400 | | genau |
+| langsamer Start, 10 s, sechs Abschnitte zu 2 s | Anteil = f / (1 + f), f = t / slow_start | 0,088 · 0,229 · 0,332 · 0,411 · 0,473 · 0,500 | dieselben | höchstens 0,44 % | 3 % |
+| Warteschlange: max_conns 2, 100 ms je Anfrage | X = max_conns / Bedienzeit | 20,000 /s | 20 /s | 0 % | 3 %; in Arbeit nie mehr als 2 |
+| TLS ohne Keep-alive, 1 Kern, Handshake 2 ms | X = Kerne · Tempo / Handshake | 500,0 /s | 500 /s | 0 % | 3 % |
+| CPU je Anfrage ohne und mit 4 Anfragen je Verbindung | Handshake / Wiederverwendung | 2000 · 500,9 µs | 2000 · 500 µs | 0 · 0,18 % | 1 · 3 % |
+| Durchsatz mit 4 Anfragen je Verbindung | Kerne · Tempo / (Handshake / 4) | 1499,3 /s | 1500 /s | 0,04 % | 3 % |
+| Wiederaufnahme (Modell) | CPU je Anfrage = resume_us | 100 µs | 100 µs | 0 | 2 % |
+| Cache: 200/s auf 50 Schlüssel, 1 s · 200/s auf 400, 1 s · 100/s auf 20, 0,5 s | Treffer = x / (1 + x), x = λ T / K | 0,799 · 0,330 · 0,714 | 0,800 · 0,333 · 0,714 | 0,13 · 0,95 · 0,04 % | 3 % |
+| Pooler, geschlossene Schleife: 16 Nutzer, 4 Verbindungen | W = (N − c) / X | 6,0 ms | 6,0 ms | 0,16 % | 4 % |
+| derselbe: mittlere Warteschlange (Little) | L = λ W = N − c | 11,988 | 11,980 · 12 | 0,06 · 0,10 % | 4 % |
+| eine stille Transaktion bei 2 Verbindungen | der halbe Durchsatz | 495,5 /s | 495 /s | 0,10 % | 3 % |
+| Breaker: Fehler 5, offen 1 s, 2 Proben | offen nach genau 5 Fehlern, eine Probe nach 1 s, geschlossen nach 2 Erfolgen | 5 · 6 · geschlossen | 5 · 6 · geschlossen | | genau |
+| Ausschluss: 3 in Folge, 2 s; zwei von drei fallen aus, Grenze 0,34 | nach genau k Fehlern; Ausgeschlossene ≤ ⌊0,34 · 3⌋ = 1 | 3, dann 6 · höchstens 1 | 3, 6 · 1 | | genau |
+| DNS Round Robin: 6 Clients, 3 Adressen | jede Adresse gleich oft vorn | 2 · 2 · 2, der Reihe nach | 2 · 2 · 2 | | genau; 4 Clients: 2 · 1 · 1 |
+
+Dazu ohne Toleranz: jede Ablehnung mit ihren Worten (31 Fälle), die Formulare schreiben das JSON, das die Dienste nehmen, im Betrieb oder mit Neustart wie angesagt, Sticky Sessions nach Cookie und Adresse samt Umzug, Routen nach Host und Pfad mit Umschreiben, ein POST wird nach 503 nicht wiederholt, die Probleme mit ihren Worten, alte Projekte mit Loadbalancern laufen auf den alten Wegen, ein Klon einer warmen Maschine mit allen Regeln läuft gleich weiter, 1 und 3 Threads geben dieselben Bytes.
+
+**Eine Studie.** `tests/experiments/overload.jfnex` auf `overload.jfnet`: zwei Webserver mit je 4 Kernen und 8 ms CPU je Anfrage (zusammen rund 1100 je Sekunde), jede zehnte Anfrage scheitert mit 503, nachdem sie ihre CPU verbraucht hat; der Loadbalancer gibt einem Versuch 250 ms. Das ist **die Ausgabe des Modells mit seinen Annahmen**:
+
+```text
+Wiederholen (0.886 €/h)
+Last    erreicht/s  p50 ms  p95 ms  p99 ms  p99.9 ms  Fehler %  CPU %    €/1000   SLO  Engpass
+600/s      630.333     7.2    22.2    33.2      58.1      0.00   65.2  0.000390    ok  CPU WEB2
+950/s      980.000    62.3   136.3   174.0     281.0      0.03  100.0  0.000251  Knie  CPU WEB1
+1050/s      82.666  1031.7  1048.5  1065.3    1065.3     89.73  100.0  0.002977  nein  CPU WEB1
+
+Zusammenfassung
+Konfiguration               €/h   Knie  Maximum/s  €/1000 am Knie  begrenzt durch
+Ohne Wiederholung         0.886      -    972.333               -  CPU WEB1
+Wiederholen               0.886  950/s    980.000        0.000251  CPU WEB1
+Mit Budget                0.886      -    926.666               -  CPU WEB2
+Wiederholen und abweisen  0.886  600/s    983.333        0.000390  CPU WEB1
+```
+
+Was sie zeigt: Ohne Wiederholung kommt jede zehnte Anfrage als Fehler beim Nutzer an. Drei Wiederholungen verstecken die Fehler ganz (0,00 %) und kosten 11 % mehr Arbeit, solange Platz ist. Bei 1050/s sind das 1,11 · 1050 = 1166 Anfragen je Sekunde für 1100 Plätze: Die Warteschlangen wachsen, Versuche laufen nach 250 ms ab, werden wiederholt, und die Server arbeiten an Anfragen, auf die niemand mehr wartet. Übrig bleiben 83 von 1050 je Sekunde: der Retry-Sturm. Ein Budget von 5 % hält die Last bei höchstens 1,05-fach, versteckt dafür nur die Hälfte der Fehler; mit Wiederholung und Abweisen (16 je Backend, 32 warten) bleibt der Durchsatz bei der Kapazität und die Latenz begrenzt. Die Tabelle läuft in rund 5 s auf 4 Threads.
+
+Für Programme: `traffic::{RetryCfg, Budget, BreakerCfg, Breaker, OutlierCfg, LimitCfg, Limiter, StickyCfg, TlsCost, TrafficNote, idempotent, outcome_of}`, `Lb::{pools, routes, retry, limit, ext, cached, hit_pm}`, `LbView::{pools, routes, …}`, `BackendView::{pool, breaker, ejected_until, weight_pm}`, `dbpool::{DbPool, DbPoolView, PoolMode}`, `Engine::dbpool_view`, `Zone::rotate`. Geprüft wird in der Selbsttest-Gruppe `traffic` ([`src/traffictest.rs`](src/traffictest.rs)), mit `scen_traffic_storm.uis`, `scen_traffic_proxy.uis`, `scen_traffic_pool.uis`, `overload_study.uis` und den Fensterskripten `traffic_forms.uis`, `traffic_forms_en.uis` und `traffic_shots.uis`.

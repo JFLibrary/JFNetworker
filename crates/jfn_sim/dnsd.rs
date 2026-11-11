@@ -9,6 +9,11 @@
 //                                      "@ MX 10 mail", "web A 10.0.2.20" (relative names get the
 //                                      origin, names ending in a dot are absolute)
 //   Engine::dns_zones(dev)
+//   Zone::rotate                       DNS round robin (SA6, opt-in, "rotate": true in the zone's JSON):
+//                                      the records of one name and type rotate by one place with each
+//                                      answer (DnsServer::turns counts per name and type), so over a full
+//                                      cycle every address is first equally often; without it the order
+//                                      is the zone's, as always
 //
 // Answers (RFC 1034 4.3.2): the zone with the longest origin that holds the name; below a
 // delegation (NS records under the origin) a referral with glue; else the records of the
@@ -50,6 +55,8 @@ pub struct Zone {
     /// the TTL of records added without one
     pub ttl: u32,
     pub records: Vec<Rr>,
+    /// several records of a name and type take turns in first place (SA6)
+    pub rotate: bool,
 }
 
 impl Zone {
@@ -60,7 +67,7 @@ impl Zone {
         let sub = |h: &str| if o.is_empty() { String::from(h) } else { format!("{}.{}", h, o) };
         let soa = Soa { mname: sub("ns"), rname: sub("hostmaster"), serial: 1, refresh: 3600, retry: 600, expire: 86_400, minimum: 300 };
         let records = alloc::vec![Rr::new(&o, 3600, RData::Soa(soa)), Rr::new(&o, 3600, RData::Ns(sub("ns")))];
-        Zone { origin: o, ttl: 3600, records }
+        Zone { origin: o, ttl: 3600, records, rotate: false }
     }
     pub fn soa(&self) -> Option<(&Rr, &Soa)> {
         self.records.iter().find_map(|r| match &r.data {
@@ -229,6 +236,8 @@ pub struct DnsServer {
     refused: Counter,
     forwarded: Counter,
     servfail: Counter,
+    /// round robin: answers given per name and type of a rotating zone
+    turns: alloc::collections::BTreeMap<(String, u16), u32>,
 }
 
 impl DnsServer {
@@ -246,6 +255,7 @@ impl DnsServer {
             refused: Counter::new(),
             forwarded: Counter::new(),
             servfail: Counter::new(),
+            turns: alloc::collections::BTreeMap::new(),
         }
     }
     pub fn zone(&self, origin: &str) -> Option<&Zone> {
@@ -377,6 +387,7 @@ impl DnsServer {
         match self.answer(&qq.name, qq.qtype, &mut r) {
             Outcome::Answered(n) => {
                 self.answers.inc();
+                self.rotate(&qq.name, qq.qtype, &mut r);
                 os.note(Note::DnsAnswer { name: qq.name.clone(), qtype: qq.qtype, n });
             }
             Outcome::NxDomain => {
@@ -407,6 +418,25 @@ impl DnsServer {
             }
         }
         DnsServer::send(os, &r, edns, to, from);
+    }
+
+    /// round robin: the records of the asked type in the answer start one place further each time
+    fn rotate(&mut self, name: &str, qtype: u16, r: &mut Message) {
+        if qtype == TYPE_ANY || !self.zone_for(name).is_some_and(|z| z.rotate) {
+            return;
+        }
+        let at: Vec<usize> = r.answers.iter().enumerate().filter(|(_, x)| x.rtype == qtype).map(|(i, _)| i).collect();
+        if at.len() < 2 {
+            return;
+        }
+        let key = (name.trim_end_matches('.').to_ascii_lowercase(), qtype);
+        let turn = self.turns.entry(key).or_insert(0);
+        let k = *turn as usize % at.len();
+        *turn = turn.wrapping_add(1);
+        let recs: Vec<Rr> = at.iter().map(|&i| r.answers[i].clone()).collect();
+        for (j, &i) in at.iter().enumerate() {
+            r.answers[i] = recs[(j + k) % recs.len()].clone();
+        }
     }
 
     fn on_resolved(&mut self, os: &mut OsApi, id: u32) {

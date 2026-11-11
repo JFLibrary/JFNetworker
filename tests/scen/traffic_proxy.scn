@@ -1,0 +1,54 @@
+# Ein Reverse Proxy mit TLS: PROXY (2 Kerne) beendet TLS mit einem Zertifikat der Lab-CA, leitet /shop/ an den
+# Pool shop, den Host blog.lab an den Pool blog und /api/ mit einem Rate-Limit an shop, und hält GET-Antworten
+# 3 s im Cache. GEN holt mit 20 Nutzern über https.
+#
+# eine Anfrage von Hand: der Pfad kommt umgeschrieben beim Backend an, die zweite kommt aus dem Cache
+run 2s
+PC: curl -s https://10.0.0.10/shop/hand
+run 100ms
+expect PC output contains "/v2/hand von WEB"
+PC: curl -s -i https://10.0.0.10/shop/hand
+run 100ms
+expect PC output contains "X-Cache: HIT"
+expect PC output contains "Age: 0"
+# nach dem Host: blog.lab geht an den Pool blog; ein Host ohne Route bekommt 404
+PC: curl -s -H "Host: blog.lab" https://10.0.0.10/post/7
+run 100ms
+expect PC output contains "/post/7 von WEB3"
+PC: curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/sonst
+run 100ms
+expect PC output contains "404"
+# das Rate-Limit von /api/: zwei auf einmal, dann 429 mit Retry-After
+PC: curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/api/a
+run 50ms
+PC: curl -s -o /dev/null -w "%{http_code}\n" https://10.0.0.10/api/b
+run 50ms
+PC: curl -s -i https://10.0.0.10/api/c
+run 100ms
+expect PC output contains "HTTP/1.1 429 Too Many Requests"
+expect PC output contains "Retry-After: 1"
+# unter Last: die Nutzer halten ihre Verbindungen, ein Handshake reicht für 50 Anfragen
+at 8s expect GEN svc load metric errors == 0 over 3s
+expect GEN svc load metric responses >= 300 over 3s
+expect PROXY svc proxy metric tls_handshakes <= 20 over 3s
+expect PROXY svc proxy metric hit_pm >= 700
+# jede zehnte Anfrage hat einen neuen Pfad und kann nie aus dem Cache kommen: rund 100 Fehlschläge je Sekunde,
+# dazu die 40 übrigen Pfade alle 3 s
+expect PROXY svc proxy metric cache_misses <= 130 over 3s
+PROXY: proxyctl
+run 10ms
+expect PROXY output contains "Reverse Proxy proxy: HTTPS auf Port 443"
+expect PROXY output contains "TLS:"
+expect PROXY output contains "Cache:"
+PROXY: proxyctl routes
+run 10ms
+expect PROXY output contains "blog.lab/"
+expect PROXY output contains "-/shop +/v2"
+# ohne Keep-alive: jede Anfrage ein voller Handshake, die CPU des Proxys trägt ihn (5 Nutzer, damit der Lauf
+# kurz bleibt: jeder Handshake wird hier wirklich gerechnet)
+svc set GEN load keepalive false users 5
+at 12s expect PROXY svc proxy metric tls_handshakes >= 150 over 3s
+expect PROXY svc proxy metric tls_cpu_us >= 100000
+PROXY: proxyctl
+run 10ms
+expect PROXY output contains "volle Handshakes"
