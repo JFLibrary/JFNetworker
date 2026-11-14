@@ -843,6 +843,8 @@ pub(crate) const CMD_EXP_FILE_DONE: u32 = 1041;
 /// "Erklärung öffnen" (workspace/docs.rs): the question, then the browser
 pub(crate) const CMD_EXPLAIN: u32 = 1031;
 pub(crate) const CMD_EXPLAIN_GO: u32 = 1032;
+/// Hilfe › Dokumentation: the same question, about the start page of the docs
+pub(crate) const CMD_DOCS: u32 = 1033;
 /// the panel Experimente (bottom, hidden until asked for)
 pub(crate) const P_EXPERIMENTS: u32 = 17;
 /// a run's progress reaches the window
@@ -923,3 +925,5 @@ pub(crate) const ID_EX_CMP_GRID: u32 = 0x0002_5040;
 pub(crate) const ID_EX_POINTS: u32 = 0x0002_5100;
 /// the question before an explanation opens in the browser (workspace/docs.rs)
 pub(crate) const ID_DOCS_DLG: u32 = 0x0002_6800;
+/// the logo in Über JFNetworker (workspace/shell.rs)
+pub(crate) const ID_ABOUT_LOGO: u32 = 0x0002_6801;

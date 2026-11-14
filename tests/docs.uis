@@ -29,6 +29,20 @@ click menuitem:"Erklärung öffnen …"
 expect text:"https://networker.jfreund.org/de/docs/cables/copper/v1" exists
 click button:"Im Browser öffnen"
 expect dialog:"Erklärung im Browser öffnen?" missing
+# Hilfe › Dokumentation: the start page of the docs, the same question first (German: /de/docs)
+click menu:"Hilfe"
+click menuitem:"Dokumentation …"
+expect dialog:"Dokumentation im Browser öffnen?" exists
+expect text:"Die Dokumentation von JFNetworker steht auf seiner Website. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:" exists
+expect text:"https://networker.jfreund.org/de/docs" exists
+shot build/jfnetworker/docs_home_question.png
+click button:"Im Browser öffnen"
+expect dialog:"Dokumentation im Browser öffnen?" missing
+# after it a device's explanation asks with its own words again
+rclick listitem:"R1"
+click menuitem:"Erklärung öffnen …"
+expect dialog:"Erklärung im Browser öffnen?" exists
+click button:"Abbrechen"
 # a palette tile: the JF-S24P's has the entry, the note's is greyed out; the menu is about the
 # tile, not the selection
 rclick button:"JF-S24P"

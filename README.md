@@ -1,4 +1,4 @@
-<img src="res/app_128.png" alt="" width="96">
+<img src="res/logo/jfnetworker.svg" alt="" width="96">
 
 # JFNetworker
 

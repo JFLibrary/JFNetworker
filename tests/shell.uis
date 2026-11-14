@@ -67,10 +67,22 @@ expect menuitem:"Abspielen / Anhalten" checked
 expect menuitem:"Schritt vor" enabled
 key esc
 click menu:"Hilfe"
+expect menuitem:"Dokumentation …" enabled
 click menuitem:"Info …"
 expect dialog:"Über JFNetworker" exists
+expect text:"JFNetworker 0.1.0" exists
+expect text:"Website und Dokumentation: networker.jfreund.org · Quelltext: github.com/JFLibrary/JFNetworker · Lizenz MIT · in Rust geschrieben, mit JFLib" exists
+shot build/jfnetworker/about.png
 click button:"Schließen"
 expect dialog:"Über JFNetworker" missing
+# its button Dokumentation asks before the browser, as Hilfe › Dokumentation does
+cmd 60
+click button:"Dokumentation …"
+expect dialog:"Über JFNetworker" missing
+expect dialog:"Dokumentation im Browser öffnen?" exists
+expect text:"https://networker.jfreund.org/de/docs" exists
+click button:"Abbrechen"
+expect dialog:"Dokumentation im Browser öffnen?" missing
 # view: 100 %, zoom steps, everything, grid off, minimap on
 click menu:"Ansicht"
 click menuitem:"100 %"

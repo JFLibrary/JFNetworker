@@ -1,10 +1,13 @@
-// docs -- "Erklärung öffnen": the explanation of a device or a cable on networker.jfreund.org/docs
+// docs -- "Erklärung öffnen": the explanation of a device or a cable on networker.jfreund.org/docs;
+// Hilfe › Dokumentation: the start page of the docs
 //
 //   page_of(target) -> Option<String>   the address of its page for this version of the app, in
 //                                       the window's language (None: no page yet)
+//   home_in(en) -> String               the start page of the docs, in English (en) or German
 //   context(n, target)                  a palette tile's context menu is about this model or cable
 //   states(n, ui)                       CMD_EXPLAIN enabled when the thing in question has a page
-//   command(n, ui, id) -> handled       CMD_EXPLAIN asks first; CMD_EXPLAIN_GO opens the browser
+//   command(n, ui, id) -> handled       CMD_EXPLAIN and CMD_DOCS ask first; CMD_EXPLAIN_GO opens
+//                                       the browser
 //   dialog(n, ui)                       the question, with the address
 //
 // The context menus of a device and a cable on the canvas and of a palette tile have the entry
@@ -112,6 +115,8 @@ pub(crate) struct Docs {
     /// what it asks about: the shown name and the address
     pub name: String,
     pub url: String,
+    /// it asks about the start page of the docs (Hilfe › Dokumentation), not one explanation
+    pub home: bool,
     /// a palette tile's context menu is open about this (else the canvas' selection counts)
     pub ctx: Option<Target>,
 }
@@ -135,6 +140,11 @@ pub(crate) fn page_in(target: Target, en: bool) -> Option<String> {
     };
     let (_, _, v) = PAGES.iter().find(|p| p.0 == kind && p.1 == id)?;
     Some(format!("{}{}/docs/{}/{}/v{}", SITE, if en { "" } else { "/de" }, kind, id, v))
+}
+
+/// the start page of the docs, in English (en) or German (not versioned: the docs keep their place)
+pub(crate) fn home_in(en: bool) -> String {
+    format!("{}{}/docs", SITE, if en { "" } else { "/de" })
 }
 
 /// the name a target is shown with ("JF-S24P", "Kupfer, gerade")
@@ -178,6 +188,13 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32) -> bool {
             let Some(url) = page_of(target) else { return true };
             n.docs.name = name_of(target);
             n.docs.url = url;
+            n.docs.home = false;
+            n.docs.ask.set(1);
+        }
+        CMD_DOCS => {
+            n.docs.name.clear();
+            n.docs.url = home_in(crate::app::tr::en());
+            n.docs.home = true;
             n.docs.ask.set(1);
         }
         CMD_EXPLAIN_GO => {
@@ -192,12 +209,18 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32) -> bool {
     true
 }
 
-/// "Erklärung im Browser öffnen?": the program is left for the browser only on the answer
+/// "Erklärung im Browser öffnen?" (or "Dokumentation im Browser öffnen?"): the program is left for
+/// the browser only on the answer
 pub(crate) fn dialog(n: &mut Net, ui: &mut Ui) {
     let open = n.docs.ask.clone();
-    if ui.dialog_begin(ID_DOCS_DLG, t("Erklärung im Browser öffnen?"), &open) {
+    let title = if n.docs.home { t("Dokumentation im Browser öffnen?") } else { t("Erklärung im Browser öffnen?") };
+    if ui.dialog_begin(ID_DOCS_DLG, title, &open) {
         ui.next_size(460, 0);
-        ui.text(TS_BODY | TX_WRAP, &tf("Die Erklärung zu {} steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:", &[&n.docs.name]));
+        if n.docs.home {
+            ui.text(TS_BODY | TX_WRAP, t("Die Dokumentation von JFNetworker steht auf seiner Website. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:"));
+        } else {
+            ui.text(TS_BODY | TX_WRAP, &tf("Die Erklärung zu {} steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:", &[&n.docs.name]));
+        }
         ui.next_size(460, 0);
         ui.text(TS_BODY_STRONG | TX_WRAP, &n.docs.url);
         if ui.dialog_buttons(Some(t("Im Browser öffnen")), None, Some(t("Abbrechen"))) == DLG_PRIMARY {

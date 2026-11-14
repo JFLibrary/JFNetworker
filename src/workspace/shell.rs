@@ -1,5 +1,6 @@
 // shell -- the frame of the main window: title, menu bar, toolbar, the dock with the palette,
-// the canvas, the inspector and the simulator's panels, the status bar, the info dialog
+// the canvas, the inspector and the simulator's panels, the status bar, the info dialog (Über
+// JFNetworker: the logo, the version, what the program is, where its website and source are)
 //
 //   Shell::new()        the dock layout (the user's, else the default) and the dialog flag
 //   frame(n, ui)        the whole window, once per frame; a lab that locks the problems or its answer
@@ -27,6 +28,7 @@
 // Experimente (bottom, SA3: workspace/experiments) defines and runs parameter sweeps, hidden until asked for.
 
 use alloc::format;
+use alloc::rc::Rc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -51,6 +53,8 @@ pub(crate) struct Shell {
     title: String,
     /// the chosen row of the problems list
     prob_sel: i32,
+    /// LOGO_PNG decoded on first use (side in px, picture); None = not tried yet
+    logo: Option<Vec<(i32, Rc<gfx::Surface>)>>,
 }
 
 /// the width of the left side (Geräte, DIP): three tiles a row beside the scroll bar, whose room
@@ -61,7 +65,7 @@ impl Shell {
     pub(crate) fn new() -> Shell {
         let mut dock = DockState::new();
         dock.set_size(DOCK_LEFT, LEFT_W);
-        Shell { dock, about: Shared::new(0), start: false, page: crate::workspace::startpage::Page::new(), title: String::new(), prob_sel: -1 }
+        Shell { dock, about: Shared::new(0), start: false, page: crate::workspace::startpage::Page::new(), title: String::new(), prob_sel: -1, logo: None }
     }
 }
 
@@ -373,20 +377,50 @@ fn show(n: &mut Net, r: &Finding, centre: bool) {
     }
 }
 
+/// the logo in Über JFNetworker: the program's icon (res/app_*.png), the smallest picture at least as
+/// big as the place, scaled down
+static LOGO_PNG: [(i32, &[u8]); 2] = [(128, include_bytes!("../../res/app_128.png")), (256, include_bytes!("../../res/app_256.png"))];
+
 fn about(n: &mut Net, ui: &mut Ui) {
     let open = n.shell.about.clone();
     if ui.dialog_begin(ID_ABOUT, t("Über JFNetworker"), &open) {
-        ui.next_size(420, 0);
+        ui.box_begin(0, BOX_H, 16);
+        about_logo(n, ui);
+        ui.box_begin(0, BOX_V, 8);
+        ui.text(TS_SUBTITLE, &format!("JFNetworker {}", env!("CARGO_PKG_VERSION")));
+        ui.next_size(400, 0);
         ui.text(
             TS_BODY | TX_WRAP,
-            t("JFNetworker – ein Netzwerksimulator und Labor für verteilte Systeme: Geräte und Kabel auf einer Zeichenfläche, echte Protokolle Byte für Byte, Befehlszeilen für Router, Switches und Hosts."),
+            t("Netzwerke entwerfen und simulieren: Geräte und Kabel auf einer Zeichenfläche, echte Protokolle Byte für Byte, IOS-artige Befehlszeilen für Router und Switches, eine Linux-Shell für Hosts und ein Simulationsmodus, der jedes Paket zeigt."),
         );
-        ui.next_size(420, 0);
+        ui.next_size(400, 0);
+        ui.text(
+            TS_BODY | TX_WRAP,
+            t("Dazu die Akademie mit Kursen und Übungen und das Architektur-Labor: Webserver, Datenbanken mit Replikation, Loadbalancer und Proxys unter Last, verglichen in Experimenten."),
+        );
+        ui.next_size(400, 0);
         ui.text(
             TS_CAPTION | TX_SECONDARY | TX_WRAP,
-            t("Phase 1: der Topologie-Editor mit Kabeln und Inspektor, der Simulator in Echtzeit, die Konsolen der Geräte, Gerätefenster und das Protokoll, der Simulationsmodus mit Ereignisliste, Zeitleiste, Paketansicht und eigenen PDUs, Einstellungen, automatische Sicherung, Deutsch und Englisch."),
+            t("Website und Dokumentation: networker.jfreund.org · Quelltext: github.com/JFLibrary/JFNetworker · Lizenz MIT · in Rust geschrieben, mit JFLib"),
         );
-        ui.dialog_buttons(Some(t("Schließen")), None, None);
+        ui.box_end();
+        ui.box_end();
+        if ui.dialog_buttons(Some(t("Schließen")), Some(t("Dokumentation …")), None) == DLG_SECONDARY {
+            ui.cmd_run(CMD_DOCS, 0);
+        }
     }
     ui.dialog_end();
+}
+
+/// the logo, 64 DIP (LOGO_PNG; nothing when no picture decodes)
+fn about_logo(n: &mut Net, ui: &mut Ui) {
+    ui.next_size(64, 64);
+    ui.box_begin(ID_ABOUT_LOGO, BOX_H | BOX_FIXED, 0);
+    let r = ui.box_rect();
+    let logo = n.shell.logo.get_or_insert_with(|| LOGO_PNG.iter().filter_map(|&(px, png)| img_core::io::decode(png).ok().map(|sf| (px, Rc::new(sf)))).collect());
+    let side = r[2].min(r[3]);
+    if let Some((_, sf)) = logo.iter().find(|(px, _)| *px >= side).or(logo.last()) {
+        ui.draw_image(sf, 1, r[0], r[1], side, side);
+    }
+    ui.box_end();
 }

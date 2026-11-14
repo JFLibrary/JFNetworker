@@ -328,7 +328,7 @@ pub(crate) fn states(n: &Net, ui: &mut Ui) -> bool {
     dimmed.set(true);
     let course = n.academy.on;
     for c in CMDS.iter() {
-        let free = matches!(c.id, CMD_NEW | CMD_OPEN | CMD_LAB_OPEN | CMD_QUIT | CMD_SETTINGS | CMD_SHORTCUTS | CMD_ABOUT | CMD_DESK_FULL | CMD_ACADEMY) || (course && matches!(c.id, CMD_START_PAGE | CMD_AK_BACK));
+        let free = matches!(c.id, CMD_NEW | CMD_OPEN | CMD_LAB_OPEN | CMD_QUIT | CMD_SETTINGS | CMD_SHORTCUTS | CMD_ABOUT | CMD_DOCS | CMD_DESK_FULL | CMD_ACADEMY) || (course && matches!(c.id, CMD_START_PAGE | CMD_AK_BACK));
         ui.cmd_state(c.id, if free { 0 } else { CF_DISABLED });
     }
     true

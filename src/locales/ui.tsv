@@ -120,8 +120,10 @@ Läuft nicht im Simulator: {}	Does not run in the simulator: {}
 Keine Probleme	No problems
 Das Projekt ist in sich stimmig: eindeutige Namen, passende Kabel, belegte Ports nur einmal; der Simulator findet nichts.	The project is consistent: unique names, matching cables, each port used once; the simulator finds nothing.
 Über JFNetworker	About JFNetworker
-JFNetworker – ein Netzwerksimulator und Labor für verteilte Systeme: Geräte und Kabel auf einer Zeichenfläche, echte Protokolle Byte für Byte, Befehlszeilen für Router, Switches und Hosts.	JFNetworker – a network simulator and lab for distributed systems: devices and cables on a canvas, real protocols byte for byte, command lines for routers, switches and hosts.
-Phase 1: der Topologie-Editor mit Kabeln und Inspektor, der Simulator in Echtzeit, die Konsolen der Geräte, Gerätefenster und das Protokoll, der Simulationsmodus mit Ereignisliste, Zeitleiste, Paketansicht und eigenen PDUs, Einstellungen, automatische Sicherung, Deutsch und Englisch.	Phase 1: the topology editor with cables and properties, the simulator in real time, the devices' consoles, device windows and the log, the simulation mode with event list, timeline, packet view and PDUs of your own, settings, autosave, German and English.
+Netzwerke entwerfen und simulieren: Geräte und Kabel auf einer Zeichenfläche, echte Protokolle Byte für Byte, IOS-artige Befehlszeilen für Router und Switches, eine Linux-Shell für Hosts und ein Simulationsmodus, der jedes Paket zeigt.	Design and simulate networks: devices and cables on a canvas, real protocols byte for byte, IOS-like command lines on routers and switches, a Linux shell on hosts and a simulation mode that shows every packet.
+Dazu die Akademie mit Kursen und Übungen und das Architektur-Labor: Webserver, Datenbanken mit Replikation, Loadbalancer und Proxys unter Last, verglichen in Experimenten.	Also the Akademie with courses and exercises, and the architecture lab: web servers, databases with replication, load balancers and proxies under load, compared in experiments.
+Website und Dokumentation: networker.jfreund.org · Quelltext: github.com/JFLibrary/JFNetworker · Lizenz MIT · in Rust geschrieben, mit JFLib	Website and documentation: networker.jfreund.org · Source: github.com/JFLibrary/JFNetworker · MIT licence · written in Rust with JFLib
+Dokumentation …	Documentation …
 Schließen	Close
 #
 # ---- the canvas, connecting, cables (workspace/canvas)
@@ -2741,6 +2743,9 @@ Vergibt Adressen an die Geräte im Netz. Er beginnt mit einem Pool für das Netz
 Erklärung im Browser öffnen?	Open the explanation in your browser?
 Die Erklärung zu {} steht auf der Website von JFNetworker. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:	The explanation of {} is on JFNetworker's website. For it you leave the program and switch to your browser:
 Im Browser öffnen	Open in browser
+&Dokumentation …	&Documentation …
+Dokumentation im Browser öffnen?	Open the documentation in your browser?
+Die Dokumentation von JFNetworker steht auf seiner Website. Dafür verlassen Sie das Programm und wechseln in Ihren Browser:	JFNetworker's documentation is on its website. For it you leave the program and switch to your browser:
 # SA5: replication in the database's form and the Metriken panel (devwin/svcform.rs, metrics.rs)
 Primary: nimmt Schreibzugriffe an	Primary: takes writes
 Replikat: folgt einem Primary	Replica: follows a primary

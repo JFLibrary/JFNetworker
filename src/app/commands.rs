@@ -13,7 +13,7 @@
 // Auswahl, Zurücksetzen (workspace/sim);
 // Werkzeuge: the tools with their single keys (V, H, C, N, P), Beschriftung einfügen (T, at the
 // middle of the view: canvas/labels.rs) and Einstellungen (Ctrl+,);
-// Hilfe: Tastenkürzel (F1), Info.  Simulation (F5) and Echtzeit (Shift+F5) switch the mode,
+// Hilfe: Dokumentation (the website, after a question: workspace/docs.rs), Tastenkürzel (F1), Info.  Simulation (F5) and Echtzeit (Shift+F5) switch the mode,
 // Ctrl+9 gives the topology the keyboard as Ctrl+1 .. 8 do for the panels.  The context menus of the canvas:
 // a cable (route, kind, Trennen), a device (Konsole öffnen, Gerätefenster, IDE of a host,
 // Umbenennen, Eingeschaltet, Löschen), the background.  TIMER_SIM moves the simulator's clock, TIMER_ANIM
@@ -55,7 +55,7 @@ use crate::workspace::canvas::{self, cables, tools, tools::Tool};
 use crate::workspace::icons::*;
 use crate::workspace::terminal;
 
-pub(crate) static CMDS: [Command; 123] = [
+pub(crate) static CMDS: [Command; 124] = [
     Command::new(CMD_NEW, "&Neu", IC_DOCUMENT, MOD_CTRL, b'N' as u32, 0),
     Command::new(CMD_OPEN, "Ö&ffnen …", IC_OPEN_FILE, MOD_CTRL, b'O' as u32, 0),
     Command::new(CMD_SAVE, "&Speichern", IC_SAVE, MOD_CTRL, b'S' as u32, 0),
@@ -129,6 +129,7 @@ pub(crate) static CMDS: [Command; 123] = [
     Command::new(CMD_PANEL0 + 7, "P&DUs", IC_MAIL, MOD_CTRL, b'8' as u32, 0),
     Command::new(CMD_FOCUS_CANVAS, "Topo&logie", JN_CONNECT, MOD_CTRL, b'9' as u32, 0),
     Command::new(CMD_SETTINGS, "&Einstellungen …", IC_SETTINGS, MOD_CTRL, VK_OEM_COMMA, 0),
+    Command::new(CMD_DOCS, "&Dokumentation …", JN_EXPLAIN, 0, 0, 0),
     Command::new(CMD_SHORTCUTS, "&Tastenkürzel …", IC_HELP, 0, VK_F1, 0),
     Command::new(CMD_LAB_OPEN, "&Labor öffnen …", IC_FLAG, 0, 0, 0),
     Command::new(CMD_TASK_PANEL, "&Aufgabe", IC_FLAG, MOD_CTRL | MOD_SHIFT, b'A' as u32, 0),
@@ -334,7 +335,7 @@ static M_TOOLS: [Mi; 10] = [
     Mi::Sep,
     Mi::Cmd(CMD_AUTHOR),
 ];
-static M_HELP: [Mi; 3] = [Mi::Cmd(CMD_SHORTCUTS), Mi::Sep, Mi::Cmd(CMD_ABOUT)];
+static M_HELP: [Mi; 4] = [Mi::Cmd(CMD_DOCS), Mi::Cmd(CMD_SHORTCUTS), Mi::Sep, Mi::Cmd(CMD_ABOUT)];
 /// the canvas' context menu (the background, notes)
 pub(crate) static M_CANVAS: [Mi; 5] = [Mi::Cmd(CMD_RENAME), Mi::Cmd(CMD_DELETE), Mi::Sep, Mi::Cmd(CMD_SELECT_ALL), Mi::Cmd(CMD_FIT)];
 /// the context menu of a device
@@ -607,7 +608,7 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32, arg: u32) -> bool {
             cables::set_kind(n, Some(CableKind::ALL[CABLE_KINDS0 + (id - CMD_CABLE_MORE) as usize]));
         }
         CMD_CONSOLE..=CMD_LOG_CLEAR => return terminal::command(n, ui, id),
-        CMD_EXPLAIN | CMD_EXPLAIN_GO => return crate::workspace::docs::command(n, ui, id),
+        CMD_EXPLAIN | CMD_EXPLAIN_GO | CMD_DOCS => return crate::workspace::docs::command(n, ui, id),
         // the simulation mode (workspace/sim)
         CMD_SIM_REALTIME | CMD_SIM_MODE | CMD_SIM_PLAY | CMD_SIM_STEP | CMD_SIM_BACK | CMD_SIM_RESET => return crate::workspace::sim::command(n, ui, id, arg),
         _ if (CMD_SIM_TEMPO0..200).contains(&id) => return crate::workspace::sim::command(n, ui, id, arg),
