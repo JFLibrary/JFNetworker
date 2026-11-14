@@ -29,7 +29,6 @@ plat.workspace = true
 base.workspace = true
 gfx.workspace = true
 img_core.workspace = true
-fx.workspace = true
 img_svg.workspace = true
 img_all.workspace = true
 ui.workspace = true
@@ -57,26 +56,25 @@ license = "MIT"
 repository = "https://github.com/JFLibrary/JFNetworker"
 
 # JFLib's crates from crates.io under the names the code uses, at exact versions like inside JFLib
-# (the style netlab too, published on its own on 2026-11-10).
+# (the style netlab too); all of one release, now 0.2.0.
 [workspace.dependencies]
-rt = { package = "jflib-rt", version = "=0.1.0" }
-agent_core = { package = "jflib-agent-core", version = "=0.1.0" }
-plat = { package = "jflib-plat", version = "=0.1.0" }
-base = { package = "jflib-base", version = "=0.1.0" }
-gfx = { package = "jflib-gfx", version = "=0.1.0" }
-img_core = { package = "jflib-img-core", version = "=0.1.0" }
-fx = { package = "jflib-fx", version = "=0.1.0" }
-img_svg = { package = "jflib-img-svg", version = "=0.1.0" }
-img_all = { package = "jflib-img-all", version = "=0.1.0" }
-ui = { package = "jflib-ui", version = "=0.1.0" }
-datetime = { package = "jflib-datetime", version = "=0.1.0" }
-crypto = { package = "jflib-crypto", version = "=0.1.0" }
-netpkt = { package = "jflib-netpkt", version = "=0.1.0" }
-netio = { package = "jflib-netio", version = "=0.1.0" }
-update = { package = "jflib-update", version = "=0.1.0" }
-eapm = { package = "jflib-eapm", version = "=0.1.0" }
-style = { package = "jflib-style-netlab", version = "=0.1.0" }
-jflib-build = "=0.1.0"
+rt = { package = "jflib-rt", version = "=0.2.0" }
+agent_core = { package = "jflib-agent-core", version = "=0.2.0" }
+plat = { package = "jflib-plat", version = "=0.2.0" }
+base = { package = "jflib-base", version = "=0.2.0" }
+gfx = { package = "jflib-gfx", version = "=0.2.0" }
+img_core = { package = "jflib-img-core", version = "=0.2.0" }
+img_svg = { package = "jflib-img-svg", version = "=0.2.0" }
+img_all = { package = "jflib-img-all", version = "=0.2.0" }
+ui = { package = "jflib-ui", version = "=0.2.0" }
+datetime = { package = "jflib-datetime", version = "=0.2.0" }
+crypto = { package = "jflib-crypto", version = "=0.2.0" }
+netpkt = { package = "jflib-netpkt", version = "=0.2.0" }
+netio = { package = "jflib-netio", version = "=0.2.0" }
+update = { package = "jflib-update", version = "=0.2.0" }
+eapm = { package = "jflib-eapm", version = "=0.2.0" }
+style = { package = "jflib-style-netlab", version = "=0.2.0" }
+jflib-build = "=0.2.0"
 # JFScript (https://github.com/JFLibrary/JFScript), used as `script`
 script = { package = "jfscript", git = "https://github.com/JFLibrary/JFScript" }
 
@@ -115,9 +113,6 @@ opt-level = 2
 opt-level = 2
 
 [profile.dev.package.jflib-simd]
-opt-level = 2
-
-[profile.dev.package.jflib-fx]
 opt-level = 2
 
 [profile.dev.package.jflib-crypto]
