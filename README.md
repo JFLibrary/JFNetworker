@@ -2,6 +2,8 @@
 
 # JFNetworker
 
+**[networker.jfreund.org](https://networker.jfreund.org)** · [jflib.org](https://jflib.org) · [Discord](https://discord.gg/cX3jUxVvTm)
+
 JFNetworker is a network simulator and a lab for distributed systems, written in Rust with
 [JFLib](https://github.com/JFLibrary/JFLib) (the crates on [crates.io](https://crates.io/crates/jflib)).
 It is an alternative to Cisco Packet Tracer: devices and cables on a canvas, real protocols byte for
