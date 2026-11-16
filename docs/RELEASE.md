@@ -1,8 +1,8 @@
 # Releases von JFNetworker
 
 Stand 2026-11-16: Plan, Probelauf der Pakete (Abschnitt „Probelauf“) und der Workflow
-`.github/workflows/release.yml` mit `tools/release/` sind da; noch ist nichts veröffentlicht und
-der Workflow ist auf GitHub noch nie gelaufen.
+`.github/workflows/release.yml` mit `tools/release/` sind da. Ein erster Lauf auf GitHub (ohne Tag,
+ohne Schlüssel) war grün; veröffentlicht ist noch nichts.
 
 ## Ziel
 
@@ -106,7 +106,9 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 | 5 | macOS-Warnung (ungenutzter Import in `src/simmodetest.rs`) | erledigt (`cargo check --target aarch64-apple-darwin` ohne Warnung) |
 | 6 | `ci.yml` holte noch „JFLib beside this repository“ | erledigt |
 | 7 | Download-Seite auf networker.jfreund.org | offen: erst den Inhalt abstimmen (Dateien, Hinweise, Systemvoraussetzungen), dann bauen |
-| 8 | der Workflow ist noch nie gelaufen | nach dem Push: „Run workflow“ (Probelauf, unsigniert), dann mit Secrets noch einmal |
+| 8 | der Workflow lief noch nie auf GitHub | erledigt: Probelauf ohne Schlüssel grün (unten); mit den Secrets noch einmal, dann der Tag |
+| 9 | Actions auf Node.js 20 (`cache@v4`, `upload-artifact@v4`, `download-artifact@v4`, `attest-build-provenance@v2`) | erledigt: `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `attest-build-provenance@v4` |
+| 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`) |
 
 ## Probelauf (2026-11-16)
 
@@ -118,6 +120,17 @@ Lokal, ohne Signaturen, mit der Fassade nur für diesen Lauf (Lücke 1):
 | `JFNetworker_Setup.exe` | Windows, `cargo jflib package --formats setup,deb,appimage` (16 min mit dem Release-Build) | 19,5 MB, ein Style (netlab); im Testmodus des Installers installiert (Registry nur in `registry.txt`: `DisplayName=JFNetworker`, `DisplayVersion=0.1.0`, `Publisher=JFLib`), Selbsttest `l3` 163/163, deinstalliert ohne Rest |
 | `jfnetworker_0.1.0_amd64.deb` | derselbe Lauf (das .deb macht cargo-jflib selbst, ohne WSL) | 15,3 MB; `/usr/lib/jfnetworker/JFNetworker-netlab`, `.desktop`-Datei, Lizenzen; das Programm daraus besteht den Selbsttest `l3` 163/163 (WSL); `Maintainer: JFLib <nobody@localhost>` (Lücke 3) |
 | `JFNetworker-0.1.0-netlab-x86_64.AppImage` | derselbe Lauf | 19,6 MB; `--appimage-extract-and-run --selftest --only=l3` 163/163 (WSL) |
+
+### Auf GitHub (2026-11-16, Lauf 43899801757, „Run workflow“ auf 765387e, ohne Secrets)
+
+Alle fünf Jobs grün: `check` 5 s, Windows 21 min, Linux 12 min, macOS 28 min, `publish` 17 s.
+Rauchtests: Setup im Testmodus installiert und restlos deinstalliert, `.deb` über apt installiert und
+entfernt, AppImage entpackt, `.dmg` eingehängt (x86_64 + arm64); der Selbsttest `l3` 163/163 überall,
+der Intel-Teil auf dem Mac nicht (kein Rosetta, Lücke 10). Jede Datei hat ihre Attestierung, und
+die Logs nennen, was nicht signiert ist (Authenticode, GPG, das .dmg nur ad hoc). Die Dateien:
+`JFNetworker_Setup.exe`, `jfnetworker_0.1.0_amd64.deb`, `JFNetworker-0.1.0-netlab-x86_64.AppImage`,
+`JFNetworker-0.1.0-universal.dmg`, `jfn-sim-0.1.0-windows-x86_64.zip`, `jfn-sim-0.1.0-linux-x86_64.tar.gz`,
+`jfn-sim-0.1.0-macos-universal.tar.gz`, `SHA256SUMS`.
 
 ## Entscheidungen, die noch offen sind
 

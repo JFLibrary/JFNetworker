@@ -66,7 +66,7 @@ jobs:
         run: |
           rustup toolchain install "$RUST" --profile minimal --target x86_64-pc-windows-msvc --no-self-update
           rustup default "$RUST"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-jflib.exe
           key: cargo-jflib-${{ env.CARGO_JFLIB }}-windows
@@ -95,7 +95,7 @@ jobs:
           mkdir -p dist
           cp target/jflib-package/JFNetworker_Setup.exe dist/
           7z a -tzip "dist/jfn-sim-$V-windows-x86_64.zip" ./target/release/jfn-sim.exe ./LICENSE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/
@@ -117,7 +117,7 @@ jobs:
         run: |
           rustup toolchain install "$RUST" --profile minimal --no-self-update
           rustup default "$RUST"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-jflib
           key: cargo-jflib-${{ env.CARGO_JFLIB }}-linux
@@ -146,7 +146,7 @@ jobs:
           mkdir -p dist
           cp target/jflib-package/*.deb target/jflib-package/*.AppImage dist/
           tar -czf "dist/jfn-sim-$V-linux-x86_64.tar.gz" -C target/release jfn-sim -C "$PWD" LICENSE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: dist/
@@ -173,7 +173,7 @@ jobs:
         run: |
           rustup toolchain install "$RUST" --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin --no-self-update
           rustup default "$RUST"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-jflib
           key: cargo-jflib-${{ env.CARGO_JFLIB }}-macos
@@ -225,6 +225,10 @@ jobs:
             grep -q "source=Notarized Developer ID" /tmp/spctl.txt
           fi
           (cd /tmp && "$A/Contents/MacOS/JFNetworker" --selftest --only=l3)
+          # the Intel part under Rosetta (the runners come without it)
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license >/dev/null || true
+          fi
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             (cd /tmp && arch -x86_64 "$A/Contents/MacOS/JFNetworker" --selftest --only=l3)
           else
@@ -247,7 +251,7 @@ jobs:
         run: |
           KC="$RUNNER_TEMP/release.keychain-db"
           if [ -f "$KC" ]; then security delete-keychain "$KC"; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: dist/
@@ -270,7 +274,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -283,7 +287,7 @@ jobs:
             printf '%s\n' "$GPG_SIGNING_KEY" | gpg --batch --import
             gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
           fi
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
       - name: Release notes
@@ -299,7 +303,7 @@ jobs:
         run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "JFNetworker $V" --notes-file notes.md
       - name: The dry run's result
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-dry-run
           path: |
