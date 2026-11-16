@@ -1,0 +1,307 @@
+# Releases (docs/RELEASE.md): a tag vX.Y.Z on main builds the packages on Windows, Linux and macOS
+# from exactly that commit, smoke-tests each one, signs what there are keys for, and makes a DRAFT
+# release on GitHub that is published by hand.  "Run workflow" (workflow_dispatch) is a dry run of
+# the same: the packages and the release notes as an artifact, no release.
+#
+# Keys are secrets of the environment "release" (Settings › Environments; with yourself as required
+# reviewer every run waits for your approval before a job that can use them starts).  Without them
+# the packages are built unsigned and every log says what was not signed:
+#   MAC_CERT_P12, MAC_CERT_PASSWORD      Developer ID Application certificate (.p12, base64)
+#   NOTARY_KEY_P8, NOTARY_KEY_ID, NOTARY_ISSUER   App Store Connect API key for notarytool (.p8 text)
+#   GPG_SIGNING_KEY, GPG_PASSPHRASE      the release subkey (armored): the AppImage, SHA256SUMS
+# Windows is not signed yet (no certificate): the release notes say so.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # the rust-version of Cargo.toml (as ci.yml) and cargo-jflib at the version of the JFLib crates
+  RUST: "1.98"
+  CARGO_JFLIB: "0.2.1"
+
+jobs:
+  check:
+    name: tag, version and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            python3 tools/release/release.py check "$GITHUB_REF_NAME"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            v=$(sed -n 's/^version=//p' PACKAGE | tr -d '\r')
+            echo "a dry run of $v (no tag: no release)"
+            echo "version=$v" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    name: Windows (setup)
+    needs: check
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      V: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST" --profile minimal --target x86_64-pc-windows-msvc --no-self-update
+          rustup default "$RUST"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-jflib.exe
+          key: cargo-jflib-${{ env.CARGO_JFLIB }}-windows
+      - name: cargo-jflib
+        run: cargo jflib --version 2>/dev/null || cargo install cargo-jflib --version "=$CARGO_JFLIB" --locked
+      - name: The facade jflib, for cargo jflib package only (docs/RELEASE.md, gap 1)
+        run: python tools/release/facade.py
+      - name: Setup
+        run: cargo jflib package --formats setup
+      - name: "Smoke test (the setup in test mode: no registry, no shell, a folder of its own)"
+        env:
+          jfgui_LANG: de
+        run: |
+          T="$PWD/build/smoke"
+          mkdir -p "$T/shell"
+          export ASMINST_SHELL_DIR="$(cygpath -w "$T/shell")"
+          target/jflib-package/JFNetworker_Setup.exe --script tools/release/inst.uis --dir "$(cygpath -w "$T/inst")"
+          test -f "$T/inst/JFNetworker.exe"
+          (cd "$T" && "$T/inst/JFNetworker.exe" --selftest --only=l3)
+          "$T/inst/uninstall.exe" --uninstall --script tools/release/un.uis
+          sleep 5
+          if [ -n "$(ls -A "$T/inst" 2>/dev/null)" ]; then ls -la "$T/inst"; echo "uninstall left files"; exit 1; fi
+      - name: jfn-sim
+        run: |
+          cargo build --release -p jfn-sim
+          mkdir -p dist
+          cp target/jflib-package/JFNetworker_Setup.exe dist/
+          7z a -tzip "dist/jfn-sim-$V-windows-x86_64.zip" ./target/release/jfn-sim.exe ./LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/
+          if-no-files-found: error
+
+  linux:
+    name: Linux (.deb, AppImage)
+    needs: check
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 90
+    env:
+      V: ${{ needs.check.outputs.version }}
+      GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      jfgui_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST" --profile minimal --no-self-update
+          rustup default "$RUST"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-jflib
+          key: cargo-jflib-${{ env.CARGO_JFLIB }}-linux
+      - name: cargo-jflib
+        run: cargo jflib --version 2>/dev/null || cargo install cargo-jflib --version "=$CARGO_JFLIB" --locked
+      - name: The release key (when it is set)
+        run: |
+          if [ -z "$GPG_SIGNING_KEY" ]; then echo "no GPG_SIGNING_KEY: the AppImage stays unsigned"; exit 0; fi
+          printf '%s\n' "$GPG_SIGNING_KEY" | gpg --batch --import
+          echo "jfgui_GPG_KEY=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')" >> "$GITHUB_ENV"
+      - name: The facade jflib, for cargo jflib package only (docs/RELEASE.md, gap 1)
+        run: python3 tools/release/facade.py
+      - name: .deb and AppImage
+        run: cargo jflib package --formats deb,appimage
+      - name: Smoke test
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./target/jflib-package/jfnetworker_${V}_amd64.deb
+          (cd /tmp && /usr/lib/jfnetworker/JFNetworker-netlab --selftest --only=l3)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y jfnetworker
+          A=$(ls target/jflib-package/JFNetworker-*-x86_64.AppImage)
+          chmod +x "$A"
+          (cd /tmp && "$OLDPWD/$A" --appimage-extract-and-run --selftest --only=l3)
+      - name: jfn-sim
+        run: |
+          cargo build --release -p jfn-sim
+          mkdir -p dist
+          cp target/jflib-package/*.deb target/jflib-package/*.AppImage dist/
+          tar -czf "dist/jfn-sim-$V-linux-x86_64.tar.gz" -C target/release jfn-sim -C "$PWD" LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/
+          if-no-files-found: error
+
+  macos:
+    name: macOS (.dmg)
+    needs: check
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 120
+    outputs:
+      notarized: ${{ steps.keys.outputs.notarized }}
+    env:
+      V: ${{ needs.check.outputs.version }}
+      MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+      MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+      NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST" --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin --no-self-update
+          rustup default "$RUST"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-jflib
+          key: cargo-jflib-${{ env.CARGO_JFLIB }}-macos
+      - name: cargo-jflib
+        run: cargo jflib --version 2>/dev/null || cargo install cargo-jflib --version "=$CARGO_JFLIB" --locked
+      - name: Developer ID and notarytool (when they are set), in a keychain of this run
+        id: keys
+        run: |
+          if [ -z "$MAC_CERT_P12" ] || [ -z "$NOTARY_KEY_P8" ]; then
+            echo "no Developer ID or notary key: the dmg is signed ad hoc (Gatekeeper asks)"
+            echo "notarized=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KC="$RUNNER_TEMP/release.keychain-db"
+          KP=$(openssl rand -hex 24)
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          printf '%s' "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KP" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC"
+          printf '%s\n' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials jfn-notary --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KC"
+          rm "$RUNNER_TEMP/notary.p8"
+          ID=$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+          if [ -z "$ID" ]; then echo "the certificate is no Developer ID Application"; exit 1; fi
+          echo "jfgui_MAC_IDENTITY=$ID" >> "$GITHUB_ENV"
+          echo "jfgui_MAC_NOTARY=jfn-notary" >> "$GITHUB_ENV"
+          echo "notarized=true" >> "$GITHUB_OUTPUT"
+      - name: The facade jflib, for cargo jflib package only (docs/RELEASE.md, gap 1)
+        run: python3 tools/release/facade.py
+      - name: .dmg (one program for Apple silicon and Intel)
+        run: cargo jflib package --formats dmg
+      - name: Smoke test
+        env:
+          NOTARIZED: ${{ steps.keys.outputs.notarized }}
+        run: |
+          D="target/jflib-package/JFNetworker-$V-universal.dmg"
+          M=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$M" "$D"
+          A="$M/JFNetworker.app"
+          lipo -info "$A/Contents/MacOS/JFNetworker"
+          codesign -dv "$A" 2>&1 | grep -E "Identifier|Format|Authority|TeamIdentifier" || true
+          if [ "$NOTARIZED" = "true" ]; then
+            spctl -a -vv "$A" 2>&1 | tee /tmp/spctl.txt
+            grep -q "source=Notarized Developer ID" /tmp/spctl.txt
+          fi
+          (cd /tmp && "$A/Contents/MacOS/JFNetworker" --selftest --only=l3)
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            (cd /tmp && arch -x86_64 "$A/Contents/MacOS/JFNetworker" --selftest --only=l3)
+          else
+            echo "no Rosetta on this runner: the Intel part is not run"
+          fi
+          hdiutil detach "$M"
+      - name: jfn-sim
+        run: |
+          cargo build --release -p jfn-sim --target aarch64-apple-darwin
+          cargo build --release -p jfn-sim --target x86_64-apple-darwin
+          mkdir -p dist/jfn-sim
+          lipo -create -output dist/jfn-sim/jfn-sim target/aarch64-apple-darwin/release/jfn-sim target/x86_64-apple-darwin/release/jfn-sim
+          if [ -n "$jfgui_MAC_IDENTITY" ]; then codesign --force --options runtime --timestamp -s "$jfgui_MAC_IDENTITY" dist/jfn-sim/jfn-sim; fi
+          cp LICENSE dist/jfn-sim/
+          tar -czf "dist/jfn-sim-$V-macos-universal.tar.gz" -C dist/jfn-sim jfn-sim LICENSE
+          rm -r dist/jfn-sim
+          cp target/jflib-package/*.dmg dist/
+      - name: Remove the keychain
+        if: always()
+        run: |
+          KC="$RUNNER_TEMP/release.keychain-db"
+          if [ -f "$KC" ]; then security delete-keychain "$KC"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: checksums, attestation, draft release
+    needs: [check, windows, linux, macos]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      V: ${{ needs.check.outputs.version }}
+      GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      NOTARIZED: ${{ needs.macos.outputs.notarized }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS (signed when the release key is set)
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          if [ -n "$GPG_SIGNING_KEY" ]; then
+            printf '%s\n' "$GPG_SIGNING_KEY" | gpg --batch --import
+            gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          fi
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - name: Release notes
+        run: |
+          flags=""
+          if [ -f dist/SHA256SUMS.asc ]; then flags="$flags --gpg"; fi
+          if [ "$NOTARIZED" = "true" ]; then flags="$flags --notarized"; fi
+          python3 tools/release/release.py notes "$V" --out notes.md $flags || \
+            { echo "(no section $V in CHANGELOG.md yet: a dry run)" > notes.md; }
+          cat notes.md
+      - name: Draft release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "JFNetworker $V" --notes-file notes.md
+      - name: The dry run's result
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: |
+            dist/
+            notes.md

@@ -203,6 +203,7 @@ The developer documentation is in German:
 - [Overview](docs/OVERVIEW.md): what each part of JFNetworker does, milestone by milestone
 - [Usage](docs/USAGE.md): the window, the tools, the panels and the keyboard
 - [Building and testing](docs/BUILDING.md): every test script and what it checks
+- [Releases](docs/RELEASE.md): how a tag becomes signed packages and a GitHub release; the [changelog](CHANGELOG.md)
 - [Reference](docs/REFERENCE.md): the simulator, the protocols, the consoles, the lab, the Akademie
   and their file formats
 - [Performance](docs/PERFORMANCE.md) and the [roadmap](docs/ROADMAP.md)

@@ -19,7 +19,7 @@ use jfn_model::project::{PortRef, Project};
 use jfn_model::CableKind;
 use jfn_sim::node::port_mac;
 use jfn_sim::view::{hop_info, hop_layers, proto_name};
-use jfn_sim::{Action, Cmd, DevStep, DropMark, Engine, Filter, HopDrop, InFlight, Inline, Note, PcapOpts, PcapScope, PingOpts, ProblemKind, Severity, TraceOpts, VlanSet, MS, SEC};
+use jfn_sim::{Action, Cmd, DevStep, DropMark, Engine, Filter, HopDrop, InFlight, Inline, Note, PcapOpts, PcapScope, PingOpts, ProblemKind, Severity, TraceOpts, VlanSet, SEC};
 use netpkt::decode::{self, Proto, P_ARP, P_DNS, P_ETH, P_ICMP, P_IPV4, P_UDP};
 use netpkt::pcapng;
 use netpkt::{Ipv4, Prefix4};
@@ -708,7 +708,7 @@ fn problems_l2(t: &mut T) {
 #[cfg(any(windows, target_os = "linux"))]
 fn threaded(t: &mut T) {
     use crate::sim_thread::{self, Threaded};
-    use jfn_sim::{ActErr, Mode};
+    use jfn_sim::{ActErr, Mode, MS};
 
     let frames = |e: &Engine| e.trace.hops().map(|h| (h.t_tx, h.t_rx, h.from, h.to, h.bytes.to_vec())).collect::<Vec<_>>();
     // the same run inline, for comparison

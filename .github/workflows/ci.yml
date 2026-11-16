@@ -22,9 +22,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Until the next JFLib release .cargo/config.toml takes JFLib's crates from ../JFLib (the style
-  # netlab is not on crates.io yet): the commit this repository was tested against
-  JFLIB_REF: 3044b5acadde6cbd95b0aafbc084686c123bc917
 
 jobs:
   check:
@@ -39,11 +36,6 @@ jobs:
         target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc]
     steps:
       - uses: actions/checkout@v6
-      - name: JFLib beside this repository
-        run: |
-          git init -q ../JFLib
-          git -C ../JFLib fetch -q --depth 1 https://github.com/JFLibrary/JFLib "$JFLIB_REF"
-          git -C ../JFLib checkout -q FETCH_HEAD
       - name: Rust
         run: |
           rustup toolchain install ${{ matrix.toolchain }} --profile minimal --target ${{ matrix.target }} --no-self-update
@@ -67,11 +59,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v6
-      - name: JFLib beside this repository
-        run: |
-          git init -q ../JFLib
-          git -C ../JFLib fetch -q --depth 1 https://github.com/JFLibrary/JFLib "$JFLIB_REF"
-          git -C ../JFLib checkout -q FETCH_HEAD
       - name: Rust
         run: |
           rustup toolchain install 1.98 --profile minimal --target ${{ matrix.target }} --no-self-update

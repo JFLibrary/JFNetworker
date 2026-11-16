@@ -1,0 +1,4 @@
+# uninstall.exe --uninstall in test mode
+click "Deinstallieren"
+wait 500
+expect "Schließen" exists

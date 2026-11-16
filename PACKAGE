@@ -10,7 +10,7 @@ categories=Education;ComputerScience;
 deb_name=jfnetworker
 # Flatpak, AppStream and the MSIX identity: the author's apps use jfreund.org (docs/PACKAGING.md)
 app_id=org.jfreund.JFNetworker
-homepage=https://github.com/JFLibrary/JFNetworker
+homepage=https://networker.jfreund.org
 default_win=netlab
 default_linux=netlab
 styles=netlab

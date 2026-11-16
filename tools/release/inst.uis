@@ -1,0 +1,5 @@
+# the setup in test mode (ASMINST_SHELL_DIR, --dir): the preselected style, default options
+click "Weiter"
+click "Installieren"
+wait 500
+expect "Fertigstellen" exists
