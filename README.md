@@ -147,13 +147,8 @@ cargo run -- --open tests/fixtures/campus.jfnet
 
 ### Linux
 
-Always build with `--target x86_64-unknown-linux-gnu`, also on Linux: the flags in
-`.cargo/config.toml` then reach only the programs.
-
-```sh
-cargo build --workspace --target x86_64-unknown-linux-gnu
-target/x86_64-unknown-linux-gnu/debug/JFNetworker
-```
+The same commands as on Windows, without `--target` (`target/debug/JFNetworker`). On Windows,
+`python tools/linux_test.py` builds the Linux programs and runs the scripts through WSL.
 
 ### jfn-sim
 

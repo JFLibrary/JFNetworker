@@ -5,10 +5,10 @@
     python tools/linux_test.py file catalog    only these (tests/NAME.uis)
 
 `cargo jflib test` runs the program of the machine it runs on.  On Windows this script builds the
-Linux programs (cargo build --workspace --target x86_64-unknown-linux-gnu), then runs every script as
+Linux programs (cargo build --workspace --target x86_64-unknown-linux-gnu, linked by rust-lld), then runs every script as
 `cargo jflib test` does, in the folder of the repository, through the WSL distribution
 JFLIB_WSL_DISTRO (default Ubuntu-24.04; WSLg gives the program its display, the scripts open no
-real window).  On Linux, `cargo jflib test --target x86_64-unknown-linux-gnu` does the same directly.
+real window).  On Linux, `cargo jflib test` does the same directly.
 """
 import os
 import shlex
@@ -19,6 +19,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TRIPLE = "x86_64-unknown-linux-gnu"
+# a Linux program built on Windows links with rust-lld (it comes with rustup): there is no cc for
+# Linux here; on Linux itself Rust's default, cc, links it (JFLib 0.2.1: `cargo run`, no flags)
+CROSS = ["--config", f'target.{TRIPLE}.rustflags=["-C", "linker=rust-lld", "-C", "linker-flavor=ld.lld"]']
 DISTRO = os.environ.get("JFLIB_WSL_DISTRO", "Ubuntu-24.04")
 
 
@@ -29,9 +32,9 @@ def wsl_path(p):
 
 def main():
     if os.name != "nt":
-        sys.exit("linux_test.py runs on Windows; on Linux: cargo jflib test --target " + TRIPLE)
+        sys.exit("linux_test.py runs on Windows; on Linux: cargo jflib test")
     names = sys.argv[1:]
-    r = subprocess.run(["cargo", "build", "--workspace", "--target", TRIPLE], cwd=ROOT)
+    r = subprocess.run(["cargo", "build", "--workspace", "--target", TRIPLE, *CROSS], cwd=ROOT)
     if r.returncode:
         sys.exit(r.returncode)
     exe = wsl_path(ROOT / "target" / TRIPLE / "debug" / "JFNetworker")

@@ -14,8 +14,7 @@ JFLib-Checkout neben dieser Repo (`../JFLib`) braucht es nur noch für die Werkz
 `python tools/jflib_patch.py` schreibt dann in `.cargo/config.toml` eine Tabelle `[patch.crates-io]`, die jede
 JFLib-Crate aus diesem Checkout nimmt, `python tools/jflib_patch.py --remove` nimmt sie wieder weg.
 
-Unter Linux immer mit `--target x86_64-unknown-linux-gnu` bauen (die Schalter in `.cargo/config.toml` erreichen
-dann nur die Programme): `cargo build --workspace --target x86_64-unknown-linux-gnu`.
+Unter Linux genauso wie unter Windows, ohne `--target` (seit JFLib 0.2.1): `cargo build --workspace`.
 
 ```
 git clone https://github.com/JFLibrary/JFLib ../JFLib            # nur für JFLibs Werkzeuge (tools/i18n.py)
