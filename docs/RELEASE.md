@@ -108,7 +108,8 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 | 7 | Download-Seite auf networker.jfreund.org | offen: erst den Inhalt abstimmen (Dateien, Hinweise, Systemvoraussetzungen), dann bauen |
 | 8 | der Workflow lief noch nie auf GitHub | erledigt: Probelauf ohne Schlüssel grün (unten); mit den Secrets noch einmal, dann der Tag |
 | 9 | Actions auf Node.js 20 (`cache@v4`, `upload-artifact@v4`, `download-artifact@v4`, `attest-build-provenance@v2`) | erledigt: `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `attest-build-provenance@v4` |
-| 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`) |
+| 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | erledigt: der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`), der Intel-Teil besteht den Selbsttest (zweiter Lauf) |
+| 11 | `ubuntu-latest` ist seit Oktober 2026 Ubuntu 26.04: eine neuere glibc hätte die Pakete für ältere Systeme unbrauchbar machen können | kein Problem: `JFNetworker-netlab` und `jfn-sim` verlangen nur `GLIBC_2.2.5` (JFLib bindet die alten Symbolversionen), die AppImage-Laufzeit ist statisch |
 
 ## Probelauf (2026-11-16)
 
@@ -131,6 +132,13 @@ die Logs nennen, was nicht signiert ist (Authenticode, GPG, das .dmg nur ad hoc)
 `JFNetworker_Setup.exe`, `jfnetworker_0.1.0_amd64.deb`, `JFNetworker-0.1.0-netlab-x86_64.AppImage`,
 `JFNetworker-0.1.0-universal.dmg`, `jfn-sim-0.1.0-windows-x86_64.zip`, `jfn-sim-0.1.0-linux-x86_64.tar.gz`,
 `jfn-sim-0.1.0-macos-universal.tar.gz`, `SHA256SUMS`.
+
+### Zweiter Lauf (2026-11-16, Lauf 43949172206 auf ac2073c, ohne Secrets)
+
+Alle fünf Jobs grün: Windows 25 min, Linux 9 min, macOS 19 min, `publish` 19 s. Keine Warnung mehr
+über Node.js 20 (Lücke 9). Auf dem Mac besteht jetzt auch der Intel-Teil unter Rosetta den
+Selbsttest `l3` mit 163/163 (Lücke 10). Die heruntergeladenen Dateien passen zu `SHA256SUMS`. Die
+Linux-Programme brauchen nur `GLIBC_2.2.5`, obwohl sie auf Ubuntu 26.04 gebaut sind (Lücke 11).
 
 ## Entscheidungen, die noch offen sind
 
