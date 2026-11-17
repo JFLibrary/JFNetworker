@@ -121,7 +121,7 @@ def notes(v, out, gpg, notarized):
     if not text:
         sys.exit(f"release: CHANGELOG.md has no section {v}")
     body = text + "\n\n" + DOWNLOADS.format(
-        v=v, mac=" (signed and notarized)" if notarized else " (not notarized yet: right-click, Open)",
+        v=v, mac=" (signed and notarized)" if notarized else " (not notarized yet: System Settings › Privacy & Security › Open Anyway)",
         gpg=" (signed in `SHA256SUMS.asc`; the key is on networker.jfreund.org)" if gpg else "")
     if out:
         Path(out).write_text(body, encoding="utf-8")
