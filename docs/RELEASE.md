@@ -105,7 +105,7 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 | 4 | kein `CHANGELOG.md` | erledigt: `CHANGELOG.md` mit dem Inhalt von 0.1.0 unter `[Unreleased]` |
 | 5 | macOS-Warnung (ungenutzter Import in `src/simmodetest.rs`) | erledigt (`cargo check --target aarch64-apple-darwin` ohne Warnung) |
 | 6 | `ci.yml` holte noch „JFLib beside this repository“ | erledigt |
-| 7 | Download-Seite auf networker.jfreund.org | offen: erst den Inhalt abstimmen (Dateien, Hinweise, Systemvoraussetzungen), dann bauen |
+| 7 | Download-Seite auf networker.jfreund.org | Inhalt abgestimmt (2026-11-17): macOS (.dmg, macOS 13+) und Linux (.deb, AppImage), Windows als Hinweis mit Link auf den GitHub-Release (keine .exe auf der Website, auch nicht jfn-sim für Windows), die Knöpfe laden direkt vom GitHub-Release, MSIX/RPM/Flatpak nur als Zeile „folgen später“, dazu Prüfen (SHA256SUMS, Attestierung), überarbeitetes „Gut zu wissen“, News-Eintrag (auch Hub) und Roadmap; noch nicht gebaut, live erst mit dem Release |
 | 8 | der Workflow lief noch nie auf GitHub | erledigt: Probelauf ohne Schlüssel grün (unten); mit den Secrets noch einmal, dann der Tag |
 | 9 | Actions auf Node.js 20 (`cache@v4`, `upload-artifact@v4`, `download-artifact@v4`, `attest-build-provenance@v2`) | erledigt: `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `attest-build-provenance@v4` |
 | 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | erledigt: der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`), der Intel-Teil besteht den Selbsttest (zweiter Lauf) |
