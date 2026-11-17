@@ -101,7 +101,7 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 |---|---|---|
 | 1 | `cargo jflib package` verlangt die Fassade `jflib` als Abhängigkeit („JFNetworker does not depend on the crate jflib“); cargo-jflib liest aus ihr nur die JFLib-Version für Installer und AppImage-Laufzeit, die Fassade zöge alle 52 JFLib-Crates in jeden Build | Übergang: `tools/release/facade.py` setzt sie im Workflow nur zum Paketieren ein (das Programm nutzt sie nicht, die Datei bleibt gleich). Richtig: cargo-jflib nimmt die Version auch von `jflib-rt` (JFLib, nächstes Release) |
 | 2 | `jfn-sim` steht nicht in den Paketen: cargo-jflib 0.2.1 kennt keine weiteren Programme (`win_files`/`linux_files` liegen auf dem JFLib-Branch `cargo-jflib-files`) | Übergang: eigene Archive je System im Release |
-| 3 | `publisher=JFLib` steht im Setup (Programme und Features) und als `Maintainer: JFLib <nobody@localhost>` im `.deb` | offen: deine Entscheidung; `homepage` zeigt jetzt auf networker.jfreund.org |
+| 3 | `publisher=JFLib` stand im Setup (Programme und Features) und als `Maintainer: JFLib <nobody@localhost>` im `.deb` | erledigt: `publisher=Jakob Freund` (2026-11-17), das gilt auch für den Herausgeber in AppStream und das Copyright im .dmg; im `.deb` steht ohne eigene Zeile `maintainer=` „Jakob Freund <nobody@localhost>“; `homepage` zeigt auf networker.jfreund.org |
 | 4 | kein `CHANGELOG.md` | erledigt: `CHANGELOG.md` mit dem Inhalt von 0.1.0 unter `[Unreleased]` |
 | 5 | macOS-Warnung (ungenutzter Import in `src/simmodetest.rs`) | erledigt (`cargo check --target aarch64-apple-darwin` ohne Warnung) |
 | 6 | `ci.yml` holte noch „JFLib beside this repository“ | erledigt |
@@ -142,6 +142,6 @@ Linux-Programme brauchen nur `GLIBC_2.2.5`, obwohl sie auf Ubuntu 26.04 gebaut s
 
 ## Entscheidungen, die noch offen sind
 
-- Herausgeber im Setup und im `.deb` (`publisher`).
+- Eine Kontaktadresse im `.deb` (`maintainer=Jakob Freund <…>` in `PACKAGE`), sonst steht dort `nobody@localhost`.
 - Wann der Windows-Signier-Dienst beantragt wird.
 - Ob die Linux-Pakete später auch über eine eigene apt-Quelle und Flatpak kommen.
