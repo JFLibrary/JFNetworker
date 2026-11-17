@@ -26,7 +26,7 @@ Grundsätze:
 | `JFNetworker_Setup.exe` | Windows x64 | vorerst keine (kein Zertifikat) | ja | nein |
 | `jfnetworker_X.Y.Z_amd64.deb` | Debian, Ubuntu | über `SHA256SUMS.asc` (apt prüft nur Paketquellen) | ja | ja |
 | `JFNetworker-X.Y.Z-netlab-x86_64.AppImage` | Linux x64 | GPG (Typ-2-Signatur, `appimagetool --sign`-Format) | ja | ja |
-| `JFNetworker-X.Y.Z-universal.dmg` | macOS 11+, Apple Silicon und Intel | Developer ID, notarisiert, Ticket geheftet | ja | ja |
+| `JFNetworker-X.Y.Z-universal.dmg` | macOS 13+ (cargo-jflib `MAC_MIN`), Apple Silicon und Intel | Developer ID, notarisiert, Ticket geheftet | ja | ja |
 | `jfn-sim-X.Y.Z-<system>.zip` / `.tar.gz` | Windows, Linux, macOS | über `SHA256SUMS.asc` | ja | nein |
 | `SHA256SUMS`, `SHA256SUMS.asc` | – | GPG | ja | ja |
 

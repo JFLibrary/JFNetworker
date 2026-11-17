@@ -25,7 +25,7 @@ DOWNLOADS = """### Downloads
 
 | File | System |
 |---|---|
-| `JFNetworker-{v}-universal.dmg` | macOS 11 or newer, Apple silicon and Intel{mac} |
+| `JFNetworker-{v}-universal.dmg` | macOS 13 or newer, Apple silicon and Intel{mac} |
 | `jfnetworker_{v}_amd64.deb` | Debian, Ubuntu and their relatives, x86-64 |
 | `JFNetworker-{v}-netlab-x86_64.AppImage` | other Linux systems, x86-64 |
 | `JFNetworker_Setup.exe` | Windows 10 and 11, x86-64 |
