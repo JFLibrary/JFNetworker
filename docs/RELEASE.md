@@ -57,8 +57,11 @@ selbst tragen (Lücke 2).
    - Alle Jobs mit Schlüsseln laufen im Environment `release`: ohne Secrets bauen sie unsigniert und
      sagen im Log, was fehlt; mit dir als nötigem Prüfer wartet jeder Lauf auf deine Freigabe.
 4. **Durchsehen und veröffentlichen** auf GitHub.
-5. **Website**: Die Download-Seite holt beim Deploy den neuesten Release über die GitHub-API
-   (Dateinamen, Größen, Prüfsummen) und verlinkt die Dateien auf GitHub; `deploy.py` wie gehabt.
+5. **Website** (jfreundWebsite): in `web/content/releases/networker.ts` Version, Tag, Datum, die
+   Größen aus dem Release und `notarized`/`gpg` eintragen, für eine neue Version einen News-Eintrag
+   in `web/content/news/networker.ts`; dann `deploy/deploy.py`. Die Knöpfe verlinken die Dateien
+   des GitHub-Releases, für Windows nur die Release-Seite (keine `.exe` auf der Website). Die Seite
+   geht erst nach dem Veröffentlichen live, vorher zeigen ihre Links ins Leere.
 
 ## Schlüssel (Secrets im Environment `release`)
 
