@@ -139,6 +139,7 @@ Die Datei ist kein gültiges JSON ({} an Byte {}).	The file is not valid JSON ({
 Die Datei enthält kein Projekt.	The file contains no project.
 Das ist keine JFNetworker-Datei.	This is not a JFNetworker file.
 Die Datei hat die Version {}; dieses Programm liest Version 1 bis {}.	The file has version {}; this program reads versions 1 to {}.
+Das Projekt ist zu groß für eine Projektdatei ({}).	The project is too big for a project file ({}).
 
 # jfn_sim: refused actions (ActErr, action.rs, svcact.rs, os.rs, cli)
 Gerät {} hat keinen Port „{}“.	Device {} has no port “{}”.

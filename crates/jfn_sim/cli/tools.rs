@@ -1979,7 +1979,7 @@ impl Engine {
             return self.sh_curl_mail(ni, args);
         }
         // ftp:// URLs (ftpc.rs)
-        if args.iter().any(|a| a.len() > 6 && a[..6].eq_ignore_ascii_case("ftp://")) {
+        if args.iter().any(|a| a.len() > 6 && a.get(..6).is_some_and(|p| p.eq_ignore_ascii_case("ftp://"))) {
             return self.sh_curl_ftp(ni, args);
         }
         let a: Vec<String> = args.iter().map(|s| String::from(*s)).collect();

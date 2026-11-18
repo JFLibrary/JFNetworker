@@ -117,9 +117,11 @@ pub(crate) fn read(path: &str) -> Result<Project, String> {
     Project::from_text(text).map_err(|e| crate::app::tr::msg(&e.msg))
 }
 
-/// write the project as a .jfnet file (atomically)
-pub(crate) fn write(path: &str, p: &Project) -> bool {
-    plat::write_file(path, p.to_text().as_bytes())
+/// write the project as a .jfnet file (atomically) -> why not (German); a project past the file
+/// limits leaves the file as it was
+pub(crate) fn write(path: &str, p: &Project) -> Result<(), String> {
+    let text = p.try_to_text().map_err(|m| crate::app::tr::msg(&m))?;
+    if plat::write_file(path, text.as_bytes()) { Ok(()) } else { Err(String::from(t("Die Datei ließ sich nicht schreiben."))) }
 }
 
 /// where a file dialog starts: the open file, else the last file's folder, else
@@ -264,18 +266,21 @@ pub(crate) fn save_as(n: &mut Net, ui: &mut Ui) {
 pub(crate) fn save_to(n: &mut Net, ui: &mut Ui, path: &str) -> bool {
     n.canvas.store_view(&mut n.doc.proj);
     n.phys.store_view(&mut n.doc.proj);
-    if write(path, &n.doc.proj) {
-        n.doc.saved(path);
-        n.file.add_recent(path);
-        n.file.msg = None;
-        crate::doc::autosave::clean(n);
-        ui.repass();
-        true
-    } else {
-        n.file.msg = Some((IB_ERROR, tf("„{}“ wurde nicht gespeichert", &[base_name(path)]), String::from(t("Die Datei ließ sich nicht schreiben."))));
-        n.file.after = None;
-        ui.repass();
-        false
+    match write(path, &n.doc.proj) {
+        Ok(()) => {
+            n.doc.saved(path);
+            n.file.add_recent(path);
+            n.file.msg = None;
+            crate::doc::autosave::clean(n);
+            ui.repass();
+            true
+        }
+        Err(why) => {
+            n.file.msg = Some((IB_ERROR, tf("„{}“ wurde nicht gespeichert", &[base_name(path)]), why));
+            n.file.after = None;
+            ui.repass();
+            false
+        }
     }
 }
 

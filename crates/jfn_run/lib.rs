@@ -418,7 +418,13 @@ pub fn generate(args: &[String]) -> i32 {
         return 2;
     };
     let p = jfn_model::synth::topology(n);
-    let text = p.to_text();
+    let text = match p.try_to_text() {
+        Ok(t) => t,
+        Err(m) => {
+            complain(&format!("{}\n", m.text()));
+            return 2;
+        }
+    };
     match args.iter().position(|a| a == "--out").and_then(|i| args.get(i + 1)) {
         Some(f) => {
             if !plat::write_file(f, text.as_bytes()) {

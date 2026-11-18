@@ -941,7 +941,8 @@ impl Engine {
         while k < args.len() {
             let a = args[k];
             if let Some(opt) = a.strip_prefix('-').filter(|x| !x.is_empty()) {
-                let (flag, inline) = opt.split_at(1);
+                // the first letter, whole (a 'ö' is two bytes)
+                let (flag, inline) = opt.split_at(opt.chars().next().map_or(0, char::len_utf8));
                 let val = if inline.is_empty() && "cistWwMI".contains(flag) {
                     k += 1;
                     args.get(k).copied()

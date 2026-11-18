@@ -784,7 +784,8 @@ impl Engine {
                 break;
             }
             if a.starts_with('-') && a.len() > 1 && !(prog == Prog::Set && pos.len() >= 2) {
-                let flag = &a[..2];
+                // "-ä…" is no option here (and two bytes would cut the 'ä')
+                let flag = a.get(..2).unwrap_or(a);
                 match flag {
                     "-v" => {
                         let v = value(&mut k, a, flag).unwrap_or_default();
@@ -868,7 +869,7 @@ impl Engine {
                     }
                     "-C" if prog == Prog::BulkWalk => {
                         let f = value(&mut k, a, flag).unwrap_or_default();
-                        let (c, rest) = f.split_at(f.len().min(1));
+                        let (c, rest) = f.split_at(f.chars().next().map_or(0, char::len_utf8));
                         let n = if rest.is_empty() {
                             k += 1;
                             args.get(k).and_then(|x| x.parse::<i32>().ok())

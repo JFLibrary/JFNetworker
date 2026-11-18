@@ -2,7 +2,7 @@
 // of --selftest: jfn_sim::cli::sh, shrun, coreutils, man, the flash: directories of
 // cli/files.rs and jfn_model::files): the working directory and cd, the grammar (lists, &&,
 // ||, !, quoting, variables, $?, history), redirections, pipes (also after a ping), globs,
-// every tool with its exact output, Tab completion of paths, processes (jfs scripts that print,
+// every tool with its exact output, option letters beyond ASCII, Tab completion of paths, processes (jfs scripts that print,
 // wait, fail and are ended with Ctrl+C, background jobs with [N] PID and their done lines,
 // jobs, fg, wait, kill, ps, sleep, exit codes), IOS-like flash: directories, a project with
 // folders saved and loaded, power off, determinism
@@ -87,6 +87,7 @@ pub fn run(t: &mut T) {
     glob_t(t);
     tools_t(t);
     text_t(t);
+    umlaut_t(t);
     tab_t(t);
     jfs_t(t);
     jobs_t(t);
@@ -349,6 +350,24 @@ fn tools_t(t: &mut T) {
     // env
     t.eq("env", sh(&mut f, "env"), s("HOME=/root\nHOSTNAME=PC1\nLOGNAME=root\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nPWD=/root\nSHELL=/bin/sh\nTERM=xterm\nUSER=root\n"));
     t.eq("export alone", sh(&mut f, "export | head -2"), s("declare -x HOME=\"/root\"\ndeclare -x LOGNAME=\"root\"\n"));
+}
+
+// an option letter beyond ASCII ('ö' is two bytes, '€' three): named whole, never cut
+fn umlaut_t(t: &mut T) {
+    let mut e = tree_engine();
+    let bad = |cmd: &str, l: &str| format!("{}: invalid option -- '{}'\nTry '{} --help' for more information.\n", cmd, l, cmd);
+    t.eq("cat -ö", sh(&mut e, "cat -ö"), bad("cat", "ö"));
+    t.eq("mv -ä", sh(&mut e, "mv -ä a b"), bad("mv", "ä"));
+    t.eq("head -ü", sh(&mut e, "head -ü notes.txt"), bad("head", "ü"));
+    t.eq("cut -ä", sh(&mut e, "cut -ä notes.txt"), bad("cut", "ä"));
+    t.eq("df -ä", sh(&mut e, "df -ä"), bad("df", "ä"));
+    t.eq("date -€", sh(&mut e, "date -€"), bad("date", "€"));
+    t.eq("ping -ä", sh(&mut e, "ping -ä 10.0.0.10"), s("ping: invalid option -- 'ä'\n"));
+    t.eq("ping6 -ä", sh(&mut e, "ping6 -ä ::1"), s("ping: invalid option -- 'ä'\n"));
+    t.check("snmpwalk -ä", sh(&mut e, "snmpwalk -ä x").starts_with("snmpwalk: unknown option -ä\n"));
+    t.eq("snmpbulkwalk -Cä", sh(&mut e, "snmpbulkwalk -Cä x"), s("snmpbulkwalk: -Cä is no setting here (-Cr N, -Cn N)\n"));
+    t.check("curl -d with €", !sh(&mut e, "curl -d 'Preis€'; echo $?").is_empty());
+    t.eq("still alive", sh(&mut e, "echo ok"), s("ok\n"));
 }
 
 // grep and find

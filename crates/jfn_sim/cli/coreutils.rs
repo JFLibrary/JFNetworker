@@ -40,6 +40,13 @@ fn count_opt(a: &str, next: Option<&str>, short: char, long: &str) -> Option<(St
     Some((String::from(rest), 1))
 }
 
+/// the first letter of an option word after its '-', whole ("ö" of "-ö", "" of a lone "-"):
+/// "invalid option -- 'ö'"
+fn opt_letter(a: &str) -> &str {
+    let rest = a.get(1..).unwrap_or("");
+    &rest[..rest.chars().next().map_or(0, char::len_utf8)]
+}
+
 /// "1.5K" (du -h, df -h: powers of 1024, rounded up, one decimal below 10)
 fn human(bytes: u64) -> String {
     if bytes < 1024 {
@@ -441,7 +448,7 @@ impl Engine {
             match *a {
                 "-n" => number = true,
                 "--help" => return self.tool_help(ni, "cat"),
-                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, "cat", &format!("invalid option -- '{}'", &s[1..2])),
+                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, "cat", &format!("invalid option -- '{}'", opt_letter(s))),
                 s => files.push(String::from(s)),
             }
         }
@@ -491,7 +498,7 @@ impl Engine {
                 "-f" | "-v" | "-i" => {}
                 "-n" => noclobber = true,
                 "--help" => return self.tool_help(ni, "mv"),
-                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, "mv", &format!("invalid option -- '{}'", &s[1..2])),
+                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, "mv", &format!("invalid option -- '{}'", opt_letter(s))),
                 s => ops.push(s),
             }
         }
@@ -570,7 +577,7 @@ impl Engine {
                 "-v" => verbose = true,
                 "-f" | "-F" => return self.tool_usage(ni, cmd, "-f is not supported here: the file is read once"),
                 s if s.len() > 1 && s.starts_with('-') && s[1..].bytes().all(|b| b.is_ascii_digit()) => lines = Some(String::from(&s[1..])),
-                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, cmd, &format!("invalid option -- '{}'", &s[1..2])),
+                s if s.starts_with('-') && s.len() > 1 => return self.tool_usage(ni, cmd, &format!("invalid option -- '{}'", opt_letter(s))),
                 s => files.push(String::from(s)),
             }
             k += 1;
@@ -1156,7 +1163,7 @@ impl Engine {
             } else if a == "-s" {
                 only = true;
             } else if a.starts_with('-') && a.len() > 1 {
-                return self.tool_usage(ni, "cut", &format!("invalid option -- '{}'", &a[1..2]));
+                return self.tool_usage(ni, "cut", &format!("invalid option -- '{}'", opt_letter(a)));
             } else {
                 files.push(String::from(a));
             }
@@ -1356,7 +1363,7 @@ impl Engine {
                 "-h" | "-H" => human_on = true,
                 "-k" | "-T" | "-a" => {}
                 "--help" => return self.tool_help(ni, "df"),
-                s if s.starts_with('-') => return self.tool_usage(ni, "df", &format!("invalid option -- '{}'", &s[1..s.len().min(2)])),
+                s if s.starts_with('-') => return self.tool_usage(ni, "df", &format!("invalid option -- '{}'", opt_letter(s))),
                 s => {
                     if self.sh_kind(ni, s).is_none() {
                         return self.sh_err(ni, &format!("df: {}: No such file or directory\n", s));
@@ -1531,7 +1538,7 @@ impl Engine {
                 "-u" | "--utc" | "-R" => {}
                 "--help" => return self.tool_help(ni, "date"),
                 s if s.starts_with('+') => fmt = Some(&s[1..]),
-                s if s.starts_with('-') => return self.tool_usage(ni, "date", &format!("invalid option -- '{}'", &s[1..s.len().min(2)])),
+                s if s.starts_with('-') => return self.tool_usage(ni, "date", &format!("invalid option -- '{}'", opt_letter(s))),
                 s => return self.sh_err(ni, &format!("date: cannot set the date of a simulated device: '{}'\n", s)),
             }
         }

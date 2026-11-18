@@ -171,7 +171,11 @@ fn write(n: &mut Net) -> bool {
     n.canvas.store_view(&mut p);
     n.phys.store_view(&mut p);
     let a = &mut n.autosave;
-    if !plat::write_file(&a.file(&a.id.clone(), "jfnet"), p.to_text().as_bytes()) {
+    // past the file limits: no copy (the last one stays), the session keeps its claim
+    let Ok(text) = p.try_to_text() else {
+        return false;
+    };
+    if !plat::write_file(&a.file(&a.id.clone(), "jfnet"), text.as_bytes()) {
         return false;
     }
     let mut ini = base::Ini::new();

@@ -319,7 +319,7 @@ impl Engine {
                 if p.has("remote-as") {
                     BgpSet::RemoteAs { addr, asn: if p.no { None } else { p.num("asn").map(|v| v as u32) } }
                 } else if p.has("description") {
-                    BgpSet::Descr { addr, text: if p.no { None } else { p.text("text").map(|t| String::from(&t[..t.len().min(80)])) } }
+                    BgpSet::Descr { addr, text: if p.no { None } else { p.text("text").map(|t| t.chars().take(80).collect()) } }
                 } else if p.has("update-source") {
                     BgpSet::UpdateSource { addr, iface: if p.no { None } else { p.text("if").map(String::from) } }
                 } else if p.has("next-hop-self") {

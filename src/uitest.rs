@@ -7,6 +7,8 @@
 //                typed values, the recent files beside them
 //   autosave     copies of other sessions: newest first, a running session's (locked) copy
 //                is never offered, a recovered or dropped copy goes
+//   save limits  a project past the file limits is not written: the file stays, the reason is
+//                said
 //   catalogue    every label of the command table, the menus, the settings page and the
 //                tables marked "// i18n" has an English row; English differs where it should
 
@@ -24,7 +26,23 @@ pub(crate) fn run(t: &mut T) {
     contrast(t);
     prefs(t);
     autosave(t);
+    save_limits(t);
     catalogue(t);
+}
+
+// a string past 16 MiB (file_limits): saving once wrote "\n" over the project and called it saved
+fn save_limits(t: &mut T) {
+    let path = "mem://jfn-selftest/limits.jfnet";
+    plat::write_file(path, b"alt");
+    let mut p = jfn_model::Project::new("Grenze", 13);
+    p.description = "x".repeat(17 << 20);
+    t.check("save limits text refused", p.try_to_text().is_err());
+    let r = crate::doc::file::write(path, &p);
+    t.check("save limits says why", r.as_ref().is_err_and(|m| m.contains("string_limit")));
+    t.eq("save limits file kept", plat::read_file(path).as_deref(), Some(&b"alt"[..]));
+    p.description = String::from("klein");
+    t.check("save limits small project written", crate::doc::file::write(path, &p).is_ok() && plat::read_file(path).is_some_and(|b| b.starts_with(b"{")));
+    plat::delete(path);
 }
 
 // the canvas colour of a theme of the linked style (netlab)

@@ -661,6 +661,11 @@ fn command_line(t: &mut T) {
     let now = e.now();
     run_to(&mut e, now + 2 * SEC);
     t.eq("back", state(&e, r1, "10.0.12.2"), Some(State::Established));
+    // a description is cut at 80 characters, not bytes: the 'ö' across byte 80 stays whole
+    let a79 = "a".repeat(79);
+    let long = format!("neighbor 10.0.12.2 description {}öäü", a79);
+    cli(&mut e, r1, &["conf t", "router bgp 65001", long.as_str(), "end"]);
+    t.check("description cut", cli(&mut e, r1, &["show running-config"]).contains(&format!(" neighbor 10.0.12.2 description {}ö\n", a79)));
     // the running configuration boots back to the same
     let saved = e.running_config(r1);
     let mut q = p.clone();

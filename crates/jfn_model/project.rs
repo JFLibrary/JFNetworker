@@ -800,13 +800,23 @@ impl Project {
 
     // ---------------------------------------------------------------- file
 
-    /// the project as the text of a .jfnet file (indented JSON, LF line ends)
-    pub fn to_text(&self) -> String {
+    /// the project as the text of a .jfnet file (indented JSON, LF line ends), or why it does not
+    /// fit one: file_limits() (a string past 16 MiB, such as a big file on a host or a background
+    /// picture, nesting past 32 levels, more than 64 MiB) -- what reading would refuse
+    pub fn try_to_text(&self) -> Result<String, Msg> {
         let mut v = self.to_json();
         no_default_hw(&mut v);
-        let mut s = json::stringify_pretty(&v, file_limits(), 2).unwrap_or_default();
+        let mut s = json::stringify_pretty(&v, file_limits(), 2).map_err(|e| msg!("Das Projekt ist zu groß für eine Projektdatei ({}).", e.kind))?;
         s.push('\n');
-        s
+        Ok(s)
+    }
+    /// try_to_text for tests and projects known to fit; panics when the project does not fit
+    /// (whatever writes a file the user made uses try_to_text and says why)
+    pub fn to_text(&self) -> String {
+        match self.try_to_text() {
+            Ok(s) => s,
+            Err(m) => panic!("{}", m.text()),
+        }
     }
     /// reads a .jfnet file; missing members take their defaults, unknown ones are ignored
     pub fn from_text(text: &str) -> Result<Project, LoadErr> {
