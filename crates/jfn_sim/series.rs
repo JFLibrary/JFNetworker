@@ -535,7 +535,8 @@ fn roles(kind: &str) -> Roles {
         "kv" => r(&["requests"], &["unavailable", "full"], None, None),
         "db" => r(&["statements"], &["errors"], None, Some("inflight")),
         "cache" => r(&["requests"], &["backend_errors"], None, None),
-        "mq" => r(&["published"], &["rejected", "dead"], Some("depth"), Some("inflight")),
+        // a message the full queue refused is not among the published ones: both are what came
+        "mq" => r(&["published", "rejected"], &["rejected", "dead"], Some("depth"), Some("inflight")),
         "worker" => r(&["done", "failed"], &["failed"], None, Some("busy")),
         "dns-server" => r(&["queries"], &["servfail"], None, None),
         _ => r(&["requests"], &["errors"], Some("queued"), Some("inflight")),

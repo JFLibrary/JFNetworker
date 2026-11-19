@@ -7,7 +7,7 @@
 // stopped service's gaps, a service that comes later, a replaced and a removed one; the cables'
 // frames and bytes, a cable plugged in later; the CSV; that sampling changes nothing of a run;
 // the scenario syntax and the runner's lines; KPIs, the load of the KV shards and the fault
-// marks on the lab of tests/fixtures/lab_shards.jfnet
+// marks on the lab of tests/fixtures/lab_shards.jfnet; a full queue's errors per mille
 //
 // The ticker's latencies are 2 ms, in its fourth second (3 s to 4 s) 30 ms: equal values come
 // out exactly, and the quantiles of a span of 20 times 2 ms and 10 times 30 ms are worked out
@@ -121,6 +121,7 @@ pub fn run(t: &mut T) {
     syntax(t);
     runner(t);
     lab(t);
+    queue_kpi(t);
 }
 
 fn ticks(t: &mut T) {
@@ -382,4 +383,56 @@ fn lab(t: &mut T) {
     // 1637 answers in the 17 s from 2 s on, none failed
     let g = e.kpi(load, "load", 17 * SEC);
     t.eq("lab: the load generator over the run", g.as_ref().map(|k| (k.rps_milli, k.err_pm, k.p50_us, k.p99_us)), Some((Some(96_294), Some(0), Some(1141), Some(199_229))));
+}
+
+/// a stand-in for a full queue: every 100 ms one message taken and three refused
+#[derive(Clone, Debug, Default)]
+struct FullQueue {
+    published: u64,
+    rejected: u64,
+}
+
+impl Service for FullQueue {
+    fn kind(&self) -> &'static str {
+        "mq"
+    }
+    fn start(&mut self, os: &mut OsApi) {
+        let at = os.now() + 100 * MS;
+        os.timer(0, at);
+    }
+    fn on(&mut self, ev: SvcEvent, os: &mut OsApi) {
+        if ev == SvcEvent::Timer(0) {
+            self.published += 1;
+            self.rejected += 3;
+            let at = os.now() + 100 * MS;
+            os.timer(0, at);
+        }
+    }
+    fn metrics(&self) -> Vec<Metric> {
+        vec![Metric::new("published", self.published as i64), Metric::new("rejected", self.rejected as i64), Metric::new("dead", 0), Metric::new("depth", 0), Metric::new("inflight", 0)]
+    }
+    fn status(&self) -> String {
+        String::new()
+    }
+    fn clone_box(&self) -> Box<dyn Service> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+fn queue_kpi(t: &mut T) {
+    // the refused messages count among those that came: 30 of 40 a second are 750 per mille, not
+    // 30 per 10 published (3000)
+    let mut p = Project::new("queue", 5);
+    let dev = p.add_device("server-1u", 0, 0).unwrap_or(0);
+    let mut e = Engine::from_project(&p).unwrap_or_else(|_| Engine::new(0));
+    let _ = e.add_service(dev, "q", Box::new(FullQueue::default()), true);
+    e.run_until(5 * SEC, BUDGET);
+    let k = e.kpi(dev, "q", 4 * SEC);
+    t.eq("queue: errors among what came, messages a second", k.as_ref().map(|k| (k.err_pm, k.rps_milli)), Some((Some(750), Some(40_000))));
 }
