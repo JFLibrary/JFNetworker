@@ -7,9 +7,19 @@
 //   set_access / set_trunk / add_vlan / remove_vlan
 //   switchport(port, SwSet)  the IOS settings of a port one by one: "switchport mode", the
 //                         access VLAN, the native and the allowed VLANs of a trunk (the mode
-//                         decides which of them count; dynamic ports act as access ports)
+//                         decides which of them count; a dynamic port as DTP decides)
 //   lookup / learn / entries / flush_port
 //   Engine::bridge_input  the forwarding decision for one received frame
+//   Engine::dtp_link / dtp_port   DTP on the dynamic ports of a link (below)
+//
+// DTP, without its frames: a port of an IOS switch (Bridge::dtp) in "dynamic auto" (the default)
+// or "dynamic desirable" becomes a trunk or an access port from what the other end of its cable
+// says, as IOS's table has it: desirable with trunk, desirable or auto, and auto with trunk or
+// desirable make a trunk; auto with auto, an access port at either end, or a neighbour without DTP
+// (a router, a host, an access point, a Linux bridge) leave it an access port.  It looks again
+// when the link comes or goes (refresh_link) and when either end's switchport settings change;
+// the trunk carries the port's native and allowed VLANs.  Access points that turn their own
+// default ports into trunks for their networks (wlan.rs) speak no DTP.
 //
 // Ingress: an access port takes untagged frames (and priority tags with VLAN 0) into its VLAN
 // and drops tagged ones; a trunk takes untagged frames into its native VLAN and tagged ones
@@ -158,10 +168,30 @@ pub enum PortMode {
 /// what "switchport mode" says
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SwMode {
-    /// "dynamic auto", the default: without DTP partners it is an access port
+    /// "dynamic auto", the default: a trunk when the neighbour wants one (DTP), else an access
+    /// port
     Dynamic,
+    /// "dynamic desirable": asks the neighbour for a trunk, a trunk when it agrees
+    Desirable,
     Access,
     Trunk,
+}
+
+impl SwMode {
+    /// DTP's table: a dynamic port facing a neighbour that says `peer` becomes a trunk (None:
+    /// the neighbour speaks no DTP)
+    pub fn trunks_with(self, peer: Option<SwMode>) -> bool {
+        matches!((self, peer), (SwMode::Dynamic, Some(SwMode::Trunk | SwMode::Desirable)) | (SwMode::Desirable, Some(SwMode::Trunk | SwMode::Desirable | SwMode::Dynamic)))
+    }
+    /// what "show interfaces trunk" names as the mode of a trunk
+    pub fn word(self) -> &'static str {
+        match self {
+            SwMode::Dynamic => "auto",
+            SwMode::Desirable => "desirable",
+            SwMode::Access => "off",
+            SwMode::Trunk => "on",
+        }
+    }
 }
 
 /// one IOS switchport setting
@@ -189,18 +219,25 @@ pub struct BridgePort {
     pub allowed: VlanSet,
     /// 802.1X: not authorized, only EAPOL passes (dot1x.rs)
     pub closed: bool,
+    /// DTP made this dynamic port a trunk (Engine::dtp_link)
+    pub dtp_trunk: bool,
 }
 
 impl BridgePort {
     fn new(member: bool) -> BridgePort {
-        BridgePort { mode: PortMode::Access(1), member, admin: SwMode::Dynamic, access_vlan: 1, native_vlan: 1, allowed: VlanSet::all(), closed: false }
+        BridgePort { mode: PortMode::Access(1), member, admin: SwMode::Dynamic, access_vlan: 1, native_vlan: 1, allowed: VlanSet::all(), closed: false, dtp_trunk: false }
+    }
+    /// it works as a trunk: "switchport mode trunk", or a dynamic port DTP made one
+    pub fn trunking(&self) -> bool {
+        match self.admin {
+            SwMode::Trunk => true,
+            SwMode::Dynamic | SwMode::Desirable => self.dtp_trunk,
+            SwMode::Access => false,
+        }
     }
     /// the mode that follows from the settings
     fn settle(&mut self) {
-        self.mode = match self.admin {
-            SwMode::Trunk => PortMode::Trunk { native: self.native_vlan, allowed: self.allowed.clone() },
-            _ => PortMode::Access(self.access_vlan),
-        };
+        self.mode = if self.trunking() { PortMode::Trunk { native: self.native_vlan, allowed: self.allowed.clone() } } else { PortMode::Access(self.access_vlan) };
     }
 }
 
@@ -225,6 +262,9 @@ pub struct Bridge {
     /// only the VLANs of `vlans` pass (IOS switches: a VLAN forgotten on a transit switch, "no
     /// vlan N", an SVI without its VLAN); Linux bridges, access points and clouds take any
     pub vlan_db: bool,
+    /// its ports speak DTP (IOS switches): a dynamic port becomes a trunk when its neighbour
+    /// wants one (Engine::dtp_link); elsewhere a dynamic port stays an access port
+    pub dtp: bool,
     /// spanning tree: its settings and, while it runs, the protocol (stp.rs)
     pub stp: crate::stp::Stp,
     /// the shorter aging of an 802.1D topology change (Forward Delay), None: `aging`
@@ -242,6 +282,7 @@ impl Bridge {
             max_entries: 16_384,
             vlans,
             vlan_db: false,
+            dtp: false,
             stp: crate::stp::Stp::default(),
             fast_aging: None,
         }
@@ -262,6 +303,7 @@ impl Bridge {
             return false;
         };
         p.admin = SwMode::Access;
+        p.dtp_trunk = false;
         p.access_vlan = vlan;
         p.settle();
         self.vlans.entry(vlan).or_insert_with(|| format!("VLAN{:04}", vlan));
@@ -276,6 +318,7 @@ impl Bridge {
             return false;
         };
         p.admin = SwMode::Trunk;
+        p.dtp_trunk = false;
         p.native_vlan = native;
         p.allowed = allowed;
         p.settle();
@@ -290,7 +333,14 @@ impl Bridge {
         };
         let before = p.mode.clone();
         match set {
-            SwSet::Mode(m) => p.admin = m,
+            SwSet::Mode(m) => {
+                p.admin = m;
+                // a port set by hand negotiates nothing (the engine looks at a dynamic one
+                // again: Engine::dtp_port)
+                if !matches!(m, SwMode::Dynamic | SwMode::Desirable) {
+                    p.dtp_trunk = false;
+                }
+            }
             SwSet::Access(v) | SwSet::Native(v) if !(1..=4094).contains(&v) => return false,
             SwSet::Access(v) => p.access_vlan = v,
             SwSet::Native(v) => p.native_vlan = v,
@@ -643,6 +693,77 @@ impl Engine {
     /// the bridge of a device
     pub fn bridge(&self, dev: u32) -> Option<&Bridge> {
         self.node(dev)?.bridge.as_ref()
+    }
+
+    // ---------------------------------------------------------------- DTP
+
+    /// what a port tells its neighbour by DTP: its "switchport mode"; None when it speaks no
+    /// DTP (no switch port of an IOS switch, or the device is off)
+    fn dtp_says(&self, ni: usize, pi: u16) -> Option<SwMode> {
+        let n = self.nodes.get(ni)?.as_ref()?;
+        let b = n.bridge.as_ref()?;
+        let p = b.ports.get(pi as usize)?;
+        (n.power && b.dtp && p.member).then_some(p.admin)
+    }
+
+    /// a dynamic port of an IOS switch with what its neighbour says (None: nobody speaks DTP
+    /// there): a trunk or an access port by DTP's table; the node when its mode changed
+    fn dtp_set(&mut self, ni: usize, pi: u16, peer: Option<SwMode>) -> Option<usize> {
+        let b = self.nodes.get_mut(ni)?.as_mut()?.bridge.as_mut()?;
+        if !b.dtp {
+            return None;
+        }
+        let p = b.ports.get_mut(pi as usize)?;
+        let trunk = p.member && p.admin.trunks_with(peer);
+        if trunk == p.dtp_trunk {
+            return None;
+        }
+        p.dtp_trunk = trunk;
+        let before = p.mode.clone();
+        p.settle();
+        if p.mode == before {
+            return None;
+        }
+        b.flush_port(pi);
+        Some(ni)
+    }
+
+    /// DTP without frames on the wire: the dynamic ports at both ends of link `li` become trunks
+    /// or access ports from what the other end's "switchport mode" says while the link is up
+    /// (refresh_link: a link that comes or goes); the nodes whose ports changed
+    pub(crate) fn dtp_link(&mut self, li: usize) -> Vec<usize> {
+        let Some(Some(l)) = self.links.get(li) else {
+            return Vec::new();
+        };
+        let ends = l.ends;
+        let up = self.link_up(li);
+        let says = [self.dtp_says(ends[0].0, ends[0].1), self.dtp_says(ends[1].0, ends[1].1)];
+        let mut changed = Vec::new();
+        for k in 0..2 {
+            let peer = if up { says[1 - k] } else { None };
+            if let Some(n) = self.dtp_set(ends[k].0, ends[k].1, peer) {
+                changed.push(n);
+            }
+        }
+        changed
+    }
+
+    /// a switch port's settings changed ("switchport mode", "no switchport"): DTP looks at its
+    /// link again, and a neighbour whose port changed looks at its interfaces (RIP, OSPF, IPv6,
+    /// BGP, the console's messages) as after a change of its own
+    pub(crate) fn dtp_port(&mut self, ni: usize, pi: u16) {
+        let li = self.nodes.get(ni).and_then(|n| n.as_ref()).and_then(|n| n.ports.get(pi as usize)).and_then(|p| p.link);
+        let changed = match li {
+            Some(li) => self.dtp_link(li),
+            None => self.dtp_set(ni, pi, None).into_iter().collect(),
+        };
+        for n in changed.into_iter().filter(|&n| n != ni) {
+            self.rip_kick(n);
+            self.ospf_kick(n);
+            self.ip6_kick(n);
+            self.bgp_kick(n);
+            self.ios_snap(n);
+        }
     }
 }
 

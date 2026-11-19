@@ -342,6 +342,7 @@ impl Engine {
             match b.admin {
                 SwMode::Access => s.push_str(" switchport mode access\n"),
                 SwMode::Trunk => s.push_str(" switchport mode trunk\n"),
+                SwMode::Desirable => s.push_str(" switchport mode dynamic desirable\n"),
                 SwMode::Dynamic => {}
             }
         } else if bp.is_some() && !switch_port && n.model.has(F_BRIDGE) && n.model.has(F_ROUTER) && !n.model.has(F_HOST) {
@@ -610,24 +611,26 @@ impl Engine {
         let Some(b) = n.bridge.as_ref() else {
             return String::new();
         };
-        let mut rows: Vec<(String, u16, VlanSet)> = Vec::new();
+        // the mode as set: "on" for "switchport mode trunk", "auto" or "desirable" for a dynamic
+        // port DTP made a trunk (a bridge without DTP, an access point, says "on")
+        let mut rows: Vec<(String, u16, VlanSet, &str)> = Vec::new();
         for (pi, bp) in b.ports.iter().enumerate() {
             if let PortMode::Trunk { native, allowed } = &bp.mode
                 && bp.member
                 && n.ports[pi].link.is_some_and(|li| self.link_up(li))
             {
-                rows.push((ifname::short(&n.ports[pi].spec.name), *native, allowed.clone()));
+                rows.push((ifname::short(&n.ports[pi].spec.name), *native, allowed.clone(), if b.dtp { bp.admin.word() } else { "on" }));
             }
         }
         if rows.is_empty() {
             return String::new();
         }
         let mut s = String::from("\nPort        Mode             Encapsulation  Status        Native vlan\n");
-        for (p, native, _) in &rows {
-            s.push_str(&format!("{}{}{}{}{}\n", pad(p, 12), pad("on", 17), pad("802.1q", 15), pad("trunking", 14), native));
+        for (p, native, _, mode) in &rows {
+            s.push_str(&format!("{}{}{}{}{}\n", pad(p, 12), pad(mode, 17), pad("802.1q", 15), pad("trunking", 14), native));
         }
         s.push_str("\nPort        Vlans allowed on trunk\n");
-        for (p, _, a) in &rows {
+        for (p, _, a, _) in &rows {
             s.push_str(&format!("{}{}\n", pad(p, 12), a.to_text()));
         }
         let active = |a: &VlanSet| {
@@ -640,11 +643,11 @@ impl Engine {
             v.to_text()
         };
         s.push_str("\nPort        Vlans allowed and active in management domain\n");
-        for (p, _, a) in &rows {
+        for (p, _, a, _) in &rows {
             s.push_str(&format!("{}{}\n", pad(p, 12), active(a)));
         }
         s.push_str("\nPort        Vlans in spanning tree forwarding state and not pruned\n");
-        for (p, _, a) in &rows {
+        for (p, _, a, _) in &rows {
             s.push_str(&format!("{}{}\n", pad(p, 12), active(a)));
         }
         s

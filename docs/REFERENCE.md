@@ -1001,6 +1001,14 @@ IOS-artige Befehlszeile:
   `switchport mode|access vlan|trunk native vlan|trunk allowed vlan`, `[no] switchport`,
   `vlan` mit `name`, `ip route`, `[no] ip routing`, `[no] ip proxy-arp`, `ip mtu`, `arp`,
   `[no] ip domain-lookup`, `line con 0` / `line vty 0 4`.
+- DTP ohne eigene Rahmen ([`bridge.rs`](crates/jfn_sim/bridge.rs)): Ports eines IOS-Switches in
+  `switchport mode dynamic auto` (die Vorgabe) oder `dynamic desirable` werden nach der Tabelle
+  von IOS aus dem Modus des anderen Kabelendes Trunk oder Access-Port: desirable mit trunk,
+  desirable oder auto und auto mit trunk oder desirable ergeben einen Trunk, auto mit auto, ein
+  Access-Port auf einer Seite oder ein Nachbar ohne DTP (Router, Host, Access Point) einen
+  Access-Port. Ein Port in der Vorgabe gegenüber `switchport mode trunk` wird also Trunk. Das
+  gilt neu, sobald das Kabel kommt oder geht und wenn sich eine Seite ändert; `show interfaces
+  trunk` nennt den Modus (`on`, `auto`, `desirable`).
 - `show running-config|startup-config|ip interface brief|ip route|arp|mac address-table|vlan
   [brief]|interfaces [NAME|trunk]|debugging|version`, `copy running-config startup-config`,
   `write memory`, `clear arp-cache`.

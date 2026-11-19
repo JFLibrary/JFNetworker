@@ -104,12 +104,13 @@ impl Node {
             .collect();
         // the cloud is one layer-2 network between its ports: a bridge without a command line
         let mut bridge = if model.has(F_BRIDGE) || model.has(F_CLOUD) { Some(Bridge::new(&ports.iter().map(|p| p.spec.clone()).collect::<Vec<_>>())) } else { None };
-        // IOS switches forward only the VLANs of their database (bridge.rs)
+        // IOS switches forward only the VLANs of their database and negotiate trunks (bridge.rs)
         if model.cli == CliStyle::Ios
             && matches!(model.kind, DeviceKind::Switch | DeviceKind::L3Switch)
             && let Some(b) = bridge.as_mut()
         {
             b.vlan_db = true;
+            b.dtp = true;
         }
         // a home router routes its WAN port and bridges the rest
         if model.has(F_ROUTER | F_HOST)

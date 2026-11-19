@@ -7,7 +7,8 @@
 //                          cable works (link_carrier), and a serial line's protocol can come up
 //                          (serial.rs: a clock, the same frame format at both ends)
 //   Engine::refresh_link   after any change: notes LinkUp / LinkDown, drops what was on the
-//                          cable, flushes the bridges' MAC entries of that port, tells spanning
+//                          cable, lets DTP set the dynamic switch ports (bridge.rs: dtp_link),
+//                          flushes the bridges' MAC entries of that port, tells spanning
 //                          tree (stp.rs), the services and RIP (rip.rs) of both ends, and
 //                          IPv6 (nd.rs: ip6_kick), the authenticators (dot1x.rs)
 //   Engine::send_on        a frame on one direction of a link without asking whether it is up
@@ -213,6 +214,9 @@ impl Engine {
             self.phys_down(li);
             self.serial_down(li);
         }
+        // DTP: dynamic switch ports become trunks or access ports by what the other end says,
+        // before anyone looks at the ports (bridge.rs)
+        self.dtp_link(li);
         // a WLAN association: the AP's radio port keeps its other stations (wlan.rs)
         let ap_end = self.wlan_ap_end(li);
         for (n, p) in ends {

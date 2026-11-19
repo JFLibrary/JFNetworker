@@ -613,7 +613,7 @@ fn port_mode(e: &Engine, dev: u32, port: &str) -> Option<&'static str> {
         return Some(match b.admin {
             SwMode::Access => "access",
             SwMode::Trunk => "trunk",
-            SwMode::Dynamic => "dynamic",
+            SwMode::Dynamic | SwMode::Desirable => "dynamic",
         });
     }
     let routed = e.ifaces(dev).iter().any(|f| matches!(f.kind, IfKind::Port(_)) && ifname::same(&f.name, port));
@@ -894,7 +894,7 @@ pub fn candidates(p: &Project, e: &Engine) -> Vec<Cand> {
                 let mode = match b.admin {
                     SwMode::Access => "access",
                     SwMode::Trunk => "trunk",
-                    SwMode::Dynamic => "dynamic",
+                    SwMode::Dynamic | SwMode::Desirable => "dynamic",
                 };
                 v.push(row(2, msg!("Modus {}", mode), cand_item(d, ItemKind::Mode, &name, Value::string(mode))));
             } else if f.as_ref().is_some_and(|f| matches!(f.kind, IfKind::Port(_))) && m.is_some_and(|m| m.has(catalog::F_BRIDGE)) {

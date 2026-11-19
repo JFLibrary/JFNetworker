@@ -1634,10 +1634,11 @@ impl Engine {
                 };
             }
             K::SwEncap => return Ok(()),
-            K::SwMode => SwSet::Mode(match (p.no, p.text("mode")) {
-                (true, _) => SwMode::Dynamic,
-                (false, Some("access")) => SwMode::Access,
-                (false, Some("trunk")) => SwMode::Trunk,
+            K::SwMode => SwSet::Mode(match (p.no, p.text("mode"), p.text("dyn")) {
+                (true, _, _) => SwMode::Dynamic,
+                (false, Some("access"), _) => SwMode::Access,
+                (false, Some("trunk"), _) => SwMode::Trunk,
+                (false, _, Some("desirable")) => SwMode::Desirable,
                 _ => SwMode::Dynamic,
             }),
             K::SwAccess => {

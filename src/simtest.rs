@@ -1,8 +1,10 @@
 // simtest -- checks of jfn_sim (part of --selftest): timing on the wire, learning and
 // flooding, VLANs on access and trunk ports (the VLAN database of an IOS switch, an SVI
-// without its VLAN, a native VLAN that is not allowed), aging, link state, loss, queues, hubs,
+// without its VLAN, a native VLAN that is not allowed), DTP's table on dynamic ports (show
+// interfaces trunk, a cable pulled, a router without DTP), aging, link state, loss, queues, hubs,
 // power, removal while frames are under way, determinism and the inline driver
 
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -95,6 +97,7 @@ pub fn run(t: &mut T) {
     flood_learn(t);
     timing(t);
     vlans(t);
+    dtp(t);
     link_state(t);
     loss_queue_hub(t);
     power_remove(t);
@@ -246,6 +249,86 @@ fn vlans(t: &mut T) {
     t.eq("vlan ranges", VlanSet::parse("1-10,20,30-31").map(|s| s.to_text()), Some(String::from("1-10,20,30-31")));
     t.eq("vlan all", VlanSet::all().to_text(), String::from("1-4094"));
     t.check("vlan bad range", VlanSet::parse("0-5").is_none() && VlanSet::parse("10-4095").is_none());
+}
+
+/// lines typed at a device's console now; what it printed
+fn cli(e: &mut Engine, dev: u32, lines: &[&str]) -> String {
+    let _ = e.take_reports();
+    for l in lines {
+        let _ = e.cli_line(dev, l);
+    }
+    let now = e.now();
+    e.run_until(now, BUDGET);
+    let mut o = String::new();
+    for r in e.take_reports() {
+        if let jfn_sim::Report::CliOut { dev: d, bytes, .. } = r
+            && d == dev
+        {
+            o.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+    o
+}
+
+fn dtp(t: &mut T) {
+    // SW1 and SW2 over Te1/1/1, PC1 and PC2 in VLAN 10 at each; the uplinks keep their default
+    // ("dynamic auto") until the console says otherwise
+    let mut p = Project::new("dtp", 7);
+    let (sw1, sw2) = (p.add_device("jf-s24p", 0, 100).unwrap_or(0), p.add_device("jf-s24p", 300, 100).unwrap_or(0));
+    let (pc1, pc2, r1) = (p.add_device("pc", 0, 0).unwrap_or(0), p.add_device("pc", 300, 0).unwrap_or(0), p.add_device("jf-r4", 0, 200).unwrap_or(0));
+    let up = p.connect(&pr(sw1, "te1/1/1"), &pr(sw2, "te1/1/1"), None).unwrap_or(0);
+    let _ = p.connect(&pr(pc1, "eth0"), &pr(sw1, "gi1/0/1"), None);
+    let _ = p.connect(&pr(pc2, "eth0"), &pr(sw2, "gi1/0/1"), None);
+    let _ = p.connect(&pr(r1, "gi0/0/0"), &pr(sw1, "gi1/0/2"), None);
+    let mut e = engine(&p);
+    for sw in [sw1, sw2] {
+        let _ = cli(&mut e, sw, &["enable", "conf t", "vlan 10", "exit", "interface gi1/0/1", "switchport access vlan 10", "end"]);
+    }
+    let te = e.port_index(sw1, "te1/1/1").unwrap_or(0) as usize;
+    let trunk = jfn_sim::PortMode::Trunk { native: 1, allowed: VlanSet::all() };
+    let modes = |e: &Engine| [sw1, sw2].map(|s| e.bridge(s).and_then(|b| b.ports.get(te)).map(|bp| bp.mode.clone()));
+    let crosses = |e: &mut Engine| {
+        let before = e.trace.next_hop_id();
+        inject(e, pc1, "eth0", frame(Mac::BROADCAST, mac(pc1), 64));
+        e.run_idle(BUDGET);
+        e.trace.hops().any(|h| h.id >= before && h.to.0 == pc2)
+    };
+    let set = |e: &mut Engine, sw: u32, line: &str| cli(e, sw, &["conf t", "interface te1/1/1", line, "end"]);
+    // auto with auto: two access ports, VLAN 10 stays at home
+    t.eq("dtp: auto and auto", modes(&e), [Some(jfn_sim::PortMode::Access(1)), Some(jfn_sim::PortMode::Access(1))]);
+    t.check("dtp: auto and auto carry no vlan 10", !crosses(&mut e));
+    // trunk against the default: the default port becomes a trunk (DTP's table), VLAN 10 crosses
+    let _ = set(&mut e, sw1, "switchport mode trunk");
+    t.eq("dtp: trunk makes auto a trunk", modes(&e), [Some(trunk.clone()), Some(trunk.clone())]);
+    t.check("dtp: vlan 10 crosses, tagged", crosses(&mut e) && e.trace.hops().any(|h| h.link == up && eth::tag_of(&h.bytes).map(|g| g.vid) == Some(10)));
+    let shown = cli(&mut e, sw2, &["show interfaces trunk"]);
+    t.check(&format!("dtp: show interfaces trunk names auto: {}", shown), shown.contains("\nTe1/1/1     auto             802.1q         trunking      1\n"));
+    t.check("dtp: and on for the trunk", cli(&mut e, sw1, &["show interfaces trunk"]).contains("\nTe1/1/1     on               802.1q         trunking      1\n"));
+    t.check("dtp: the default is no line", !e.running_config(sw2).contains("switchport mode"));
+    // back to the default: auto with auto again
+    let _ = set(&mut e, sw1, "no switchport mode");
+    t.eq("dtp: back to auto", modes(&e), [Some(jfn_sim::PortMode::Access(1)), Some(jfn_sim::PortMode::Access(1))]);
+    // desirable asks: auto agrees
+    let o = set(&mut e, sw1, "switchport mode dynamic desirable");
+    t.eq("dtp: desirable and auto", (o.lines().any(|l| l.starts_with('%')), modes(&e)), (false, [Some(trunk.clone()), Some(trunk.clone())]));
+    t.check("dtp: desirable in the configuration", e.running_config(sw1).contains("interface TenGigabitEthernet1/1/1\n switchport mode dynamic desirable\n"));
+    t.check("dtp: show interfaces trunk names desirable", cli(&mut e, sw1, &["show interfaces trunk"]).contains("\nTe1/1/1     desirable        802.1q         trunking      1\n"));
+    // an access port says no: both access
+    let _ = set(&mut e, sw2, "switchport mode access");
+    t.eq("dtp: desirable and access", modes(&e), [Some(jfn_sim::PortMode::Access(1)), Some(jfn_sim::PortMode::Access(1))]);
+    t.check("dtp: then no vlan 10", !crosses(&mut e));
+    // desirable with desirable; the cable pulled and plugged in again
+    let _ = set(&mut e, sw2, "switchport mode dynamic desirable");
+    t.eq("dtp: desirable and desirable", modes(&e), [Some(trunk.clone()), Some(trunk.clone())]);
+    let _ = e.apply(Action::Unplug { link: up, down: true });
+    t.eq("dtp: no neighbour, no trunk", modes(&e), [Some(jfn_sim::PortMode::Access(1)), Some(jfn_sim::PortMode::Access(1))]);
+    let _ = e.apply(Action::Unplug { link: up, down: false });
+    t.eq("dtp: the neighbour back", modes(&e), [Some(trunk.clone()), Some(trunk)]);
+    // a router speaks no DTP: a desirable port towards it stays an access port
+    let _ = cli(&mut e, r1, &["enable", "conf t", "interface gi0/0/0", "no shutdown", "end"]);
+    let _ = cli(&mut e, sw1, &["conf t", "interface gi1/0/2", "switchport mode dynamic desirable", "end"]);
+    t.check("dtp: the router's cable is up", e.view().links.iter().any(|l| l.ends.contains(&(r1, 0)) && l.up));
+    t.eq("dtp: towards a router", e.bridge(sw1).and_then(|b| b.ports.get(e.port_index(sw1, "gi1/0/2").unwrap_or(0) as usize)).map(|bp| bp.mode.clone()), Some(jfn_sim::PortMode::Access(1)));
 }
 
 fn link_state(t: &mut T) {

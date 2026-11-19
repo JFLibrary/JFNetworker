@@ -560,12 +560,21 @@ impl Engine {
             Action::Access { dev, port, vlan } => {
                 let (ni, pi) = self.resolve(dev, &port)?;
                 let b = self.bridge_mut(ni, dev)?;
-                if b.set_access(pi, vlan) { Ok(()) } else { Err(ActErr::BadVlan(vlan)) }
+                if !b.set_access(pi, vlan) {
+                    return Err(ActErr::BadVlan(vlan));
+                }
+                // the neighbour's dynamic port hears of it (DTP, bridge.rs)
+                self.dtp_port(ni, pi);
+                Ok(())
             }
             Action::Trunk { dev, port, native, allowed } => {
                 let (ni, pi) = self.resolve(dev, &port)?;
                 let b = self.bridge_mut(ni, dev)?;
-                if b.set_trunk(pi, native, allowed) { Ok(()) } else { Err(ActErr::BadVlan(native)) }
+                if !b.set_trunk(pi, native, allowed) {
+                    return Err(ActErr::BadVlan(native));
+                }
+                self.dtp_port(ni, pi);
+                Ok(())
             }
             Action::Vlan { dev, vid, name, remove } => {
                 let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;
@@ -679,7 +688,12 @@ impl Engine {
                 if !b.ports.get(pi as usize).is_some_and(|p| p.member) {
                     return Err(ActErr::Refused(msg!("{} ist kein Switch-Port.", port)));
                 }
-                if b.switchport(pi, set) { Ok(()) } else { Err(ActErr::BadVlan(bad.unwrap_or(0))) }
+                if !b.switchport(pi, set) {
+                    return Err(ActErr::BadVlan(bad.unwrap_or(0)));
+                }
+                // DTP: this port and the neighbour's look at each other again (bridge.rs)
+                self.dtp_port(ni, pi);
+                Ok(())
             }
             Action::Hostname { dev, name } => {
                 let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;
@@ -912,8 +926,10 @@ impl Engine {
             }
             (false, None) => {}
         }
-        // a routed port leaves the spanning tree, a switch port joins it
+        // a routed port leaves the spanning tree, a switch port joins it; it speaks DTP no more
+        // or again (bridge.rs)
         self.stp_link(ni, pi);
+        self.dtp_port(ni, pi);
         Ok(())
     }
 
