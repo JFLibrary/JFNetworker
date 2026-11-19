@@ -110,8 +110,8 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 | 4 | kein `CHANGELOG.md` | erledigt: `CHANGELOG.md` mit dem Inhalt von 0.1.0 unter `[Unreleased]` |
 | 5 | macOS-Warnung (ungenutzter Import in `src/simmodetest.rs`) | erledigt (`cargo check --target aarch64-apple-darwin` ohne Warnung) |
 | 6 | `ci.yml` holte noch „JFLib beside this repository“ | erledigt |
-| 7 | Download-Seite auf networker.jfreund.org | Inhalt abgestimmt (2026-11-17): macOS (.dmg, macOS 13+) und Linux (.deb, AppImage), Windows als Hinweis mit Link auf den GitHub-Release (keine .exe auf der Website, auch nicht jfn-sim für Windows), die Knöpfe laden direkt vom GitHub-Release, MSIX/RPM/Flatpak nur als Zeile „folgen später“, dazu Prüfen (SHA256SUMS, Attestierung), überarbeitetes „Gut zu wissen“, News-Eintrag (auch Hub) und Roadmap; gebaut und gepusht (jfreundWebsite 73f0fe7), nicht deployt: live erst mit dem Release (Schritt 5) |
-| 8 | der Workflow lief noch nie auf GitHub | erledigt: Probeläufe ohne Schlüssel grün, mit Developer ID und Notarisierung grün (vierter Lauf, unten); als Nächstes der Tag |
+| 7 | Download-Seite auf networker.jfreund.org | Inhalt abgestimmt (2026-11-17): macOS (.dmg, macOS 13+) und Linux (.deb, AppImage), Windows als Hinweis mit Link auf den GitHub-Release (keine .exe auf der Website, auch nicht jfn-sim für Windows), die Knöpfe laden direkt vom GitHub-Release, MSIX/RPM/Flatpak nur als Zeile „folgen später“, dazu Prüfen (SHA256SUMS, Attestierung), überarbeitetes „Gut zu wissen“, News-Eintrag (auch Hub) und Roadmap; erledigt: live seit dem 2026-11-19 mit dem Release (jfreundWebsite 721b620) |
+| 8 | der Workflow lief noch nie auf GitHub | erledigt: Probeläufe ohne Schlüssel grün, mit Developer ID und Notarisierung grün (vierter Lauf, unten); 0.1.0 ist erschienen |
 | 9 | Actions auf Node.js 20 (`cache@v4`, `upload-artifact@v4`, `download-artifact@v4`, `attest-build-provenance@v2`) | erledigt: `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `attest-build-provenance@v4` |
 | 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | erledigt: der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`), der Intel-Teil besteht den Selbsttest (zweiter Lauf) |
 | 11 | `ubuntu-latest` ist seit Oktober 2026 Ubuntu 26.04: eine neuere glibc hätte die Pakete für ältere Systeme unbrauchbar machen können | kein Problem: `JFNetworker-netlab` und `jfn-sim` verlangen nur `GLIBC_2.2.5` (JFLib bindet die alten Symbolversionen), die AppImage-Laufzeit ist statisch |
@@ -161,6 +161,17 @@ Zugangsdaten geprüft, `JFNetworker.app` und das `.dmg` je notarisiert und das T
 `spctl`: „accepted, source=Notarized Developer ID“, Selbsttest nativ und unter Rosetta 163/163.
 `publish` mit `NOTARIZED: true`, Attestierung für alle 8 Dateien. Die Notizen fehlen erwartungsgemäß,
 weil `CHANGELOG.md` noch keinen Abschnitt 0.1.0 hat (das macht `release.py prepare`). GPG bleibt aus.
+
+## 0.1.0 (2026-11-19)
+
+`release.py prepare 0.1.0` als f326bde (die Versionen standen schon auf 0.1.0, neu war nur der
+CHANGELOG-Abschnitt); vor dem Push Windows 221/221 und Linux 220/221 (`perf.uis` zu langsam, während
+andere Sessions Suiten liefen, allein bestanden). Tag `v0.1.0` auf f326bde, Lauf 44598320852 grün:
+App und `.dmg` notarisiert, `spctl` „source=Notarized Developer ID“, Selbsttest nativ und unter
+Rosetta 171/171, Attestierung für alle 8 Dateien, `SHA256SUMS` gleich den Prüfsummen, die GitHub
+für die Dateien nennt. Veröffentlicht am 2026-11-19 um 21:56 UTC: dmg 31,0 MB, Setup 19,5 MB,
+AppImage 19,5 MB, deb 15,3 MB, jfn-sim 5,4 bis 10,3 MB. Website: jfreundWebsite 721b620
+(Datum, `notarized: true`, Größen), deployt als Image 23dcadb89e19; die Knöpfe laden vom Release.
 
 ## Entscheidungen, die noch offen sind
 
