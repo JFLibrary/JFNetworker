@@ -35,9 +35,12 @@
 //
 // Results, for a point of a configuration and a level over its seeds: the latency histograms and the
 // counters are added up and the quantiles taken of the sum (p99_min and p99_max are the seeds' own, for
-// the spread), figures of devices are means or maxima.  Latencies are of the answers: a request that
-// timed out has none and counts as an error, so read p99 together with the errors.  Offered is the
-// rate the level asks (closed loop: what the users sent), achieved the answers without errors.
+// the spread), figures of devices are means or maxima: a device's mean over the seeds for CPU, run
+// queue, page-ins and OOM kills (these two rounded up), each of the device where it is highest, and
+// the highest of any device and seed for memory, swap, disks and cables.  Latencies are of the
+// answers: a request that timed out has none and counts as an error, so read p99 together with the
+// errors.  Offered is the rate the level asks (closed loop: what the users sent), achieved the
+// answers without errors.
 //
 // The knee of a configuration is the highest level up to which every level holds the SLO.  Its limit
 // names the most used resource at the first level that does not, else at the last one: the busiest CPU
@@ -534,6 +537,8 @@ impl Plan {
         }
         // the busiest of each kind: the mean over the seeds of a device's figure
         let mut cpu: Vec<(String, u64, u64, u64)> = Vec::new();
+        // page-ins and OOM kills of each device over the seeds
+        let mut paging: Vec<(String, u64, u64)> = Vec::new();
         for f in of {
             for d in &f.devs {
                 match cpu.iter_mut().find(|x| x.0 == d.name) {
@@ -544,10 +549,15 @@ impl Plan {
                     }
                     None => cpu.push((d.name.clone(), d.cpu_pm, d.runq_milli, d.cpu_wait)),
                 }
+                match paging.iter_mut().find(|x| x.0 == d.name) {
+                    Some(x) => {
+                        x.1 += d.pageins;
+                        x.2 += d.oom_kills;
+                    }
+                    None => paging.push((d.name.clone(), d.pageins, d.oom_kills)),
+                }
                 p.mem_max = p.mem_max.max(d.mem);
                 p.swap_max = p.swap_max.max(d.swap);
-                p.pageins += d.pageins;
-                p.oom_kills += d.oom_kills;
                 if d.disk_pm > p.disk_max_pm || p.disk_dev.is_empty() {
                     p.disk_max_pm = d.disk_pm.max(p.disk_max_pm);
                     p.disk_dev = d.name.clone();
@@ -575,6 +585,12 @@ impl Plan {
                 p.runq_milli = q / n;
                 p.cpu_wait = w / n;
             }
+        }
+        // the device that pages most, the one with the most OOM kills: their means over the
+        // seeds, rounded up (a kill in one seed of three still shows)
+        for (_, pageins, kills) in &paging {
+            p.pageins = p.pageins.max(pageins.div_ceil(n));
+            p.oom_kills = p.oom_kills.max(kills.div_ceil(n));
         }
         // what limits it: the most used of them
         let mut best = (0, String::new());

@@ -422,6 +422,20 @@ fn clone_and_threads(t: &mut T) {
     t.eq("over the limit", out.points[0].status, Status::Memory);
     t.check("it counted what it had", out.points[0].seconds == 4 && out.points[0].achieved_m == 100_000);
     t.check("that level does not hold the SLO", !out.points[0].slo_ok && out.configs[0].knee.is_none());
+    // page-ins and OOM kills as the other figures of devices: a device's mean over the seeds (rounded
+    // up), of the device where it is highest -- not the sum over seeds and devices
+    let x = experiment(r#"{"format": "jfnex", "version": 1, "load": {"dev": "GEN", "svc": "load", "rps": [100]}, "timing": {"warmup_s": 1, "settle_s": 1, "measure_s": 1, "seeds": [5, 6]}}"#);
+    let Ok(two) = Plan::new(&x, &pair(None, &web("1"), LOAD), "x") else {
+        t.check("paging: a plan", false);
+        return;
+    };
+    let dev = |name: &str, pageins: u64, oom_kills: u64| jfn_sim::DevFig { name: String::from(name), pageins, oom_kills, ..jfn_sim::DevFig::default() };
+    let fig = |devs: Vec<jfn_sim::DevFig>| Some(jfn_sim::Fig { seconds: 1, devs, ..jfn_sim::Fig::default() });
+    let mut figs = vec![None; two.runs()];
+    figs[two.index(0, 0, 0)] = fig(vec![dev("WEB", 3, 1), dev("GEN", 1, 0)]);
+    figs[two.index(0, 1, 0)] = fig(vec![dev("WEB", 6, 0), dev("GEN", 2, 0)]);
+    let out = two.collect(figs);
+    t.eq("paging: page-ins (WEB 4.5 -> 5) and OOM kills (WEB 0.5 -> 1)", out.points.first().map(|p| (p.pageins, p.oom_kills)), Some((5, 1)));
 }
 
 // ---------------------------------------------------------------- the knee against a closed form
