@@ -1383,6 +1383,9 @@ Konfiguration sieht das Skript als `config` (`config.port`):
   „Speichergrenze erreicht“ als `err`, damit ein wartendes `res` noch antworten kann. Eine neue
   Verbindung wird geschlossen, eine mit Daten, die nicht mehr passen, abgebrochen; `close` kommt
   auch dann, notfalls mit `nil` statt des Grundes.
+  `heap_kb` geht von 64 bis 262 144 (256 MiB, mehr wird darauf gekürzt); alle Skripte einer
+  Simulation zusammen dürfen höchstens 1 GiB verlangen, eine Definition darüber wird mit diesem
+  Grund abgewiesen (auch eine neue für ein laufendes Skript).
   Stoppen und Strom aus beenden das Programm samt Speicher; was es auf die Disk legte, bleibt.
 - **Determinismus:** keine Uhr außer der virtuellen, Zufall aus einem eigenen Strom je Dienst
   (vom Gerät und Seed abgeleitet), Gleitkomma in Software: gleiche Projekte ergeben auf jedem

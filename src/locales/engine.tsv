@@ -523,6 +523,7 @@ Das Skript lässt sich nicht übersetzen.	The script does not compile.
 Zeile {}, Spalte {}: {} (und {} weitere Fehler)	line {}, column {}: {} (and {} more errors)
 Zeile {}, Spalte {}: {}	line {}, column {}: {}
 „ns_per_op“ muss eine Zahl größer als 0 sein.	“ns_per_op” must be a number greater than 0.
+Alle Skripte zusammen dürfen höchstens {} MiB Speicher haben (limits.heap_kb); die anderen haben schon {} MiB, dieses will {} MiB.	All scripts together may have at most {} MiB of memory (limits.heap_kb); the others have {} MiB already, this one wants {} MiB.
 Skript {} rechnet noch: das Ereignis wartet ({} vor ihm).	Script {} is still computing: the event waits ({} before it).
 Skript {} überlastet: Datagramm verworfen.	Script {} overloaded: datagram dropped.
 Skript {}: Fehler in Zeile {}, Spalte {}: {}	Script {}: error in line {}, column {}: {}

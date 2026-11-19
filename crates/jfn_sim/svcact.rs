@@ -247,7 +247,15 @@ impl Engine {
             "db" => crate::db::from_def_msg(c).map_err(|w| bad(kind, w))?,
             "cache" => crate::cache::from_def_msg(c).map_err(|w| bad(kind, w))?,
             "mq" | "worker" => crate::mq::from_def_msg(kind, c).map_err(|w| bad(kind, w))?,
-            "script" => crate::scriptsvc::from_def_msg(c).map_err(|w| bad(kind, w))?,
+            "script" => {
+                let s = crate::scriptsvc::from_def_msg(c).map_err(|w| bad(kind, w))?;
+                // the heaps of all scripts together are bounded; one of the same name goes
+                let heap = s.as_any().downcast_ref::<crate::scriptsvc::ScriptService>().map_or(0, |x| x.cfg().limits.heap);
+                let name = if def.name.is_empty() { kind } else { def.name.as_str() };
+                let replaced = self.os(ni).and_then(|o| o.svc_id(name)).map(|id| (ni, id));
+                self.script_heap_fits(heap, replaced).map_err(|w| bad(kind, w))?;
+                s
+            }
             "tftp-server" => Box::new(crate::tftpd::TftpServer::from_config(c, ios).map_err(|w| bad(kind, w))?),
             "ftp-server" => Box::new(crate::ftpd::FtpServer::from_config(c).map_err(|w| bad(kind, w))?),
             "smtp-server" => Box::new(crate::smtpd::SmtpServer::from_config(c).map_err(|w| bad(kind, w))?),

@@ -11,6 +11,9 @@
 //      "capacity_mb": 1024}}   (disk: the device's disk, as for kv)
 //   from_def(&config) / from_def_msg   the service of a project's definition (svcact.rs); the
 //                        refusal says what is wrong, a syntax error with its line and column
+//   HEAP_MAX / HEAP_TOTAL   limits.heap_kb is 64 KiB to 256 MiB; all scripts of a simulation may
+//                        ask for 1 GiB of heap together: a definition beyond it is refused (a
+//                        project's service, Action::Service, Action::ScriptSource; a unit's too)
 //   ScriptService::view(now) / errors() / output() / source() / load(now, secs)
 //                        for the shell (script: cli/scripts.rs), top and the app;
 //                        Engine::scripts(dev)
@@ -202,6 +205,10 @@ const EVERY_MIN: Ns = 10 * US;
 const BUSY_KEEP: usize = 900;
 /// http.request gives up after this long unless the script says otherwise
 const REQUEST_TIMEOUT: Ns = 30 * SEC;
+/// the heap one script may ask for (limits.heap_kb: 64 KiB up to this), and the heaps all scripts
+/// of a simulation may ask for together (Engine::script_heap_fits)
+pub const HEAP_MAX: u64 = 256 << 20;
+pub const HEAP_TOTAL: u64 = 1 << 30;
 
 /// the functions a script may also read as values (`let f = log`)
 const FUNCS: &[&str] = &[
@@ -3150,7 +3157,7 @@ fn cfg_of(c: &Json) -> Result<ScriptCfg, Msg> {
             cfg.limits.fuel = if f == 0 { u64::MAX } else { f };
         }
         if let Some(k) = n("heap_kb") {
-            cfg.limits.heap = k.clamp(64, 1 << 22) << 10;
+            cfg.limits.heap = k.clamp(64, HEAP_MAX >> 10) << 10;
         }
         if let Some(d) = n("depth") {
             cfg.limits.depth = d.clamp(1, 100_000) as u32;
@@ -3181,6 +3188,7 @@ impl Engine {
             return Err(ActErr::Refused(msg!("Der Dienst \u{201e}{}\u{201c} ist kein Skript.", name)));
         }
         let def = def_of(c).map_err(|w| ActErr::Refused(msg!("Dienst {}: {}", "script", w)))?;
+        self.script_heap_fits(def.cfg.limits.heap, Some((ni, id))).map_err(|w| ActErr::Refused(msg!("Dienst {}: {}", "script", w)))?;
         // the old program ends as with a stop: its sockets, timers and queued events go
         if running {
             self.svc_stop(ni, id);
@@ -3193,6 +3201,32 @@ impl Engine {
         }
         if s.enabled {
             self.os_push(ni, Job::Start(id));
+        }
+        Ok(())
+    }
+
+    /// what the scripts of the simulation may fill together (their heap limits), but the script
+    /// `skip` (node slot, service id)
+    fn script_heaps(&self, skip: Option<(usize, u32)>) -> u64 {
+        let mut sum = 0u64;
+        for (ni, n) in self.nodes.iter().enumerate() {
+            let Some(os) = n.as_ref().and_then(|n| n.os.as_ref()) else { continue };
+            for s in os.svcs.iter().filter(|s| skip != Some((ni, s.id))) {
+                if let Some(x) = s.svc.as_ref().and_then(|x| x.as_any().downcast_ref::<ScriptService>()) {
+                    sum = sum.saturating_add(x.def.cfg.limits.heap);
+                }
+            }
+        }
+        sum
+    }
+
+    /// a script that may fill `heap` bytes joins the simulation (in place of `skip`): refused
+    /// when the scripts together would ask for more than HEAP_TOTAL (svcact.rs, script_source)
+    pub(crate) fn script_heap_fits(&self, heap: u64, skip: Option<(usize, u32)>) -> Result<(), Msg> {
+        let others = self.script_heaps(skip);
+        if others.saturating_add(heap) > HEAP_TOTAL {
+            let mib = |b: u64| b.div_ceil(1 << 20);
+            return Err(msg!("Alle Skripte zusammen dürfen höchstens {} MiB Speicher haben (limits.heap_kb); die anderen haben schon {} MiB, dieses will {} MiB.", mib(HEAP_TOTAL), mib(others), mib(heap)));
         }
         Ok(())
     }

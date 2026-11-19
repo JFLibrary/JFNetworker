@@ -5,8 +5,9 @@
 // answer of a returned value, 500 after an error, 503 when the queue is full, the plan's
 // example with its disk and cache) and http.request, dns.resolve, the disk with its access
 // times and capacity, metrics and their time series, an endless loop as 100 % CPU while the simulation goes on, the
-// limits (fuel, heap, depth), http.serve over more than 20 000 requests without a growing heap
-// and with an answer for every request, a heap that really is full (callbacks hear of it,
+// limits (fuel, heap, depth; the heap one script and all scripts together may ask for), http.serve
+// over more than 20 000 requests without a growing heap and with an answer for every request, a
+// heap that really is full (callbacks hear of it,
 // connections end), errors with line and column in status, log and trace,
 // stop_on_error, a failed start and a restart, the shell's script command and top,
 // definitions and their refusals, the English of the texts, determinism (twice, and a clone in
@@ -737,6 +738,36 @@ fn limits(t: &mut T) {
     t.eq("limits: depth", kinds(&e, "deep"), vec![(ErrorKind::Depth, 1)]);
     let trace = sv(&e, h[0], "deep").and_then(|s| s.errors().first().map(|x| x.trace.len())).unwrap_or(0);
     t.eq("limits: the calls of the trace", trace, 50);
+    heap_budget(t);
+}
+
+/// one script asks for 256 MiB of heap at most, all scripts of a simulation for 1 GiB together
+fn heap_budget(t: &mut T) {
+    let (mut e, h) = net(2);
+    let huge = "\"limits\": {\"heap_kb\": 4194304}";
+    t.check("heap budget: four of the most", (0..4).all(|i| script(&mut e, h[i % 2], &format!("s{}", i), "1", huge)));
+    t.eq("heap budget: 4 GiB asked, 256 MiB given", sv(&e, h[0], "s0").map(|s| s.cfg().limits.heap), Some(256 << 20));
+    let r = e.apply(Action::Service { dev: h[1], def: script_def("s4", "1", SMALL) });
+    let refusal = match &r {
+        Err(jfn_sim::ActErr::Refused(m)) => (m.text(), m.text_with(&english())),
+        _ => (String::new(), String::new()),
+    };
+    t.eq(
+        "heap budget: a fifth one is refused",
+        refusal,
+        (
+            String::from("Dienst script: Alle Skripte zusammen dürfen höchstens 1024 MiB Speicher haben (limits.heap_kb); die anderen haben schon 1024 MiB, dieses will 1 MiB."),
+            String::from("Service script: All scripts together may have at most 1024 MiB of memory (limits.heap_kb); the others have 1024 MiB already, this one wants 1 MiB."),
+        ),
+    );
+    t.check("heap budget: nothing of it is there", sv(&e, h[1], "s4").is_none());
+    // one that replaces another of its name does not count that one
+    t.check("heap budget: a smaller one in place of s0", script(&mut e, h[0], "s0", "1", SMALL));
+    t.check("heap budget: room for one more", script(&mut e, h[1], "s4", "1", SMALL));
+    // a new definition beyond it is refused, the old program goes on
+    let r = e.apply(Action::ScriptSource { dev: h[0], svc: String::from("s0"), config: conf("1", huge) });
+    t.check("heap budget: a new definition too", matches!(&r, Err(jfn_sim::ActErr::Refused(m)) if m.text().starts_with("Dienst script: Alle Skripte zusammen dürfen höchstens 1024 MiB")));
+    t.eq("heap budget: s0 as it was", sv(&e, h[0], "s0").map(|s| s.cfg().limits.heap), Some(64 << 10));
 }
 
 /// a generator on `from` with `users` users in a closed loop against SRV1
