@@ -76,6 +76,8 @@ pub fn run(t: &mut T) {
     names(t);
     periodic(t);
     seek(t);
+    dialog_source(t);
+    frame_links(t);
 }
 
 // UDP with a TTL and a size: three datagrams, PC2 answers each with port unreachable
@@ -172,4 +174,56 @@ fn seek(t: &mut T) {
     let _ = d.send(Cmd::Seek(0), 0);
     let _ = d.send(Cmd::Live, 0);
     t.eq("seek: live", d.view_time(), now);
+}
+
+// review 2026-11-18: the complex PDU leaves from the device chosen in its dialog, also when the
+// list of sources changes while the dialog is open (it held a line of the list, so a device that
+// got its address by then made another one the source)
+fn dialog_source(t: &mut T) {
+    use crate::workspace::sim::pdu;
+    let mut p = Project::new("pdu-dialog", 5);
+    let pcs: Vec<u32> = (0..3).map(|i| p.add_device("pc", i * 150, 0).unwrap_or(0)).collect();
+    let sw = p.add_device("jf-s24p", 150, 150).unwrap_or(0);
+    for (i, &pc) in pcs.iter().enumerate() {
+        let _ = p.connect(&pr(pc, "eth0"), &pr(sw, &alloc::format!("gi1/0/{}", i + 1)), None);
+    }
+    // PC2 and PC3 have addresses, PC1 none yet
+    for (i, &pc) in pcs.iter().enumerate().skip(1) {
+        if let Some(d) = p.device_mut(pc) {
+            d.startup_config = alloc::format!("ip addr add 10.0.0.{}/24 dev eth0\n", i + 1);
+        }
+    }
+    let (pc1, pc3) = (pcs[0], pcs[2]);
+    let mut n = crate::app::Net::new();
+    n.doc.replace(p, None);
+    n.canvas.st.sel = [pc3 as u64].into_iter().collect();
+    pdu::open_dialog(&mut n);
+    t.eq("dialog: the selected device is the source", n.sim.pdu.f_src, Some(pc3));
+    // PC1 gets its address while the dialog is open: it comes first in the list of sources
+    let addr = move |dev: u32, a: &str, add: bool| Action::IfAddr { dev, iface: String::from("eth0"), prefix: Prefix4::parse(a).unwrap_or(Prefix4 { addr: Ipv4::UNSPECIFIED, len: 0 }), add };
+    let a1 = addr(pc1, "10.0.0.1/24", true);
+    t.check("dialog: PC1 gets an address", n.doc.sim.with_engine("test", move |e| e.apply(a1.clone()).is_ok()));
+    n.sim.pdu.f_dst = String::from("10.0.0.2");
+    pdu::submit(&mut n);
+    t.eq("dialog: sent from the device chosen", n.sim.pdu.list.last().map(|x| x.spec.src), Some(pc3));
+    // PC3 loses its address: the dialog says so and no other device sends instead
+    let a3 = addr(pc3, "10.0.0.3/24", false);
+    let _ = n.doc.sim.with_engine("test", move |e| e.apply(a3.clone()).is_ok());
+    let before = n.sim.pdu.list.len();
+    pdu::submit(&mut n);
+    t.check("dialog: a source without an address is named", n.sim.pdu.list.len() == before && n.sim.pdu.f_err.contains("PC3"));
+}
+
+// review 2026-11-18: the links of the frames of a device's step in the Paket panel have ids of
+// their own (from the 40th frame on they were the hex view's, from the 176th the PDUs panel's:
+// a broadcast flooded by a 48-port switch)
+fn frame_links(t: &mut T) {
+    use crate::app::constants::{ID_PDU_ACT0, ID_PDU_SIMPLE, ID_PK_HEX, ID_PK_TREE, PK_LINKS};
+    use crate::workspace::sim::packet::pdu_link_id;
+    let ids: Vec<u32> = (0..512).filter_map(pdu_link_id).collect();
+    let mut uniq = ids.clone();
+    uniq.dedup();
+    t.check("frame links: one id each", ids.len() == 512 && uniq.len() == 512);
+    t.check("frame links: none of the simulation panels' ids", ids.iter().all(|&i| !(0x8000..=0x9FFF).contains(&i)) && [ID_PK_HEX, ID_PK_TREE, ID_PDU_SIMPLE, ID_PDU_ACT0].iter().all(|x| !ids.contains(x)));
+    t.eq("frame links past the block: plain text", pdu_link_id(PK_LINKS), None);
 }

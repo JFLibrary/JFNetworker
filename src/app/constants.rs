@@ -221,13 +221,16 @@ pub(crate) const ID_EV_CHIP10: u32 = 0x801B;
 pub(crate) const ID_EV_TL_SPLIT: u32 = 0x8021;
 pub(crate) const ID_EV_TIMELINE: u32 = 0x8028;
 pub(crate) const ID_EV_GRID: u32 = 0x9800;
-/// Paket: the splits, the device's step (a scroll view, its PDUs + i), the hex view, the
-/// layer tree (rows + 1 + i)
+/// Paket: the splits, the device's step (a scroll view), the hex view, the layer tree (rows +
+/// 1 + i)
 pub(crate) const ID_PK_SPLIT: u32 = 0x8040;
 pub(crate) const ID_PK_SPLIT2: u32 = 0x8041;
 pub(crate) const ID_PK_STEP: u32 = 0x8048;
-pub(crate) const ID_PK_PDU0: u32 = 0x8050;
 pub(crate) const ID_PK_HEX: u32 = 0x8078;
+/// the links of the step's frames: + k for k < PK_LINKS, a block of their own (0x0013_0000 ..
+/// 0x0013_FFFF; a broadcast of a 48-port switch alone is 47 frames)
+pub(crate) const ID_PK_PDU0: u32 = 0x0013_0000;
+pub(crate) const PK_LINKS: u32 = 0x1_0000;
 pub(crate) const ID_PK_TREE: u32 = 0x8800;
 /// the PDUs panel: its buttons, the list (rows + 1 + i), per row resend / stop / delete
 /// (+ 4 * i + k)

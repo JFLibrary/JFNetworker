@@ -8,7 +8,8 @@
 //   open_dialog(n) / dialog(n, ui)   the complex PDU: source, destination (a device, an
 //                               address or a name), protocol (ICMP echo, UDP, TCP, DNS query),
 //                               ports, size, TTL, count, interval, again and again until
-//                               stopped
+//                               stopped; submit(n) its "Senden" (the source is the device
+//                               chosen, whatever happens to the list meanwhile)
 //   panel(n, ui)                the PDUs panel: the tools, every PDU with its state; send
 //                               again, stop, remove
 //   export(n, ui) / export_done(n, ui) / file_dialog(n, ui)
@@ -137,10 +138,11 @@ pub(crate) struct Pdus {
     pub src: Option<u32>,
     /// the chosen line of the panel
     sel: i32,
-    /// the dialog and its fields
+    /// the dialog and its fields; the source is a device, not a line of the list (the list
+    /// changes while the dialog is open: a device gets or loses its address)
     dlg: Shared<i32>,
-    f_src: i32,
-    f_dst: String,
+    pub(crate) f_src: Option<u32>,
+    pub(crate) f_dst: String,
     f_proto: i32,
     f_sport: i32,
     f_dport: i32,
@@ -149,7 +151,7 @@ pub(crate) struct Pdus {
     f_count: i32,
     f_interval: i32,
     f_periodic: i32,
-    f_err: String,
+    pub(crate) f_err: String,
     /// the export's save dialog
     fd: Shared<i32>,
     fd_path: String,
@@ -165,7 +167,7 @@ impl Pdus {
             src: None,
             sel: -1,
             dlg: Shared::new(0),
-            f_src: 0,
+            f_src: None,
             f_dst: String::new(),
             f_proto: 0,
             f_sport: 0,
@@ -581,16 +583,21 @@ fn sources(n: &Net) -> Vec<(u32, String)> {
     v
 }
 
-/// "Komplexe PDU …": the dialog (the selected device is the source)
+/// "Komplexe PDU …": the dialog (the selected device is the source; else the one chosen before
+/// while it can still send, else the first)
 pub(crate) fn open_dialog(n: &mut Net) {
     let srcs = sources(n);
     let sel = crate::workspace::canvas::cables::sel_devices(n);
-    if let Some(i) = sel.first().and_then(|d| srcs.iter().position(|s| s.0 == *d)) {
-        n.sim.pdu.f_src = i as i32;
-    }
-    n.sim.pdu.f_src = n.sim.pdu.f_src.clamp(0, (srcs.len() as i32 - 1).max(0));
+    let can = |d: &u32| srcs.iter().any(|s| s.0 == *d);
+    let before = n.sim.pdu.f_src.filter(can);
+    n.sim.pdu.f_src = sel.first().copied().filter(can).or(before).or_else(|| srcs.first().map(|s| s.0));
     n.sim.pdu.f_err.clear();
     n.sim.pdu.dlg.set(1);
+}
+
+/// the line of the chosen source in the list of sources (-1: it cannot send any more)
+fn src_line(f_src: Option<u32>, srcs: &[(u32, String)]) -> i32 {
+    f_src.and_then(|d| srcs.iter().position(|s| s.0 == d)).map_or(-1, |i| i as i32)
 }
 
 // a labelled field of the dialog: the label column, then the control
@@ -615,7 +622,18 @@ pub(crate) fn dialog(n: &mut Net, ui: &mut Ui) {
         if names.is_empty() {
             ui.text(TS_BODY | TX_SECONDARY, t("kein Gerät mit IP-Adresse"));
         } else {
-            ui.combobox(ID_PD_SRC, &mut f.f_src, &names);
+            if f.f_src.is_none() {
+                f.f_src = srcs.first().map(|s| s.0);
+            }
+            // the chosen device's line, found anew each frame (empty when it lost its address)
+            let before = src_line(f.f_src, &srcs);
+            let mut line = before;
+            ui.combobox(ID_PD_SRC, &mut line, &names);
+            if line != before
+                && let Some(s) = usize::try_from(line).ok().and_then(|i| srcs.get(i))
+            {
+                f.f_src = Some(s.0);
+            }
         }
         ui.box_end();
         field(ui, "Ziel");
@@ -686,19 +704,31 @@ pub(crate) fn dialog(n: &mut Net, ui: &mut Ui) {
         }
         ui.box_end();
         if ui.dialog_buttons(Some(t("Senden")), None, Some(t("Abbrechen"))) == DLG_PRIMARY {
-            submit(n, &srcs, &open);
+            submit(n);
         }
     }
     ui.dialog_end();
 }
 
-// "Senden": a checked PDU starts (else the dialog stays open with the reason)
-fn submit(n: &mut Net, srcs: &[(u32, String)], open: &Shared<i32>) {
+/// "Senden": a checked PDU starts from the device chosen (else the dialog stays open with the
+/// reason; a source that lost its address meanwhile is named, no other device sends instead)
+pub(crate) fn submit(n: &mut Net) {
+    let open = n.sim.pdu.dlg.clone();
+    let srcs = sources(n);
     let f = &n.sim.pdu;
-    let Some(&(src, _)) = srcs.get(f.f_src.max(0) as usize) else {
-        n.sim.pdu.f_err = String::from(t("Kein Gerät mit IP-Adresse kann senden."));
-        open.set(1);
-        return;
+    let src = match f.f_src {
+        Some(d) if srcs.iter().any(|s| s.0 == d) => Ok(d),
+        Some(d) if n.doc.proj.device(d).is_some() => Err(tf("{} hat keine IP-Adresse.", &[&dev_name(n, d)])),
+        Some(_) if !srcs.is_empty() => Err(String::from(t("Die Quelle gibt es nicht mehr."))),
+        _ => Err(String::from(t("Kein Gerät mit IP-Adresse kann senden."))),
+    };
+    let src = match src {
+        Ok(d) => d,
+        Err(why) => {
+            n.sim.pdu.f_err = why;
+            open.set(1);
+            return;
+        }
     };
     let proto = Proto::of(f.f_proto);
     let periodic = f.f_periodic != 0 && proto != Proto::Dns;

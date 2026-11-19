@@ -6,6 +6,7 @@
 //   frame(n, ui)    the panel: left the device's step (inbound and outbound PDUs as links,
 //                   the decisions between them), in the middle the tree (L1 ports, Ethernet II,
 //                   802.1Q, IPv4, TCP / UDP / ICMP, the application), right the hex view
+//   pdu_link_id(k)  the id of the step's k-th frame link (a block of its own)
 //
 // What it shows follows the selection: an event (a line of the list) shows its device's step
 // (Engine::step_of) with the event's frame; a frame clicked on the canvas shows its receiver's
@@ -277,6 +278,13 @@ pub(crate) fn frame(n: &mut Net, ui: &mut Ui) {
 /// the packet icon of the empty panel
 const JN_PACKET_ICON: u32 = crate::workspace::icons::JN_PACKET;
 
+/// the id of the link of the step's frame k: a block of its own, so a step of many frames (a
+/// flood) never takes the ids of the hex view or the PDUs panel; None past the block (the
+/// line is plain text then)
+pub(crate) fn pdu_link_id(k: u32) -> Option<u32> {
+    (k < PK_LINKS).then(|| ID_PK_PDU0 + k)
+}
+
 // the device's step: inbound frame, decisions, outbound frames (links choose the frame)
 fn step_pane(n: &mut Net, ui: &mut Ui) {
     ui.next_size(-1, -1);
@@ -308,11 +316,16 @@ fn step_pane(n: &mut Net, ui: &mut Ui) {
         let q = ui.place(d, d);
         ui.cmd_rrect(q[0], q[1], d, d, ui.dp(2), 0, cat_color(cat_of(h.mask), ui.theme_dark()), 0, 0);
         let ts = if cur == Some(hop) { TS_BODY_STRONG } else { TS_BODY };
-        if ui.link(ID_PK_PDU0 + k, &label, ts) & EV_ACT != 0 {
-            chosen = Some(hop);
+        match pdu_link_id(k) {
+            Some(id) => {
+                if ui.link(id, &label, ts) & EV_ACT != 0 {
+                    chosen = Some(hop);
+                }
+            }
+            None => ui.text(ts, &label),
         }
         ui.box_end();
-        k += 1;
+        k = k.saturating_add(1);
     };
     ui.text(TS_BODY_STRONG, t("Eingang"));
     match s.inbound {
