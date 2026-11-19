@@ -7,9 +7,9 @@
 R1: enable
 R1: debug ip rip
 run 5s
-expect R1 output contains "RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 2"
+expect R1 output contains "RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 1"
 expect R1 output contains "RIP: triggered update v2 out of GigabitEthernet0/0/0 to 224.0.0.9, 2 routes"
-expect R1 output contains "RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 3"
+expect R1 output contains "RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 2"
 R1: undebug all
 run 35s
 R1: show ip route

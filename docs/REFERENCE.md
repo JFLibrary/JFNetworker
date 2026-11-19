@@ -1903,19 +1903,22 @@ auf virtueller Zeit mit den Zufallszahlen des Geräts, gleiche Projekte ergeben 
   L3-Switch braucht `ip routing` (sonst `% IP routing not enabled`), `no ip routing` und `no
   router rip` nehmen den Prozess mit (die Einstellungen der Interfaces bleiben). Alles steht in
   der Running-Config und kommt beim Start durch dieselbe Befehlszeile zurück.
-- **Versionen:** ohne `version` sendet RIP Version 2 und nimmt 1 und 2; `version 2` nimmt nur 2,
+- **Versionen:** ohne `version` sendet RIP wie IOS Version 1 und nimmt 1 und 2 (ein Labor, in dem
+  VLSM erst mit `version 2` geht, lässt sich also nachstellen); `version 2` sendet und nimmt nur 2,
   `version 1` sendet und nimmt nur 1. Version 2 geht an 224.0.0.9 (die Interfaces treten der
   Gruppe bei, andere Geräte verwerfen die Pakete mit einer Notiz), Version 1 an
   255.255.255.255, beide mit TTL 1 vom Port 520 und der primären Adresse des Interfaces. Version
   1 trägt keine Masken: Subnetze des Hauptnetzes des Interfaces gehen nur mit dessen Maske
   hinaus, andere Hauptnetze als Klassennetz; der Empfänger nimmt die Maske seines Interfaces im
   selben Hauptnetz, sonst die der Klasse, und Host-Routen, wo Host-Bits gesetzt sind. Version 2
-  fasst nur mit `auto-summary` an Klassengrenzen zusammen (aus wie bei IOS 15). Eine
-  Version-1-Anfrage beantwortet ein Interface, das nur Version 2 sendet, nicht (RFC 2453 4.6).
-- **Metriken nach RFC 2453:** Ein angeschlossenes Netz kostet 1, jede empfangene Metrik bekommt
-  1 dazu, 16 ist unerreichbar. Ein Router sieht das LAN seines Nachbarn also als `[120/2]` (wie
-  FRR; IOS zählt die 1 beim Senden dazu und zeigt dort 1 – auf der Leitung stehen dieselben
-  Zahlen, nur eine mit 15 empfangene Route ist hier unerreichbar). Im RIB haben RIP-Routen die
+  fasst nur mit `auto-summary` an Klassengrenzen zusammen (aus wie bei IOS 15). Eine Anfrage in
+  einer Version, die das Interface nicht sendet, beantwortet es nicht (RFC 2453 4.6).
+- **Metriken wie bei IOS:** Ein eigenes Netz (angeschlossen, die Standardroute) geht mit 1
+  hinaus, ein umverteiltes mit seiner Metrik; eine gelernte Route behält die Metrik, mit der sie
+  kam, und geht mit 1 mehr weiter, 16 ist unerreichbar. Ein Router sieht das LAN seines Nachbarn
+  also als `[120/1]`, und eine mit 15 empfangene Route ist erreichbar, geht aber mit 16 weiter.
+  Auf der Leitung stehen dieselben Zahlen wie nach RFC 2453, das die 1 beim Empfang dazuzählt
+  (so zeigt es FRR). Im RIB haben RIP-Routen die
   Distanz 120 (`distance`): eine statische Route (1) gewinnt, eine schwimmende (z. B. 200)
   springt ein, wenn RIP die Route verliert.
 - **Updates:** Beim Start und wenn ein Interface zu senden beginnt (es kommt hoch, ist nicht mehr

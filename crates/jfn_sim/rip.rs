@@ -1,7 +1,7 @@
 // rip -- RIP on IOS-like routers and L3 switches: version 2 after RFC 2453, version 1 after RFC
-// 1058 where an interface is set to it; a service of the device's OS ("rip") with its
-// configuration ("router rip"), its table, the routes it gives the RIB, and what the command
-// lines show of it
+// 1058; as on IOS a process without "version" sends version 1 and takes both; a service of the
+// device's OS ("rip") with its configuration ("router rip"), its table, the routes it gives the
+// RIB, and what the command lines show of it
 //
 //   RipCfg                     version, networks, passive interfaces, auto-summary, default route,
 //                              redistribution, timers, distance, maximum-paths; per interface the
@@ -18,10 +18,11 @@
 //                              (link.rs, Engine::apply): the service looks again at once
 //   classful(a) / classful_len(a)   the class A, B or C network of an address
 //
-// Metrics (RFC 2453 3.5, 3.9.2): a directly connected network has the cost of its interface, 1;
-// a received metric gets that 1 added; 16 is unreachable.  So a router shows its neighbour's LAN
-// as [120/2] (as FRR does; IOS adds the 1 when it sends and shows 1 -- both put the same metrics
-// on the wire, only a route that arrives with 15 is unreachable here and not there).
+// Metrics as IOS counts them: an own network (connected, the default route) goes out with 1, a
+// redistributed one with its metric; a learned route keeps the metric it came with and goes out
+// with the cost of an interface, 1, added; 16 is unreachable.  So a router shows its neighbour's
+// LAN as [120/1], and a route that arrives with 15 is reachable but goes on with 16.  On the wire
+// these are the metrics of RFC 2453 3.5 and 3.9.2, which adds the 1 when a route comes in.
 //
 // Timers ("timers basic U I H F", default 30 180 180 300 s): updates every U seconds, each time
 // U plus or minus a random sixth of it (RFC 2453 3.8: 30 s +/- 5 s, from the device's own random
@@ -92,8 +93,8 @@ use crate::trace::Note;
 pub const KIND: &str = "rip";
 /// the metric of an unreachable destination
 pub const INFINITY: u8 = 16;
-/// what an interface costs: the metric of a directly connected network, added to every metric
-/// received (RFC 2453 3.5, 3.9.2)
+/// what an interface costs: the metric an own network goes out with, added to a learned route's
+/// when it goes out (IOS; RFC 2453 3.5 and 3.9.2 add it when a route comes in)
 pub const COST: u8 = 1;
 /// version bits: what an interface sends or receives
 pub const V1: u8 = 1;
@@ -178,7 +179,7 @@ impl Redist {
 pub struct RipCfg {
     /// "router rip" is there
     pub on: bool,
-    /// "version 1|2"; None: send 2, receive 1 and 2
+    /// "version 1|2"; None: send 1, receive 1 and 2 (as IOS)
     pub version: Option<u8>,
     /// classful networks of "network", sorted
     pub networks: Vec<Ipv4>,
@@ -224,8 +225,8 @@ impl RipCfg {
         match self.send.get(ifname) {
             Some(v) => *v,
             None => match self.version {
-                Some(1) => V1,
-                _ => V2,
+                Some(2) => V2,
+                _ => V1,
             },
         }
     }
@@ -448,7 +449,8 @@ pub struct Path {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub origin: Origin,
-    /// 1 to 15; INFINITY while it is unreachable (until gc_at)
+    /// 1 to 15: what an own route goes out with, what a learned one came with (sent()); INFINITY
+    /// while it is unreachable (until gc_at)
     pub metric: u8,
     pub tag: u16,
     /// the equal-cost paths of a learned route (none while unreachable)
@@ -472,6 +474,11 @@ impl Entry {
     }
     pub fn reachable(&self) -> bool {
         self.metric < INFINITY
+    }
+    /// the metric it goes out with: a learned route one hop further (a route that came with 15
+    /// goes on as unreachable)
+    pub fn sent(&self) -> u8 {
+        if self.origin == Origin::Learned && self.reachable() { self.metric.saturating_add(COST).min(INFINITY) } else { self.metric }
     }
 }
 
@@ -581,9 +588,9 @@ impl Rip {
         let e = self.table.get(&prefix)?;
         e.paths.iter().find(|p| p.via == via).map(|p| now.saturating_sub(p.heard))
     }
-    /// the version it speaks by default
+    /// the version it sends by default
     pub fn version(&self) -> u8 {
-        self.cfg.version.unwrap_or(2)
+        self.cfg.version.unwrap_or(1)
     }
 
     /// a random time around the update period (+/- a sixth)
@@ -839,7 +846,7 @@ impl Rip {
         let mut a = Advert::default();
         for e in m.entries.iter().filter(|e| e.afi == wire::AFI_INET) {
             let p = if ver == 1 { self.infer(os, d.iface, e.addr) } else { e.prefix().map(|p| p.trunc()).or_else(|| self.infer(os, d.iface, e.addr)) };
-            let metric = p.and_then(|p| self.table.get(&p)).map(|x| x.metric).unwrap_or(INFINITY);
+            let metric = p.and_then(|p| self.table.get(&p)).map(|x| x.sent()).unwrap_or(INFINITY);
             a.entries.push(Rte { metric: metric as u32, ..*e });
             a.shown.push((p.unwrap_or(Prefix4 { addr: e.addr, len: 32 }), metric));
             a.poisoned.push(false);
@@ -898,7 +905,8 @@ impl Rip {
             shown.push((p, e.metric as u8));
             // a next hop on the interface's subnet is taken; otherwise the sender (4.4)
             let via = if ver >= 2 && !e.next_hop.is_unspecified() && !os.is_mine(e.next_hop) && os.iface(d.iface).is_some_and(|f| f.on_link(e.next_hop)) { e.next_hop } else { d.src4() };
-            offers.push((p, (e.metric as u8).saturating_add(COST).min(INFINITY), via, if ver >= 2 { e.tag } else { 0 }));
+            // the metric as it came (IOS adds the cost when it sends: Entry::sent)
+            offers.push((p, e.metric as u8, via, if ver >= 2 { e.tag } else { 0 }));
         }
         os.note(Note::RipHeard { from: d.src4(), iface: d.iface, ver, routes: shown });
         for e in bad {
@@ -910,7 +918,7 @@ impl Rip {
         }
     }
 
-    /// one route of a response, its metric already with the cost added
+    /// one route of a response with the metric it came with
     fn offer(&mut self, os: &mut OsApi, k: Prefix4, m: u8, from: Ipv4, via: Ipv4, iface: u16, tag: u16) {
         let now = os.now();
         let (gc, hold) = (self.used.gc(), self.used.holddown as Ns * SEC);
@@ -1044,7 +1052,7 @@ impl Rip {
                 continue;
             }
             let behind = e.origin == Origin::Learned && e.paths.iter().any(|p| p.iface == i);
-            let metric = if behind { INFINITY } else { e.metric };
+            let metric = if behind { INFINITY } else { e.sent() };
             let other = classful(k.addr) != major;
             let dest = if k.len == 0 {
                 Some(*k)

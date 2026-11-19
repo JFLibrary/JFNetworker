@@ -49,8 +49,8 @@
    0.000001650  R1      *Mar  1 00:00:00.000: RIP: update v2 from 10.0.12.2 on GigabitEthernet0/0/1, 2 routes
    0.000001650  R1            10.0.2.0/24 metric 1
    0.000001650  R1            10.0.23.0/24 metric 1
-   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 2
-   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.23.0/24 via 10.0.12.2, metric 2
+   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 1
+   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.23.0/24 via 10.0.12.2, metric 1
    0.000001650  R1      *Mar  1 00:00:00.000: RIP: triggered update v2 out of GigabitEthernet0/0/0 to 224.0.0.9, 2 routes
    0.000001650  R1            10.0.2.0/24 metric 2
    0.000001650  R1            10.0.23.0/24 metric 2
@@ -60,8 +60,8 @@
    0.000001650  R1      *Mar  1 00:00:00.000: RIP: update v2 from 10.0.14.4 on GigabitEthernet0/0/0, 2 routes
    0.000001650  R1            10.0.4.0/24 metric 1
    0.000001650  R1            10.0.34.0/24 metric 1
-   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.4.0/24 via 10.0.14.4, metric 2
-   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.34.0/24 via 10.0.14.4, metric 2
+   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.4.0/24 via 10.0.14.4, metric 1
+   0.000001650  R1      *Mar  1 00:00:00.000: RIP: new route 10.0.34.0/24 via 10.0.14.4, metric 1
    0.000003202  R1      *Mar  1 00:00:00.000: RIP: update v2 from 10.0.12.2 on GigabitEthernet0/0/1, 2 routes
    0.000003202  R1            10.0.1.0/24 metric 16
    0.000003202  R1            10.0.14.0/24 metric 16
@@ -78,15 +78,15 @@
    3.301002740  R1            10.0.3.0/24 metric 2
    3.301002740  R1            10.0.4.0/24 metric 16
    3.301002740  R1            10.0.34.0/24 metric 2
-   3.301002740  R1      *Mar  1 00:00:03.301: RIP: new route 10.0.3.0/24 via 10.0.12.2, metric 3
+   3.301002740  R1      *Mar  1 00:00:03.301: RIP: new route 10.0.3.0/24 via 10.0.12.2, metric 2
    3.623002740  R1      *Mar  1 00:00:03.623: RIP: update v2 from 10.0.14.4 on GigabitEthernet0/0/0, 3 routes
    3.623002740  R1            10.0.2.0/24 metric 16
    3.623002740  R1            10.0.3.0/24 metric 2
    3.623002740  R1            10.0.23.0/24 metric 2
-   3.623002740  R1      *Mar  1 00:00:03.623: RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 3
-   5.000000000  ok      expect R1 output contains "RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 2"
+   3.623002740  R1      *Mar  1 00:00:03.623: RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 2
+   5.000000000  ok      expect R1 output contains "RIP: new route 10.0.2.0/24 via 10.0.12.2, metric 1"
    5.000000000  ok      expect R1 output contains "RIP: triggered update v2 out of GigabitEthernet0/0/0 to 224.0.0.9, 2 routes"
-   5.000000000  ok      expect R1 output contains "RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 3"
+   5.000000000  ok      expect R1 output contains "RIP: one more path to 10.0.3.0/24 via 10.0.14.4, metric 2"
    5.000000000  R1      R1#undebug all
    5.000000000  R1      Debug output: all off
    5.000000000  --      run 35s
@@ -99,16 +99,16 @@
   40.000000000  R1            10.0.0.0/8 is variably subnetted, 11 subnets, 2 masks
   40.000000000  R1      C        10.0.1.0/24 is directly connected, GigabitEthernet0/0/2
   40.000000000  R1      L        10.0.1.1/32 is directly connected, GigabitEthernet0/0/2
-  40.000000000  R1      R        10.0.2.0/24 [120/2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
-  40.000000000  R1      R        10.0.3.0/24 [120/3] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
-  40.000000000  R1                           [120/3] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
-  40.000000000  R1      R        10.0.4.0/24 [120/2] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
+  40.000000000  R1      R        10.0.2.0/24 [120/1] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
+  40.000000000  R1      R        10.0.3.0/24 [120/2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
+  40.000000000  R1                           [120/2] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
+  40.000000000  R1      R        10.0.4.0/24 [120/1] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
   40.000000000  R1      C        10.0.12.0/24 is directly connected, GigabitEthernet0/0/1
   40.000000000  R1      L        10.0.12.1/32 is directly connected, GigabitEthernet0/0/1
   40.000000000  R1      C        10.0.14.0/24 is directly connected, GigabitEthernet0/0/0
   40.000000000  R1      L        10.0.14.1/32 is directly connected, GigabitEthernet0/0/0
-  40.000000000  R1      R        10.0.23.0/24 [120/2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
-  40.000000000  R1      R        10.0.34.0/24 [120/2] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
+  40.000000000  R1      R        10.0.23.0/24 [120/1] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
+  40.000000000  R1      R        10.0.34.0/24 [120/1] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
   40.000000000  ok      expect R1 route 10.0.2.0/24 via 10.0.12.2
   40.000000000  ok      expect R1 route 10.0.3.0/24 via 10.0.12.2
   40.000000000  ok      expect R1 route 10.0.3.0/24 via 10.0.14.4
@@ -117,18 +117,18 @@
   40.000000000  R1      R1#show ip rip database
   40.000000000  R1      10.0.1.0/24    directly connected, GigabitEthernet0/0/2
   40.000000000  R1      10.0.2.0/24
-  40.000000000  R1          [2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
+  40.000000000  R1          [1] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
   40.000000000  R1      10.0.3.0/24
-  40.000000000  R1          [3] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
-  40.000000000  R1          [3] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
-  40.000000000  R1      10.0.4.0/24
+  40.000000000  R1          [2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
   40.000000000  R1          [2] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
+  40.000000000  R1      10.0.4.0/24
+  40.000000000  R1          [1] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
   40.000000000  R1      10.0.12.0/24    directly connected, GigabitEthernet0/0/1
   40.000000000  R1      10.0.14.0/24    directly connected, GigabitEthernet0/0/0
   40.000000000  R1      10.0.23.0/24
-  40.000000000  R1          [2] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
+  40.000000000  R1          [1] via 10.0.12.2, 00:00:05, GigabitEthernet0/0/1
   40.000000000  R1      10.0.34.0/24
-  40.000000000  R1          [2] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
+  40.000000000  R1          [1] via 10.0.14.4, 00:00:07, GigabitEthernet0/0/0
   40.000000000  R1      R1#show ip protocols
   40.000000000  R1      Routing process "rip" (RFC 2453)
   40.000000000  R1        Updates every 30 seconds, the next one in 26 seconds
@@ -208,12 +208,12 @@
   40.000000000  R3      Gateway of last resort is not set
   40.000000000  R3      
   40.000000000  R3            10.0.0.0/24 is subnetted, 5 subnets
-  40.000000000  R3      R        10.0.1.0 [120/3] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
-  40.000000000  R3                        [120/3] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
-  40.000000000  R3      R        10.0.2.0 [120/2] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
-  40.000000000  R3      R        10.0.4.0 [120/2] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
-  40.000000000  R3      R        10.0.12.0 [120/2] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
-  40.000000000  R3      R        10.0.14.0 [120/2] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
+  40.000000000  R3      R        10.0.1.0 [120/2] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
+  40.000000000  R3                        [120/2] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
+  40.000000000  R3      R        10.0.2.0 [120/1] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
+  40.000000000  R3      R        10.0.4.0 [120/1] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
+  40.000000000  R3      R        10.0.12.0 [120/1] via 10.0.23.2, 00:00:05, GigabitEthernet0/0/0
+  40.000000000  R3      R        10.0.14.0 [120/1] via 10.0.34.4, 00:00:07, GigabitEthernet0/0/1
   40.000000000  ok      expect R3 route 10.0.1.0/24 via 10.0.23.2
   40.000000000  ok      expect R3 route 10.0.1.0/24 via 10.0.34.4
   40.000000000  PC1     root@PC1:~# ping -c 2 10.0.3.10
@@ -249,39 +249,39 @@
   54.000000000  R1            10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
   54.000000000  R1      C        10.0.1.0/24 is directly connected, GigabitEthernet0/0/2
   54.000000000  R1      L        10.0.1.1/32 is directly connected, GigabitEthernet0/0/2
-  54.000000000  R1      R        10.0.3.0/24 [120/3] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
-  54.000000000  R1      R        10.0.4.0/24 [120/2] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
+  54.000000000  R1      R        10.0.3.0/24 [120/2] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
+  54.000000000  R1      R        10.0.4.0/24 [120/1] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
   54.000000000  R1      C        10.0.14.0/24 is directly connected, GigabitEthernet0/0/0
   54.000000000  R1      L        10.0.14.1/32 is directly connected, GigabitEthernet0/0/0
-  54.000000000  R1      R        10.0.34.0/24 [120/2] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
+  54.000000000  R1      R        10.0.34.0/24 [120/1] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
   54.000000000  ok      expect R1 no route 10.0.2.0/24
   54.000000000  ok      expect R1 route 10.0.3.0/24 via 10.0.14.4
   54.000000000  R1      R1#show ip rip database
   54.000000000  R1      10.0.1.0/24    directly connected, GigabitEthernet0/0/2
   54.000000000  R1      10.0.2.0/24    unreachable (metric 16): held down 179 s more, removed in 119 s
   54.000000000  R1      10.0.3.0/24
-  54.000000000  R1          [3] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
-  54.000000000  R1      10.0.4.0/24
   54.000000000  R1          [2] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
+  54.000000000  R1      10.0.4.0/24
+  54.000000000  R1          [1] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
   54.000000000  R1      10.0.12.0/24    unreachable (metric 16): removed in 119 s
   54.000000000  R1      10.0.14.0/24    directly connected, GigabitEthernet0/0/0
   54.000000000  R1      10.0.23.0/24    unreachable (metric 16): held down 179 s more, removed in 119 s
   54.000000000  R1      10.0.34.0/24
-  54.000000000  R1          [2] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
+  54.000000000  R1          [1] via 10.0.14.4, 00:00:21, GigabitEthernet0/0/0
   54.000000000  ok      expect R1 output contains "10.0.2.0/24    unreachable (metric 16): held down"
   54.000000000  R2      R2>enable
   54.000000000  R2      R2#show ip rip database
   54.000000000  R2      10.0.1.0/24    unreachable (metric 16): held down 179 s more, removed in 119 s
   54.000000000  R2      10.0.2.0/24    directly connected, GigabitEthernet0/0/2
   54.000000000  R2      10.0.3.0/24
-  54.000000000  R2          [2] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
+  54.000000000  R2          [1] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
   54.000000000  R2      10.0.4.0/24
-  54.000000000  R2          [3] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
+  54.000000000  R2          [2] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
   54.000000000  R2      10.0.12.0/24    unreachable (metric 16): removed in 119 s
   54.000000000  R2      10.0.14.0/24    unreachable (metric 16): held down 179 s more, removed in 119 s
   54.000000000  R2      10.0.23.0/24    directly connected, GigabitEthernet0/0/1
   54.000000000  R2      10.0.34.0/24
-  54.000000000  R2          [2] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
+  54.000000000  R2          [1] via 10.0.23.3, 00:00:27, GigabitEthernet0/0/1
   54.000000000  R4      R4>enable
   54.000000000  R4      R4#show ip route rip
   54.000000000  R4      Codes: C - connected network, L - address of this device, S - static route,
@@ -290,10 +290,10 @@
   54.000000000  R4      Gateway of last resort is not set
   54.000000000  R4      
   54.000000000  R4            10.0.0.0/24 is subnetted, 4 subnets
-  54.000000000  R4      R        10.0.1.0 [120/2] via 10.0.14.1, 00:00:21, GigabitEthernet0/0/1
-  54.000000000  R4      R        10.0.2.0 [120/3] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
-  54.000000000  R4      R        10.0.3.0 [120/2] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
-  54.000000000  R4      R        10.0.23.0 [120/2] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
+  54.000000000  R4      R        10.0.1.0 [120/1] via 10.0.14.1, 00:00:21, GigabitEthernet0/0/1
+  54.000000000  R4      R        10.0.2.0 [120/2] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
+  54.000000000  R4      R        10.0.3.0 [120/1] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
+  54.000000000  R4      R        10.0.23.0 [120/1] via 10.0.34.3, 00:00:27, GigabitEthernet0/0/0
   54.000000000  PC1     root@PC1:~# ping -c 1 10.0.2.10
   54.000000000  PC1     PING 10.0.2.10 (10.0.2.10) 56(84) bytes of data.
   54.000000000  --      run 3s
@@ -310,25 +310,25 @@
  237.000000000  R1      Gateway of last resort is not set
  237.000000000  R1      
  237.000000000  R1            10.0.0.0/24 is subnetted, 5 subnets
- 237.000000000  R1      R        10.0.2.0 [120/4] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      R        10.0.3.0 [120/3] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      R        10.0.4.0 [120/2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      R        10.0.23.0 [120/3] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      R        10.0.34.0 [120/2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      R        10.0.2.0 [120/3] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      R        10.0.3.0 [120/2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      R        10.0.4.0 [120/1] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      R        10.0.23.0 [120/2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      R        10.0.34.0 [120/1] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
  237.000000000  ok      expect R1 route 10.0.2.0/24 via 10.0.14.4
  237.000000000  R1      R1#show ip rip database
  237.000000000  R1      10.0.1.0/24    directly connected, GigabitEthernet0/0/2
  237.000000000  R1      10.0.2.0/24
- 237.000000000  R1          [4] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      10.0.3.0/24
  237.000000000  R1          [3] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      10.0.4.0/24
+ 237.000000000  R1      10.0.3.0/24
  237.000000000  R1          [2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      10.0.4.0/24
+ 237.000000000  R1          [1] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
  237.000000000  R1      10.0.14.0/24    directly connected, GigabitEthernet0/0/0
  237.000000000  R1      10.0.23.0/24
- 237.000000000  R1          [3] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
- 237.000000000  R1      10.0.34.0/24
  237.000000000  R1          [2] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
+ 237.000000000  R1      10.0.34.0/24
+ 237.000000000  R1          [1] via 10.0.14.4, 00:00:24, GigabitEthernet0/0/0
  237.000000000  R2      R2#show ip route rip
  237.000000000  R2      Codes: C - connected network, L - address of this device, S - static route,
  237.000000000  R2             R - learned by RIP, * - default route
@@ -336,11 +336,11 @@
  237.000000000  R2      Gateway of last resort is not set
  237.000000000  R2      
  237.000000000  R2            10.0.0.0/24 is subnetted, 5 subnets
- 237.000000000  R2      R        10.0.1.0 [120/4] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
- 237.000000000  R2      R        10.0.3.0 [120/2] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
- 237.000000000  R2      R        10.0.4.0 [120/3] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
- 237.000000000  R2      R        10.0.14.0 [120/3] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
- 237.000000000  R2      R        10.0.34.0 [120/2] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
+ 237.000000000  R2      R        10.0.1.0 [120/3] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
+ 237.000000000  R2      R        10.0.3.0 [120/1] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
+ 237.000000000  R2      R        10.0.4.0 [120/2] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
+ 237.000000000  R2      R        10.0.14.0 [120/2] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
+ 237.000000000  R2      R        10.0.34.0 [120/1] via 10.0.23.3, 00:00:00, GigabitEthernet0/0/1
  237.000000000  ok      expect R2 route 10.0.1.0/24 via 10.0.23.3
  237.000000000  PC1     root@PC1:~# ping -c 2 10.0.2.10
  237.000000000  PC1     PING 10.0.2.10 (10.0.2.10) 56(84) bytes of data.

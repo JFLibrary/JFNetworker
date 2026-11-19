@@ -1,12 +1,14 @@
 // riptest -- checks of RIP in jfn_sim (group rip of --selftest; jfn_sim::rip, cli/rip.rs): the
-// first exchange with exact virtual times, convergence and metrics (RFC 2453: a connected network
-// costs 1, every hop adds 1), periodic updates with their random offset and triggered ones with
-// their hold, split horizon with poisoned reverse on the wire, a cable pulled (triggered poison,
-// holddown, garbage collection), a silent neighbour (timeout and flush), passive interfaces,
-// distances against static routes, equal-cost paths, version 1 next to version 2 (broadcasts,
-// classful masks, summaries), auto-summary, the default route and redistribution, RIP on an L3
-// switch's VLAN interface, the command line (modes, help, show, debug, clear, the running
-// configuration read back), power, the notes in German and English, determinism
+// first exchange with exact virtual times, convergence and metrics (as IOS shows them: a
+// neighbour's network is [120/1], every further hop adds 1; on the wire RFC 2453's), periodic
+// updates with their random offset and triggered ones with their hold, split horizon with
+// poisoned reverse on the wire, a cable pulled (triggered poison, holddown, garbage collection), a
+// silent neighbour (timeout and flush), passive interfaces, distances against static routes,
+// equal-cost paths, version 1 next to version 2 (broadcasts, classful masks, summaries), the
+// default of IOS (sends 1, takes both: a /26 only with version 2), auto-summary, the default
+// route and redistribution, RIP on an L3 switch's VLAN interface, the command line (modes, help,
+// show, debug, clear, the running configuration read back), power, the notes in German and
+// English, determinism
 //
 // Times: 1 Gbit/s copper with 50 ns of cable, so a frame of n bytes takes (max(n, 60) + 24) * 8
 // ns on the wire plus 50: a request (66 bytes) 770 ns, an update with k routes (46 + 20 k bytes)
@@ -177,6 +179,7 @@ pub fn run(t: &mut T) {
     distances(t);
     equal_cost(t);
     versions(t);
+    default_version(t);
     summaries(t);
     default_and_redistribution(t);
     l3_switch(t);
@@ -206,9 +209,9 @@ fn first_exchange(t: &mut T) {
     );
     // R2's request (770 ns) and its update with one route right after it (720 + 720 + 50 ns)
     t.eq("request heard", when(&e, r1, |n| matches!(n, Note::RipAsked { whole: true, .. })), Some(770));
-    t.eq("route learned", when(&e, r1, |n| *n == Note::RipLearned { prefix: pf("10.2.2.0/24"), via: ip("10.0.12.2"), metric: 2 }), Some(1490));
-    t.eq("r1 rib", rip_routes(&e, r1), alloc::vec![(s("10.2.2.0/24"), Some(ip("10.0.12.2")), 2, 120)]);
-    t.eq("r2 rib", rip_routes(&e, r2), alloc::vec![(s("10.1.1.0/24"), Some(ip("10.0.12.1")), 2, 120)]);
+    t.eq("route learned", when(&e, r1, |n| *n == Note::RipLearned { prefix: pf("10.2.2.0/24"), via: ip("10.0.12.2"), metric: 1 }), Some(1490));
+    t.eq("r1 rib", rip_routes(&e, r1), alloc::vec![(s("10.2.2.0/24"), Some(ip("10.0.12.2")), 1, 120)]);
+    t.eq("r2 rib", rip_routes(&e, r2), alloc::vec![(s("10.1.1.0/24"), Some(ip("10.0.12.1")), 1, 120)]);
     // on the wire: a version 2 request for the whole table to 224.0.0.9 with TTL 1, then the update
     let h = e.trace.hops().find(|h| h.link == l && h.from.0 == r1 && h.mask & decode::P_RIP != 0).cloned();
     match h {
@@ -236,8 +239,8 @@ fn convergence(t: &mut T) {
     let (p, r, _) = chain();
     let mut e = engine(&p);
     run_to(&mut e, 40 * SEC);
-    t.eq("r1 rib", rip_routes(&e, r[0]), alloc::vec![(s("10.0.23.0/24"), Some(ip("10.0.12.2")), 2, 120), (s("10.3.3.0/24"), Some(ip("10.0.12.2")), 3, 120)]);
-    t.eq("r3 rib", rip_routes(&e, r[2]), alloc::vec![(s("10.0.12.0/24"), Some(ip("10.0.23.2")), 2, 120), (s("10.1.1.0/24"), Some(ip("10.0.23.2")), 3, 120)]);
+    t.eq("r1 rib", rip_routes(&e, r[0]), alloc::vec![(s("10.0.23.0/24"), Some(ip("10.0.12.2")), 1, 120), (s("10.3.3.0/24"), Some(ip("10.0.12.2")), 2, 120)]);
+    t.eq("r3 rib", rip_routes(&e, r[2]), alloc::vec![(s("10.0.12.0/24"), Some(ip("10.0.23.2")), 1, 120), (s("10.1.1.0/24"), Some(ip("10.0.23.2")), 2, 120)]);
     // R1 hears of 10.3.3.0/24 from R2's triggered update, one hop later than R2 did
     let r2_learned = when(&e, r[1], |n| matches!(n, Note::RipLearned { prefix, .. } if *prefix == pf("10.3.3.0/24")));
     let r1_learned = when(&e, r[0], |n| matches!(n, Note::RipLearned { prefix, .. } if *prefix == pf("10.3.3.0/24")));
@@ -385,7 +388,7 @@ fn distances(t: &mut T) {
 }
 
 fn equal_cost(t: &mut T) {
-    // R1 reaches R4's loopback over R2 and over R3 with metric 3
+    // R1 reaches R4's loopback over R2 and over R3 with metric 2 (as IOS shows it)
     let mut p = Project::new("rip diamond", 34);
     let r: Vec<u32> = (0..4).map(|i| p.add_device("jf-r4", 200 * i, 0).unwrap_or(0)).collect();
     let l12 = wire(&mut p, r[0], "gi0/0/0", r[1], "gi0/0/0");
@@ -400,7 +403,7 @@ fn equal_cost(t: &mut T) {
     run_to(&mut e, 40 * SEC);
     t.eq("two paths", best(&e, r[0], "10.4.4.0/24"), alloc::vec![("R", Some(ip("10.0.12.2"))), ("R", Some(ip("10.0.13.3")))]);
     let shown = cli(&mut e, r[0], &["enable", "show ip route rip"]);
-    t.check("show ip route rip", shown.contains("      10.0.0.0/24 is subnetted, 3 subnets\n") && shown.contains("R        10.4.4.0 [120/3] via 10.0.12.2, ") && shown.contains(" [120/3] via 10.0.13.3, ") && !shown.contains("C        "));
+    t.check("show ip route rip", shown.contains("      10.0.0.0/24 is subnetted, 3 subnets\n") && shown.contains("R        10.4.4.0 [120/2] via 10.0.12.2, ") && shown.contains(" [120/2] via 10.0.13.3, ") && !shown.contains("C        "));
     // one path per destination address: 10.4.4.4 over R2, 10.4.4.5 over R3 (what R1 sends first
     // for them, an ARP request or the echo, goes over that cable)
     t.eq("pick per destination", (jfn_sim::ip::ecmp_pick(ip("10.4.4.4"), 2), jfn_sim::ip::ecmp_pick(ip("10.4.4.5"), 2)), (0, 1));
@@ -437,10 +440,10 @@ fn equal_cost(t: &mut T) {
 }
 
 fn versions(t: &mut T) {
-    // R1 speaks version 1 and has a network of another class; R2 keeps the default (sends 2,
-    // takes both)
+    // R1 speaks version 1 and has a network of another class; R2 sends 2 on its interface and
+    // takes both
     let tail1 = "router rip\n version 1\n network 10.0.0.0\n network 172.16.0.0\n!\n";
-    let tail2 = "router rip\n network 10.0.0.0\n!\n";
+    let tail2 = "interface GigabitEthernet0/0/0\n ip rip send version 2\n!\nrouter rip\n network 10.0.0.0\n!\n";
     let (mut p, r1, r2, l) = pair(tail1, tail2);
     set(&mut p, r1, cfg("R1", &[("GigabitEthernet0/0/0", "10.0.12.1/24"), ("Loopback0", "172.16.1.1/24")], tail1));
     let mut e = engine(&p);
@@ -460,16 +463,44 @@ fn versions(t: &mut T) {
     let o = cli(&mut e, r2, &["enable", "conf t", "interface gi0/0/0", "ip rip send version 1 2", "end"]);
     t.check("accepted", !refused(&o));
     run_to(&mut e, 20 * SEC);
-    t.eq("r1 learned", rip_routes(&e, r1), alloc::vec![(s("10.2.2.0/24"), Some(ip("10.0.12.2")), 2, 120)]);
+    t.eq("r1 learned", rip_routes(&e, r1), alloc::vec![(s("10.2.2.0/24"), Some(ip("10.0.12.2")), 1, 120)]);
     t.check("running config", e.running_config(r2).contains("interface GigabitEthernet0/0/0\n ip address 10.0.12.2 255.255.255.0\n ip rip send version 1 2\n!\n"));
     let proto = cli(&mut e, r2, &["show ip protocols"]);
-    t.check("versions in show ip protocols", proto.contains("  Versions: send 2, receive 1 and 2\n") && proto.contains("    GigabitEthernet0/0/0       1 2   1 2   no\n"));
+    t.check("versions in show ip protocols", proto.contains("  Versions: send 1, receive 1 and 2\n") && proto.contains("    GigabitEthernet0/0/0       1 2   1 2   no\n"));
     // R1 takes only version 2 on Gi0/0/0 now: it joins the group, and R2's version 1 broadcasts
     // are refused
     let o = cli(&mut e, r1, &["enable", "conf t", "interface gi0/0/0", "ip rip receive version 2", "end"]);
     t.check("receive setting", !refused(&o) && e.running_config(r1).contains("interface GigabitEthernet0/0/0\n ip address 10.0.12.1 255.255.255.0\n ip rip receive version 2\n!\n"));
     run_to(&mut e, 60 * SEC);
     t.check("v1 now ignored", rip_notes(&e, r1).iter().any(|x| x.0 > 20 * SEC && matches!(x.1, Note::RipIgnored { why: RipDrop::Version, .. })));
+}
+
+fn default_version(t: &mut T) {
+    // without "version" as IOS: version 1 goes out, both come in; R2's /26 has another mask than
+    // its interface, so version 1 leaves it out -- until "version 2" on both
+    let plain = "router rip\n network 10.0.0.0\n!\n";
+    let (mut p, r1, r2, l) = pair(plain, plain);
+    set(&mut p, r2, cfg("R2", &[("GigabitEthernet0/0/0", "10.0.12.2/24"), ("Loopback0", "10.2.2.2/24"), ("Loopback1", "10.2.3.65/26")], plain));
+    let mut e = engine(&p);
+    run_to(&mut e, 10 * SEC);
+    let first = rip_frames(&e, l, r2).into_iter().find(|m| m.1.command == rip::CMD_RESPONSE).map(|m| (m.1.version, entries(&m.1)));
+    t.eq("default: version 1, only the subnets with the interface's mask", first, Some((1, alloc::vec![(s("10.2.2.0/32"), 1)])));
+    t.check("default: to the broadcast", e.trace.hops().any(|h| h.link == l && h.from.0 == r2 && h.mask & decode::P_RIP != 0 && h.bytes[0..6] == [0xFF; 6]));
+    t.eq("default: r1 learned the /24, not the /26", rip_routes(&e, r1), alloc::vec![(s("10.2.2.0/24"), Some(ip("10.0.12.2")), 1, 120)]);
+    let proto = cli(&mut e, r1, &["enable", "show ip protocols"]);
+    t.check(&format!("default: show ip protocols: {}", proto), proto.contains("  Versions: send 1, receive 1 and 2\n") && proto.contains("    GigabitEthernet0/0/0       1     1 2   no\n"));
+    t.check("default: no version line", e.running_config(r1).contains("router rip\n network 10.0.0.0\n no auto-summary\n!\n"));
+    t.eq("default: the status says version 1", e.services(r1).iter().find(|s| s.kind == "rip").is_some_and(|s| s.status_msg.text().starts_with("RIP Version 1: ")), true);
+    // R2 with version 2 sends 2, which R1 takes (the /26 comes), and takes only 2: R1's version 1
+    // updates are refused there
+    let _ = cli(&mut e, r2, &["enable", "conf t", "router rip", "version 2", "end"]);
+    run_to(&mut e, 50 * SEC);
+    t.eq("default: r1 takes version 2", rip_routes(&e, r1).iter().map(|x| (x.0.clone(), x.2)).collect::<Vec<_>>(), alloc::vec![(s("10.2.2.0/24"), 1), (s("10.2.3.64/26"), 1)]);
+    t.check("default: r2 refuses version 1", rip_notes(&e, r2).iter().any(|x| x.0 >= 10 * SEC && matches!(x.1, Note::RipIgnored { why: RipDrop::Version, .. })));
+    // version 2 on R1 too: R2 hears it again
+    let _ = cli(&mut e, r1, &["conf t", "router rip", "version 2", "end"]);
+    run_to(&mut e, 51 * SEC);
+    t.check("default: r2 hears r1's version 2", rip_notes(&e, r2).iter().any(|x| x.0 >= 50 * SEC && matches!(x.1, Note::RipHeard { ver: 2, .. })));
 }
 
 fn summaries(t: &mut T) {
@@ -497,10 +528,10 @@ fn default_and_redistribution(t: &mut T) {
     t.eq(
         "r1 learned",
         rip_routes(&e, r1).iter().map(|x| (x.0.clone(), x.2)).collect::<Vec<_>>(),
-        alloc::vec![(s("0.0.0.0/0"), 2), (s("10.2.2.0/24"), 2), (s("192.168.50.0/24"), 6), (s("192.168.60.0/24"), 2)],
+        alloc::vec![(s("0.0.0.0/0"), 1), (s("10.2.2.0/24"), 1), (s("192.168.50.0/24"), 5), (s("192.168.60.0/24"), 1)],
     );
     let shown = cli(&mut e, r1, &["enable", "show ip route"]);
-    t.check("gateway of last resort", shown.contains("Gateway of last resort is 10.0.12.2 to network 0.0.0.0\n") && shown.contains("R*    0.0.0.0/0 [120/2] via 10.0.12.2, "));
+    t.check("gateway of last resort", shown.contains("Gateway of last resort is 10.0.12.2 to network 0.0.0.0\n") && shown.contains("R*    0.0.0.0/0 [120/1] via 10.0.12.2, "));
     t.check("r2 does not use its own default", best(&e, r2, "0.0.0.0/0").is_empty());
     let run = e.running_config(r2);
     t.check("running config", run.contains("router rip\n version 2\n redistribute connected\n redistribute static metric 5\n network 10.0.0.0\n default-information originate\n no auto-summary\n!\nip route 192.168.50.0 255.255.255.0 Loopback0\n"));
@@ -563,7 +594,7 @@ fn command_line(t: &mut T) {
     // show ip route with R, its distance, metric, age and interface
     let shown = cli(&mut e, r1, &["show ip route"]);
     t.check("legend", shown.starts_with("Codes: C - connected network, L - address of this device, S - static route,\n       R - learned by RIP, * - default route\n\n"));
-    t.check("r line", shown.contains("R        10.3.3.0/24 [120/3] via 10.0.12.2, 00:00:") && shown.contains(", GigabitEthernet0/0/0\n"));
+    t.check("r line", shown.contains("R        10.3.3.0/24 [120/2] via 10.0.12.2, 00:00:") && shown.contains(", GigabitEthernet0/0/0\n"));
     let proto = cli(&mut e, r1, &["show ip protocols"]);
     t.check("show ip protocols", proto.starts_with("Routing process \"rip\" (RFC 2453)\n  Updates every 10 seconds, the next one in ") && proto.contains("  Routing for networks:\n    10.0.0.0\n") && proto.contains("    10.0.12.2            120      00:00:"));
     // debug ip rip shows the next update with its routes

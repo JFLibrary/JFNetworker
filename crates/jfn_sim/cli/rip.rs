@@ -349,7 +349,7 @@ impl Engine {
         let (send, recv) = match c.version {
             Some(1) => ("1", "1"),
             Some(_) => ("2", "2"),
-            None => ("2", "1 and 2"),
+            None => ("1", "1 and 2"),
         };
         s.push_str(&format!("  Versions: send {}, receive {}\n", send, recv));
         s.push_str("    Interface                  Send  Recv  Passive\n");

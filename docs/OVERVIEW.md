@@ -63,12 +63,12 @@ Queues, Lastgeneratoren, eigene Skripte).
   Switch eingeschaltet: Wahl der Root-Bridge, Rollen und Zustände, Proposal und Agreement,
   Edge-Ports, BPDU Guard, `show spanning-tree`, bernsteinfarbene LEDs an blockierten Ports
   (siehe [Spanning Tree](REFERENCE.md#spanning-tree)).
-- **Routing mit RIP (R2):** Router und L3-Switches sprechen RIPv2 nach RFC 2453 (Version 1 nach
-  RFC 1058, wo eingestellt): `router rip` mit `network`, `passive-interface`,
-  `default-information originate`, `redistribute`, `timers basic`, `distance` und
-  `maximum-paths`; periodische und ausgelöste Updates, Split Horizon mit Poisoned Reverse,
-  Timeout, Garbage Collection und Holddown, gleich gute Wege; `show ip rip database`, `show ip
-  protocols`, `debug ip rip` (siehe [Routing mit RIP](REFERENCE.md#routing-mit-rip)).
+- **Routing mit RIP (R2):** Router und L3-Switches sprechen RIPv2 nach RFC 2453 und Version 1
+  nach RFC 1058 (ohne `version` wie IOS: sendet 1, nimmt beide): `router rip` mit `network`,
+  `passive-interface`, `default-information originate`, `redistribute`, `timers basic`,
+  `distance` und `maximum-paths`; periodische und ausgelöste Updates, Split Horizon mit
+  Poisoned Reverse, Timeout, Garbage Collection und Holddown, gleich gute Wege; `show ip rip
+  database`, `show ip protocols`, `debug ip rip` (siehe [Routing mit RIP](REFERENCE.md#routing-mit-rip)).
 - **NAT und Zugriffslisten (R1):** Router, L3-Switches und die Firewall übersetzen Adressen
   (PAT, Pools, statische Adressen und Port-Weiterleitungen, ICMP-Fehler nach RFC 5508) und
   filtern mit Standard- und erweiterten Zugriffslisten, nummeriert und benannt, mit Zählern und
