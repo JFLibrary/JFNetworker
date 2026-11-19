@@ -199,7 +199,10 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           security default-keychain -s "$KC"
           printf '%s\n' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
-          xcrun notarytool store-credentials jfn-notary --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KC"
+          # a secret pasted with its line break: notarytool refuses "\n" in the key id
+          KID=$(printf '%s' "$NOTARY_KEY_ID" | tr -d '[:space:]')
+          ISS=$(printf '%s' "$NOTARY_ISSUER" | tr -d '[:space:]')
+          xcrun notarytool store-credentials jfn-notary --key "$RUNNER_TEMP/notary.p8" --key-id "$KID" --issuer "$ISS" --keychain "$KC"
           rm "$RUNNER_TEMP/notary.p8"
           ID=$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
           if [ -z "$ID" ]; then echo "the certificate is no Developer ID Application"; exit 1; fi
