@@ -38,7 +38,9 @@
 // Linux host has the directories /, /etc, /home, /home/user, /root, /srv, /srv/ftp, /srv/tftp,
 // /tmp, /var and /var/log from the start (they cannot be removed); the files of /etc the shell
 // knows (resolv.conf, hosts, hostname) are made from the device's state, not stored.  Names
-// are at most 255 bytes, paths 1024; a write that does not fit is refused as a whole.
+// are at most 255 bytes, paths 1024; a write that does not fit is refused as a whole.  Whatever
+// the disk, a file is at most FILE_MAX (8 MiB, "File too large") and the files of a device
+// STORE_MAX (32 MiB, "Disk quota exceeded"): they are kept in memory and in the project file.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -119,6 +121,10 @@ pub enum FsErr {
     ReadOnly,
     BadName,
     NotEmpty,
+    /// a file past FILE_MAX
+    TooBig,
+    /// the device's files past STORE_MAX
+    Quota,
 }
 
 impl FsErr {
@@ -133,6 +139,8 @@ impl FsErr {
             FsErr::ReadOnly => "Operation not permitted",
             FsErr::BadName => "File name too long",
             FsErr::NotEmpty => "Directory not empty",
+            FsErr::TooBig => "File too large",
+            FsErr::Quota => "Disk quota exceeded",
         }
     }
     /// the reason in the parentheses of an IOS-like "%Error ... (...)" line
@@ -146,6 +154,8 @@ impl FsErr {
             FsErr::ReadOnly => "Permission denied",
             FsErr::BadName => "Invalid argument",
             FsErr::NotEmpty => "Directory not empty",
+            FsErr::TooBig => "File too large",
+            FsErr::Quota => "Disk quota exceeded",
         }
     }
 }
@@ -171,6 +181,14 @@ pub const PATH_MAX: usize = 1024;
 const KIB: u64 = 1 << 10;
 const MIB: u64 = 1 << 20;
 const GIB: u64 = 1 << 30;
+
+/// the largest file a device keeps: the project file holds it as one string (base64 makes a
+/// third more of it; file_limits: 16 MiB a string)
+pub const FILE_MAX: u64 = 8 * MIB;
+/// the bytes of files a device keeps at most, whatever its disk: they live in memory and in
+/// the project file (64 MiB in all); `cat a a a .. > b` ten times over once took the real
+/// machine's memory ("Disk quota exceeded")
+pub const STORE_MAX: u64 = 32 * MIB;
 
 /// the bytes a device of the model can store: flash of the IOS-like devices, the disk of hosts
 pub fn capacity_of(m: &Model) -> u64 {
@@ -409,6 +427,10 @@ impl Store {
         }
         Ok(v)
     }
+    /// the bytes of the files themselves (no system image): what STORE_MAX holds
+    pub fn kept(&self) -> u64 {
+        self.files.values().map(|e| e.data.len() as u64).sum()
+    }
     /// bytes stored, the system image included
     pub fn used(&self) -> u64 {
         self.files.values().map(|e| e.data.len() as u64).sum::<u64>() + self.image.as_ref().map_or(0, |i| i.1)
@@ -451,8 +473,15 @@ impl Store {
         if !self.parent_ok(&p) {
             return Err(if self.exists(&self.parent(&p)) { FsErr::NotDir } else { FsErr::NotFound });
         }
-        if data.len() as u64 > old && data.len() as u64 - old > self.free() {
+        let new = data.len() as u64;
+        if new > FILE_MAX {
+            return Err(FsErr::TooBig);
+        }
+        if new > old && new - old > self.free() {
             return Err(FsErr::NoSpace);
+        }
+        if new > old && self.kept() - old + new > STORE_MAX {
+            return Err(FsErr::Quota);
         }
         self.files.insert(p, Entry { data: Vec::from(data), mtime, dir: false });
         self.ver = self.ver.wrapping_add(1);

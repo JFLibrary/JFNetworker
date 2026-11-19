@@ -49,6 +49,30 @@ pub(crate) fn run(t: &mut T) {
     boot_names(t);
     kept_save(t);
     kept_service(t);
+    kept_files(t);
+}
+
+// writes to one file in a row are one undo step (once each one a step with two copies of the
+// whole device: `echo x >> f` again and again, a mailbox while mail comes in)
+fn kept_files(t: &mut T) {
+    let srv = 4;
+    let mut doc = Doc::new();
+    doc.replace(project(), None);
+    doc.sim.start();
+    let f = |path: &str, text: &str| jfn_model::files::File { path: String::from(path), data: Vec::from(text.as_bytes()), mtime: 0, dir: false };
+    let paths = |doc: &Doc| doc.proj.device(srv).map(|d| d.files.iter().map(|x| (x.path.clone(), String::from_utf8_lossy(&x.data).into_owned())).collect::<Vec<_>>()).unwrap_or_default();
+    doc.apply_files(srv, "/tmp/a", alloc::vec![f("/tmp/a", "1")], "Datei /tmp/a");
+    doc.apply_files(srv, "/tmp/a", alloc::vec![f("/tmp/a", "12")], "Datei /tmp/a");
+    doc.apply_files(srv, "/tmp/a", alloc::vec![f("/tmp/a", "123")], "Datei /tmp/a");
+    doc.apply_files(srv, "/tmp/b", alloc::vec![f("/tmp/a", "123"), f("/tmp/b", "x")], "Datei /tmp/b");
+    t.check("dirty", doc.dirty());
+    t.check("undo the other file", doc.undo());
+    t.eq("one step back", paths(&doc), alloc::vec![(String::from("/tmp/a"), String::from("123"))]);
+    t.check("undo the three writes at once", doc.undo());
+    t.eq("as it was", paths(&doc), Vec::new());
+    t.check("nothing more", !doc.undo());
+    t.check("redo", doc.redo() && doc.redo());
+    t.eq("both again", paths(&doc).len(), 2);
 }
 
 /// the log lines of a device among reports: (severity, tag, text)

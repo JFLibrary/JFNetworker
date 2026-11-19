@@ -35,7 +35,8 @@
 //                                    the file, its lessons in every language with their pictures and
 //                                    links, its labs with `check`'s findings; a line per finding,
 //                                    errors are what keeps the course from being offered
-//   course_findings(dir, id)         the same as records, for a folder not named after the course
+//   course_findings(dir, id, stop)   the same as records, for a folder not named after the course
+//                                    (stop: the installer's Abbrechen)
 //   generate(&args) -> i32           jfn-sim gen: a synthetic project (jfn_model::synth)
 //   rewind(&args) -> i32             jfn-sim rewind PROJECT [SECONDS] [--traffic K]: the
 //                                    keyframes of a run (K1) and how long restores take (times
@@ -322,7 +323,7 @@ pub fn check_project(proj: &Project) -> (Vec<String>, usize) {
 /// what is wrong with the course in folder `dir` (without a trailing '/'): its lines, how many of
 /// them keep it from being offered.  The labs get what `check` finds as well.
 pub fn check_course(dir: &str) -> (Vec<String>, usize) {
-    let (found, labs) = course_findings(dir, base_name(dir));
+    let (found, labs) = course_findings(dir, base_name(dir), &|| false);
     let mut errors = found.iter().filter(|p| p.fatal).count();
     let mut lines: Vec<String> = found.iter().map(|p| format!("{}{}\n", if p.fatal { "Fehler: " } else { "Hinweis: " }, p.msg.text())).collect();
     for (file, more, e) in labs {
@@ -332,17 +333,39 @@ pub fn check_course(dir: &str) -> (Vec<String>, usize) {
     (lines, errors)
 }
 
+/// the most devices a lab of a course may have: the check boots each lab (a lab of 500 000
+/// devices once ran for hours)
+pub const LAB_DEVICES_MAX: usize = 2000;
+
 /// what is wrong with the course `id` in folder `dir`, whatever that folder is called (the installer checks it
 /// before it gets its name): the findings of the course, then per lab what `check` finds (its file, its
-/// lines, how many of them are errors)
-pub fn course_findings(dir: &str, id: &str) -> (Vec<jfn_model::academy::Problem>, Vec<(String, Vec<String>, usize)>) {
+/// lines, how many of them are errors).  It stops when `stop` says so (Abbrechen); each file is read once
+/// (100 000 steps on one 60 MB lab once held as many copies), each lab checked and let go on its own, a lab of
+/// more than LAB_DEVICES_MAX devices refused unbooted.
+pub fn course_findings(dir: &str, id: &str, stop: &dyn Fn() -> bool) -> (Vec<jfn_model::academy::Problem>, Vec<(String, Vec<String>, usize)>) {
     use jfn_model::academy::{fault_issues, lab_issues, load, quiz_issues, safe_path, StepKind, COURSE_FILE, LANGS};
     let read = |rel: &str| plat::read_file(&format!("{}/{}", dir, rel)).map(|b| String::from_utf8_lossy(&b).into_owned());
     let exists = |rel: &str| plat::file_exists(&format!("{}/{}", dir, rel)) == 1;
     let (course, mut found) = load(id, read(COURSE_FILE).as_deref(), &exists);
-    let mut labs = Vec::new();
+    let mut labs: Vec<(String, Vec<String>, usize)> = Vec::new();
+    // a file several steps of one kind name is read and checked once
+    let mut seen: alloc::collections::BTreeSet<(u8, String)> = alloc::collections::BTreeSet::new();
     // a path that was refused is not read
     for s in course.iter().flat_map(|c| c.steps()).filter(|s| safe_path(&s.file).is_ok()) {
+        if stop() {
+            break;
+        }
+        let kind = match s.kind() {
+            Some(StepKind::Lesson) => 0,
+            Some(StepKind::Lab) => 1,
+            Some(StepKind::Fault) => 2,
+            Some(StepKind::Quiz) => 3,
+            Some(StepKind::Exam) => 4,
+            None => 5,
+        };
+        if !seen.insert((kind, s.file.clone())) {
+            continue;
+        }
         match s.kind() {
             Some(StepKind::Lesson) => {
                 for lang in LANGS {
@@ -355,7 +378,14 @@ pub fn course_findings(dir: &str, id: &str) -> (Vec<jfn_model::academy::Problem>
                 if let Some(t) = read(&s.file) {
                     found.extend(if k == StepKind::Lab { lab_issues(&s.id, &t) } else { fault_issues(&s.id, &t) });
                     if let Ok(p) = Project::from_text(&t) {
-                        labs.push((s.file.clone(), p));
+                        drop(t);
+                        // checked now and let go: one lab in memory at a time
+                        let (lines, errors) = if p.devices.len() > LAB_DEVICES_MAX {
+                            (alloc::vec![format!("Fehler: Das Labor hat {} Geräte; höchstens {} gehen.\n", p.devices.len(), LAB_DEVICES_MAX)], 1)
+                        } else {
+                            check_project(&p)
+                        };
+                        labs.push((s.file.clone(), lines, errors));
                     }
                 }
             }
@@ -367,14 +397,7 @@ pub fn course_findings(dir: &str, id: &str) -> (Vec<jfn_model::academy::Problem>
             None => {}
         }
     }
-    let checked = labs
-        .into_iter()
-        .map(|(file, p)| {
-            let (lines, errors) = check_project(&p);
-            (file, lines, errors)
-        })
-        .collect();
-    (found, checked)
+    (found, labs)
 }
 
 /// jfn-sim course DIR: the lines of check_course and a last line; 0: nothing keeps it from being offered
@@ -731,8 +754,9 @@ impl SweepJob {
     /// the job runs from these copies, so nothing that changes afterwards touches it; None when no
     /// thread can be started
     pub fn start(exp: Experiment, project: Project, name: String, threads: usize) -> Option<SweepJob> {
+        // counted, not built (Plan::new refuses more than MAX_RUNS before it builds them)
         let levels = if exp.load.rps.is_empty() { exp.load.users.len() } else { exp.load.rps.len() };
-        let total = exp.configs().len() * exp.seeds_or(project.seed).len() * levels;
+        let total = exp.config_count().saturating_mul(exp.seeds_or(project.seed).len()).saturating_mul(levels);
         let ctl = Arc::new(SweepCtl::new());
         let out: Arc<Mutex<Option<SweepOut>>> = Arc::new(Mutex::new(None));
         let (c, o) = (ctl.clone(), out.clone());

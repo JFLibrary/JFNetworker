@@ -19,8 +19,10 @@
 //                                                      Trace6 (same id); `then6`: when the name
 //                                                      has no IPv4 address, look up its IPv6
 //                                                      one next (IOS-like devices prefer IPv4)
-//   Engine::job(id) / jobs() / cancel_job(id)          the results grow while it runs
-//   Engine::ping_many(k) -> started                    one probe each from k hosts at once
+//   Engine::job(id) / jobs() / cancel_job(id)          the results grow while it runs; the last
+//                                                      JOBS_KEPT finished jobs stay for the
+//                                                      record
+//   Engine::ping_many(k) -> started                   one probe each from k hosts at once
 //                                                      (load for performance tests)
 //
 // Ping and traceroute over IPv6 are jobs6.rs (JobKind::Ping6, JobKind::Trace6).
@@ -213,8 +215,31 @@ pub struct Job {
     pub(crate) epoch: u32,
 }
 
+/// the finished jobs the engine keeps for the record (Engine::job, jobs()); older ones go, so a
+/// long session or a load test does not pile them up (every answer searched them all, every
+/// keyframe cloned them)
+pub const JOBS_KEPT: usize = 512;
+
 impl Engine {
+    /// keeps the last JOBS_KEPT finished jobs (by id: the order they began) and every one under
+    /// way; it trims once half as many again have piled up
+    fn prune_jobs(&mut self) {
+        let done = self.jobs.values().filter(|j| j.done).count();
+        if done <= JOBS_KEPT + JOBS_KEPT / 2 {
+            return;
+        }
+        let mut drop = done - JOBS_KEPT;
+        self.jobs.retain(|_, j| {
+            let go = drop > 0 && j.done;
+            if go {
+                drop -= 1;
+            }
+            !go
+        });
+    }
+
     fn new_job(&mut self, ni: usize, kind: JobKind) -> JobId {
+        self.prune_jobs();
         self.next_job += 1;
         let id = self.next_job;
         let dev = self.dev_of(ni);

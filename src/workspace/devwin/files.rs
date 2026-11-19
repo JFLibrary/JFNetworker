@@ -348,6 +348,8 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32) -> bool {
                     Err(e) => {
                         let why = match e {
                             FsErr::NoSpace => t("kein Platz mehr"),
+                            FsErr::TooBig => t("sie ist größer als 8 MiB"),
+                            FsErr::Quota => t("das Gerät hält höchstens 32 MiB an Dateien"),
                             FsErr::NotFound | FsErr::NotDir => t("das Verzeichnis fehlt"),
                             FsErr::IsDir => t("dort liegt ein Verzeichnis"),
                             FsErr::BadName => t("der Name geht nicht"),

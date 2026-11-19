@@ -425,6 +425,21 @@ fn page_t(t: &mut T) {
     t.eq("the course too new", (lines, errors), (alloc::vec![s("Fehler: Die Datei hat die Version 7; dieses Programm liest Version 1 bis 1.\n")], 1));
     let (lines, errors) = jfn_run::check_course(&format!("{}/gut", root));
     t.check("the good one: notes, no errors", errors == 0 && lines.iter().any(|l| l.starts_with("Hinweis: Schritt b: die Lektion b.md fehlt im Ordner en")));
+    // a lab that fifty steps name is read and checked once, one of too many devices is not
+    // booted, Abbrechen stops the check (once every step read it again and held every copy)
+    let max = jfn_run::LAB_DEVICES_MAX;
+    let mut big = jfn_model::Project::new("viele", 1);
+    for i in 0..=max {
+        let _ = big.add_device("pc", i as i32, 0);
+    }
+    put("viele/x.jfnet", &big.to_text());
+    let steps: Vec<String> = (0..50).map(|i| format!(r#"{{"id": "s{}", "kind": "lab", "title": ["A", "A"], "file": "x.jfnet"}}"#, i)).collect();
+    put("viele/course.json", &format!(r#"{{"format": "jfn-course", "version": 1, "course_version": 1, "title": ["V", "V"], "summary": ["S", "S"], "units": [{{"title": ["U", "U"], "steps": [{}]}}]}}"#, steps.join(", ")));
+    let dir = format!("{}/viele", root);
+    let (_, labs) = jfn_run::course_findings(&dir, "viele", &|| false);
+    t.eq("one lab, once, not booted", labs, alloc::vec![(s("x.jfnet"), alloc::vec![format!("Fehler: Das Labor hat {} Geräte; höchstens {} gehen.\n", max + 1, max)], 1)]);
+    let (_, stopped) = jfn_run::course_findings(&dir, "viele", &|| true);
+    t.check("Abbrechen stops it", stopped.is_empty());
     // a headless run without a folder offers nothing
     let mut none = Academy::new();
     none.setup(true, None);

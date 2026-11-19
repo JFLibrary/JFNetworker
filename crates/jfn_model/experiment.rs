@@ -6,7 +6,8 @@
 //   Experiment::problems(&project) -> Vec<Msg>   what keeps it from running on this project, every
 //                                      finding with its axis and what would be right
 //   Experiment::configs() -> Vec<Config>   the configurations in their order: the series, within
-//                                      each the cross product of its axes (the first axis slowest)
+//                                      each the cross product of its axes (the first axis slowest);
+//                                      config_count() counts them without building any
 //   Experiment::levels() -> Vec<Level>     the load levels, Level::text()
 //   Experiment::seeds_or(project_seed)     the seeds of a run; prices_of(): the assumed prices with
 //                                      what it names instead (catalog::Prices)
@@ -871,7 +872,17 @@ impl Experiment {
         if self.timing.seeds.is_empty() { alloc::vec![project_seed] } else { self.timing.seeds.clone() }
     }
 
-    /// the configurations: the series, within each the cross product of its axes
+    /// how many configurations configs() gives, counted without building them (saturating):
+    /// what problems() holds against MAX_RUNS before anything is built (six axes of 50 values
+    /// once built 50^6 configurations, every frame of the panel)
+    pub fn config_count(&self) -> usize {
+        let plain = [Series::default()];
+        let series: &[Series] = if self.series.is_empty() { &plain } else { &self.series };
+        series.iter().fold(0usize, |sum, s| sum.saturating_add(self.axes.iter().chain(s.axes.iter()).fold(1usize, |n, a| n.saturating_mul(a.len()))))
+    }
+
+    /// the configurations: the series, within each the cross product of its axes (call it after
+    /// problems(): it builds every one)
     pub fn configs(&self) -> Vec<Config> {
         let plain = [Series::default()];
         let series: &[Series] = if self.series.is_empty() { &plain } else { &self.series };
@@ -994,7 +1005,7 @@ impl Experiment {
             }
         }
         if out.is_empty() {
-            let runs = self.configs().len() * levels.len().max(1) * self.timing.seeds.len().max(1);
+            let runs = self.config_count().saturating_mul(levels.len().max(1)).saturating_mul(self.timing.seeds.len().max(1));
             if runs > MAX_RUNS {
                 out.push(msg!("Das wären {} Läufe; höchstens {} gehen.", runs, MAX_RUNS));
             }

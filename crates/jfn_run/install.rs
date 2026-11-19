@@ -500,8 +500,12 @@ fn fetch_file(src: &dyn Source, id: &str, f: &FileEntry, path: &str, c: &Counter
 }
 
 // the part folder as jfn-sim course sees it, under the course's id
-fn check_part(part: &str, c: &IndexCourse) -> Result<(), Failure> {
-    let (found, labs) = course_findings(part, &c.id);
+fn check_part(part: &str, c: &IndexCourse, stop: &dyn Fn() -> bool) -> Result<(), Failure> {
+    let (found, labs) = course_findings(part, &c.id, stop);
+    // Abbrechen during the check: what it found so far does not count
+    if stop() {
+        return Err(cancelled());
+    }
     let mut bad: Vec<Msg> = found.into_iter().filter(|p| p.fatal).map(|p| p.msg).collect();
     for (file, lines, errors) in labs {
         if errors > 0 {
@@ -583,7 +587,7 @@ pub fn install(src: &dyn Source, root: &str, course: &IndexCourse, c: &Counters)
         return Err(cancelled());
     }
     c.phase.store(1, SeqCst);
-    if let Err(e) = check_part(&part, course) {
+    if let Err(e) = check_part(&part, course, &|| c.stopped()) {
         // the files are as the list says: only a new list can help, nothing of this goes on
         remove_tree(&part);
         return Err(e);

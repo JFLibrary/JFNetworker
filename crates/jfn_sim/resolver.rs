@@ -321,7 +321,29 @@ pub struct LatencyView {
     pub max: u64,
 }
 
+/// the finished lookups a device keeps for those that read them afterwards (the owner's
+/// Resolved event, a ping by name, Engine::lookup_state); older ones go, so the lookups of a
+/// load generator do not pile up (1000 requests a second were 3.6 million an hour)
+pub const DONE_KEPT: usize = 512;
+
 impl Resolver {
+    /// keeps the last DONE_KEPT finished lookups (by id: the order they began) and every one
+    /// under way; it trims once half as many again have piled up
+    fn prune_done(&mut self) {
+        let done = self.lookups.values().filter(|l| l.done.is_some()).count();
+        if done <= DONE_KEPT + DONE_KEPT / 2 {
+            return;
+        }
+        let mut drop = done - DONE_KEPT;
+        self.lookups.retain(|_, l| {
+            let go = drop > 0 && l.done.is_some();
+            if go {
+                drop -= 1;
+            }
+            !go
+        });
+    }
+
     pub fn new(ios: bool) -> Resolver {
         let statics = ResolvConf { servers: Vec::new(), search: Vec::new(), ndots: 1, timeout: if ios { 3 * SEC } else { 5 * SEC }, attempts: 2 };
         Resolver { statics, dhcp: None, cache_on: true, cache: BTreeMap::new(), lookups: BTreeMap::new(), next: 0, latency: Window::new(300, SEC) }
@@ -974,6 +996,7 @@ impl Engine {
         if let Some(os) = self.os_mut(ni) {
             os.socks.retain(|s| !(s.port == port && s.owner == SockOwner::Resolver(id)));
             os.resolver.latency.record(now, took);
+            os.resolver.prune_done();
         }
         self.note(dev, None, note);
         match owner {

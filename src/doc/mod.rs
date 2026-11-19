@@ -6,7 +6,9 @@
 //   apply_adopted(edit, dev)        a configuration change the simulator runs already (undo
 //                                   and redo restart the device with the other one)
 //   apply_kept(edit, dev)           a change the running device has already and keeps through
-//                                   undo and redo: a saved configuration, a service switched
+//                                   undo and redo: a saved configuration, a service switched;
+//                                   apply_files(dev, path, files, label) the same for its files
+//                                   (writes to one path in a row are one step)
 //   undo() / redo()                 rev counts every change of the project (the canvas
 //                                   rebuilds its scene when it differs)
 //   inject(fault, dur) / heal(ids) / heal_all()   the lab's faults, each an undo step that
@@ -77,9 +79,49 @@ struct Kept {
 }
 
 impl Kept {
-    /// the device of a kept step (History::undo_value / redo_value)
+    /// the device of a kept step (History::undo_value / redo_value), a KeptFiles one too
     fn dev_of(v: Option<&dyn core::any::Any>) -> Option<u32> {
-        v.and_then(|v| v.downcast_ref::<Kept>()).map(|k| k.dev)
+        v.and_then(|v| v.downcast_ref::<Kept>().map(|k| k.dev).or_else(|| v.downcast_ref::<KeptFiles>().map(|k| k.dev)))
+    }
+}
+
+/// the files of device `dev` a transfer or a command line changed at `path` (Doc::apply_files):
+/// kept as Kept is, but only the files (a device edit copied the whole device twice a write),
+/// and the next write to the same path joins the step (`echo x >> f` again and again, a
+/// mailbox while mail comes in: one step, not two copies of every file each time)
+struct KeptFiles {
+    dev: u32,
+    path: String,
+    from: alloc::vec::Vec<jfn_model::files::File>,
+    to: alloc::vec::Vec<jfn_model::files::File>,
+    label: String,
+}
+
+impl Edit<Project> for KeptFiles {
+    fn apply(&mut self, p: &mut Project) {
+        if let Some(d) = p.device_mut(self.dev) {
+            d.files = self.to.clone();
+        }
+    }
+    fn revert(&mut self, p: &mut Project) {
+        if let Some(d) = p.device_mut(self.dev) {
+            d.files = self.from.clone();
+        }
+    }
+    fn label(&self) -> &str {
+        &self.label
+    }
+    fn merge(&mut self, next: &mut dyn Edit<Project>) -> bool {
+        match next.value().and_then(|v| v.downcast_ref::<KeptFiles>()) {
+            Some(n) if n.dev == self.dev && n.path == self.path => {
+                self.to = n.to.clone();
+                true
+            }
+            _ => false,
+        }
+    }
+    fn value(&self) -> Option<&dyn core::any::Any> {
+        Some(self)
     }
 }
 
@@ -182,6 +224,19 @@ impl Doc {
     /// restart, also when it is undone or redone (Sim::keep)
     pub(crate) fn apply_kept(&mut self, e: Box<dyn Edit<Project>>, dev: u32) {
         self.hist.apply(&mut self.proj, Box::new(Kept { dev, e }));
+        self.keep(dev);
+        self.changed();
+    }
+
+    /// the files of device `dev` that the running device has already, changed at `path`: one
+    /// step that the next change of the same path joins (KeptFiles), kept as apply_kept keeps
+    pub(crate) fn apply_files(&mut self, dev: u32, path: &str, files: alloc::vec::Vec<jfn_model::files::File>, label: &str) {
+        let Some(from) = self.proj.device(dev).map(|d| d.files.clone()) else { return };
+        if from == files {
+            return;
+        }
+        let e = KeptFiles { dev, path: String::from(path), from, to: files, label: String::from(label) };
+        self.hist.apply(&mut self.proj, Box::new(e));
         self.keep(dev);
         self.changed();
     }

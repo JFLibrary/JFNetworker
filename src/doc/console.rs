@@ -434,13 +434,12 @@ fn saved(n: &mut Net, dev: u32, text: String) {
 }
 
 // a transfer or a command line changed the device's files: the project keeps them (one undo
-// step the engine has already; undo and redo hand the other records back: Sim::keep)
+// step the engine has already, which the next change of the same path joins; undo and redo
+// hand the other records back: Sim::keep)
 fn files_changed(n: &mut Net, dev: u32, path: &str, files: Vec<jfn_model::files::File>) {
     let Some(name) = n.doc.proj.device(dev).map(|d| d.name.clone()) else { return };
     let label = format!("Datei {} auf {}", path, name);
-    if let Some(e) = edits::device_edit(&n.doc.proj, dev, &label, |x| x.files = files) {
-        n.doc.apply_kept(e, dev);
-    }
+    n.doc.apply_files(dev, path, files, &label);
 }
 
 // "hostname": the project renames the device (one undo step); a name it refuses goes back

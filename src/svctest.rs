@@ -538,6 +538,13 @@ fn dns_server(t: &mut T) {
     ];
     t.check("forward loop set-up", fw2.iter().all(|r| r.is_ok()));
     let (looped, _) = look(&mut e, pc1, "example.com.", dns::TYPE_A);
+    // finished lookups do not pile up: the last DONE_KEPT stay (once every one, 3.6 million an
+    // hour under a load generator); a host-table answer finishes at once
+    let _ = e.apply(Action::HostEntry { dev: pc1, name: String::from("drucker"), ip: Some(ip("10.0.0.7")) });
+    let ids: Vec<u32> = (0..1000).map(|_| e.lookup(pc1, "drucker", dns::TYPE_A).unwrap_or(0)).collect();
+    let kept = (0..1000).filter(|&k| e.lookup_state(pc1, ids[k]).is_some()).count();
+    t.check(&format!("lookups kept: {}", kept), kept <= jfn_sim::DONE_KEPT + jfn_sim::DONE_KEPT / 2 && kept >= jfn_sim::DONE_KEPT);
+    t.check("the oldest went, the newest stays", e.lookup_state(pc1, ids[0]).is_none() && e.lookup_state(pc1, ids[999]).is_some_and(|l| l.result.is_some()));
     let fwd = |e: &Engine, d: u32, svc: &str| e.metric(d, svc, "forwarded").unwrap_or(-1);
     let (n1, n2) = (fwd(&e, r1, "dns-server") - 3, fwd(&e, ns, "named"));
     t.check("forward loop fails", matches!(addrs_of(&looped), Some(Err(LookupErr::ServFail | LookupErr::Timeout))));

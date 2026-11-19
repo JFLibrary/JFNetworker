@@ -17,7 +17,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use agent_core::jmap::{Json, Value};
-use jfn_model::files::{File, FsErr, Store};
+use jfn_model::files::{File, FsErr, Store, FILE_MAX, STORE_MAX};
 use jfn_model::project::{PortRef, Project, ServiceDef};
 use jfn_sim::{Action, Engine, Hop, Note, Report, XNote, SEC};
 use netpkt::decode::{self, Proto, P_TFTP};
@@ -203,6 +203,17 @@ fn store(t: &mut T) {
     t.check("replacing counts the difference", small.write("/tmp/a", &[2; 1000], 0).is_ok());
     t.eq("free", small.free(), 0);
     t.check("text or not", jfn_model::files::is_text(b"a\tb\r\n") && !jfn_model::files::is_text(&[0, 1, 2]) && !jfn_model::files::is_text(&[0xFF]));
+    // whatever the disk: a file at most 8 MiB, the files of a device at most 32 MiB (they live in
+    // memory and in the project file; `cat a a a > b` ten times over once took every byte)
+    let mut pcs = Store::for_model(pc);
+    t.eq("file too large", pcs.write("/tmp/huge", &alloc::vec![0u8; FILE_MAX as usize + 1], 0), Err(FsErr::TooBig));
+    let seven = alloc::vec![1u8; 7 << 20];
+    let four: Vec<Result<(), FsErr>> = (0..4).map(|k| pcs.write(&format!("/tmp/f{}", k), &seven, 0)).collect();
+    t.check("28 MiB fit", four.iter().all(|r| r.is_ok()) && pcs.kept() == 28 << 20);
+    t.eq("the quota", pcs.write("/tmp/f4", &seven, 0), Err(FsErr::Quota));
+    t.check("what fits still fits", pcs.write("/tmp/f4", &alloc::vec![1u8; STORE_MAX as usize - (28 << 20)], 0).is_ok());
+    t.check("replacing within it", pcs.write("/tmp/f0", &seven, 0).is_ok());
+    t.eq("errno texts", (FsErr::TooBig.errno_text(), FsErr::Quota.errno_text()), ("File too large", "Disk quota exceeded"));
 }
 
 fn records(t: &mut T) {
@@ -317,6 +328,9 @@ fn linux_cli(t: &mut T) {
     t.eq("missing files", o, s("rm: cannot remove 'nope': No such file or directory\ncat: nope: No such file or directory\nleer  notiz.txt\n"));
     let o = cli(&mut e, PC1, &["echo x > /nowhere/y", "rm -r /srv"], 0);
     t.eq("shell refusals", o, s("jfn-sh: /nowhere/y: No such file or directory\nrm: cannot remove '/srv': Permission denied\n"));
+    // a file past 8 MiB stays out (900 000 numbers with ten X between them: 16 MB)
+    let o = cli(&mut e, PC1, &["seq -s XXXXXXXXXX 1 900000 > /tmp/big"], 0);
+    t.eq("file too large", o, s("jfn-sh: /tmp/big: File too large\n"));
     let o = cli(&mut e, PC1, &["tftp"], 0);
     t.check("tftp usage", o.starts_with("Usage: tftp [-g|-p]"));
     let o = cli(&mut e, PC1, &["tftp -g -r x -l /nowhere/x 10.0.0.10"], 0);

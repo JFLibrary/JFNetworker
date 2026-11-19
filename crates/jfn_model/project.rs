@@ -717,14 +717,27 @@ impl Project {
 
     /// everything that does not fit together
     pub fn check(&self) -> Vec<Issue> {
+        use alloc::collections::{BTreeMap, BTreeSet};
         let mut v = Vec::new();
         let err = |v: &mut Vec<Issue>, dev: Option<u32>, link: Option<u32>, m: Msg| v.push(Issue::new(true, dev, link, m));
-        let mut ids = Vec::new();
+        // indexes, not searches through the lists: a project of many devices once took hours
+        let mut by_id: BTreeMap<u32, &Device> = BTreeMap::new();
+        let mut names: BTreeMap<String, Vec<u32>> = BTreeMap::new();
         for d in &self.devices {
-            if ids.contains(&d.id) {
+            by_id.entry(d.id).or_insert(d);
+            names.entry(d.name.to_ascii_lowercase()).or_default().push(d.id);
+        }
+        // resolve_port by the index
+        let resolve = |r: &PortRef| -> Result<PortSpec, ProjErr> {
+            let d = by_id.get(&r.dev).copied().ok_or(ProjErr::UnknownDevice(r.dev))?;
+            let m = catalog::model(&d.model).ok_or_else(|| ProjErr::UnknownModel(d.model.clone()))?;
+            m.port(&r.port).map(|p| d.with_optic(p)).ok_or_else(|| ProjErr::UnknownPort { dev: d.name.clone(), port: r.port.clone() })
+        };
+        let mut ids = BTreeSet::new();
+        for d in &self.devices {
+            if !ids.insert(d.id) {
                 err(&mut v, Some(d.id), None, msg!("Die Gerätenummer {} kommt doppelt vor.", d.id));
             }
-            ids.push(d.id);
             match catalog::model(&d.model) {
                 None => err(&mut v, Some(d.id), None, ProjErr::UnknownModel(d.model.clone()).msg()),
                 Some(m) if m.has(F_ANNOTATION) => err(&mut v, Some(d.id), None, ProjErr::NotADevice(d.model.clone()).msg()),
@@ -733,22 +746,21 @@ impl Project {
             if !valid_name(&d.name) {
                 v.push(Issue::new(false, Some(d.id), None, ProjErr::BadName(d.name.clone()).msg()));
             }
-            if self.devices.iter().any(|o| o.id != d.id && o.name.eq_ignore_ascii_case(&d.name)) {
+            if names.get(&d.name.to_ascii_lowercase()).is_some_and(|s| s.iter().any(|&o| o != d.id)) {
                 err(&mut v, Some(d.id), None, ProjErr::NameTaken(d.name.clone()).msg());
             }
         }
-        let mut lids = Vec::new();
-        let mut used: Vec<(u32, String)> = Vec::new();
+        let mut lids = BTreeSet::new();
+        let mut used: BTreeSet<(u32, String)> = BTreeSet::new();
         for l in &self.links {
-            if lids.contains(&l.id) {
+            if !lids.insert(l.id) {
                 err(&mut v, None, Some(l.id), msg!("Die Verbindungsnummer {} kommt doppelt vor.", l.id));
             }
-            lids.push(l.id);
             if l.a.dev == l.b.dev {
                 err(&mut v, Some(l.a.dev), Some(l.id), Why::SameDevice.msg());
                 continue;
             }
-            let (pa, pb) = match (self.resolve_port(&l.a), self.resolve_port(&l.b)) {
+            let (pa, pb) = match (resolve(&l.a), resolve(&l.b)) {
                 (Ok(a), Ok(b)) => (a, b),
                 (Err(e), _) | (_, Err(e)) => {
                     err(&mut v, None, Some(l.id), e.msg());
@@ -756,11 +768,9 @@ impl Project {
                 }
             };
             for (r, p) in [(&l.a, &pa), (&l.b, &pb)] {
-                let key = (r.dev, p.name.clone());
-                if used.contains(&key) {
+                if !used.insert((r.dev, p.name.clone())) {
                     err(&mut v, Some(r.dev), Some(l.id), Why::PortInUse(p.name.clone()).msg());
                 }
-                used.push(key);
             }
             if let Err(w) = cable::cable_fits(l.cable, &pa, &pb) {
                 err(&mut v, None, Some(l.id), w.msg());

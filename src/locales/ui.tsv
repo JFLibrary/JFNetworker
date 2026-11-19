@@ -997,6 +997,8 @@ Binärdaten, {}.	Binary data, {}.
 „{}“ kommt nicht auf das Gerät: {}.	“{}” does not go onto the device: {}.
 „{}“ ließ sich nicht lesen.	“{}” could not be read.
 kein Platz mehr	no space left
+sie ist größer als 8 MiB	it is larger than 8 MiB
+das Gerät hält höchstens 32 MiB an Dateien	the device keeps at most 32 MiB of files
 das Verzeichnis fehlt	the directory is missing
 dort liegt ein Verzeichnis	a directory is in the way
 der Name geht nicht	the name does not work

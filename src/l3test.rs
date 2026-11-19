@@ -682,6 +682,14 @@ fn jobs_end(t: &mut T) {
     t.check("remove", e.apply(Action::RemoveDevice(r1)).is_ok() && done(&e, id));
     e.run_idle(BUDGET);
     t.check("pc lost its link", e.ifaces(pc1).iter().any(|f| f.name == "eth0" && !f.up));
+    // finished jobs do not pile up: the last JOBS_KEPT stay for the record (once every one,
+    // searched by every answer and cloned by every keyframe)
+    let (mut e, pc1, _r1, _pc2, _) = routed();
+    let ids: Vec<u32> = (0..1000).map(|_| ping(&mut e, pc1, "10.0.1.10", once())).collect();
+    e.run_idle(BUDGET);
+    let last = ping(&mut e, pc1, "10.0.1.10", once());
+    t.check(&format!("finished jobs kept: {}", e.jobs().count()), e.jobs().count() <= jfn_sim::JOBS_KEPT + jfn_sim::JOBS_KEPT / 2 + 1);
+    t.check("the oldest went, the newest stay", e.job(ids[0]).is_none() && e.job(ids[999]).is_some() && e.job(last).is_some());
 }
 
 fn determinism(t: &mut T) {

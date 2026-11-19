@@ -76,6 +76,8 @@ fn why(e: FsErr) -> &'static str {
         FsErr::BadName => t("der Name geht nicht"),
         FsErr::NotEmpty => t("das Verzeichnis ist nicht leer"),
         FsErr::ReadOnly => t("das gehört zum System des Geräts"),
+        FsErr::TooBig => t("sie ist größer als 8 MiB"),
+        FsErr::Quota => t("das Gerät hält höchstens 32 MiB an Dateien"),
     }
 }
 

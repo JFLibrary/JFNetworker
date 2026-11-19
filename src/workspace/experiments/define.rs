@@ -153,7 +153,8 @@ pub(super) fn page(n: &mut Net, ui: &mut Ui) {
     };
     let before = e.clone();
     let found: Vec<String> = e.problems(&n.doc.proj).iter().map(tr::msg).collect();
-    let runs = e.configs().len() * e.levels().len() * e.seeds_or(n.doc.proj.seed).len();
+    // counted, not built: this runs every frame
+    let runs = e.config_count().saturating_mul(e.levels().len()).saturating_mul(e.seeds_or(n.doc.proj.seed).len());
     let (st, p) = (&mut n.exp, &n.doc.proj);
     ui.next_size(-1, -1);
     ui.scroll_begin(ID_EX_DEF_SCROLL, SC_V | pad(8));

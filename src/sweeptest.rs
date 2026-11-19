@@ -257,6 +257,15 @@ fn axes(t: &mut T) {
     t.eq("the configurations in their order", labels, vec!["a 1 Kerne W1 web.workers 1", "a 1 Kerne W1 web.workers 2", "a 1 Kerne W1 web.workers 3", "a 2 Kerne W1 web.workers 1", "a 2 Kerne W1 web.workers 2", "a 2 Kerne W1 web.workers 3", "b 1 Kerne", "b 2 Kerne"].iter().map(|s| String::from(*s)).collect::<Vec<String>>());
     let plan = Plan::new(&x, &p, "x");
     t.check("a plan of them", plan.as_ref().is_ok_and(|pl| pl.cfgs.len() == 8 && pl.runs() == 8));
+    t.eq("counted as many as built", x.config_count(), 8);
+    // six axes of 50 values: counted, not built (once 50^6 configurations, every frame of the
+    // panel); problems() refuses it without building them either
+    let fifty: Vec<String> = (1..=50).map(|i| format!("{}", i)).collect();
+    let axis = format!(r#"{{"kind": "config", "dev": "W1", "path": "web.workers", "values": [{}]}}"#, fifty.join(", "));
+    let six = vec![axis.as_str(); 6].join(", ");
+    let big = experiment(&exp_rps("10", 1, &format!(r#", "axes": [{}]"#, six)));
+    t.eq("50^6 counted", big.config_count(), 15_625_000_000);
+    t.check("50^6 refused", !big.problems(&p).is_empty());
     // hardware: figures on what it has, a preset
     let x = experiment(&exp_rps("10", 1, r#", "axes": [{"kind": "hw", "dev": "W1", "values": [{"cores": 2, "speed": 1.5}, {"preset": "server-m"}]}]"#));
     let Ok(plan) = Plan::new(&x, &p, "x") else {
