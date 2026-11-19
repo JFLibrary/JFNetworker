@@ -8,6 +8,20 @@ prepare X.Y.Z` turns `[Unreleased]` into a release and raises the version in `PA
 
 ## [Unreleased]
 
+### Fixed
+
+- An experiment with many long axes is refused at once instead of building every configuration
+  (six axes of 50 values froze the Experiments panel).
+- The check of a course before it is installed reads each file once, holds one lab at a time,
+  refuses labs of more than 2000 devices and stops when the installation is cancelled.
+- A file on a device holds at most 8 MiB ("File too large") and a device at most 32 MiB of files
+  ("Disk quota exceeded"), whatever its disk: repeated `cat a a a > b` could exhaust the memory of
+  the computer running the app.
+- Writes to the same file in a row are one undo step, and a step keeps only the device's files;
+  each write used to keep two copies of the whole device.
+- Finished name lookups and ping or traceroute jobs no longer pile up during long runs; the last
+  512 of each stay.
+
 ## [0.1.0] - 2026-11-19
 
 The first release of JFNetworker, a network simulator and a lab for distributed systems.
