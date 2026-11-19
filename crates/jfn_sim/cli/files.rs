@@ -875,6 +875,8 @@ impl Engine {
         let st = self.store(ni).ok_or(FsErr::NotFound)?;
         let mut v = st.list(p)?;
         if p == "/etc" {
+            // a file of the same name an older version wrote beside a made one: the made one
+            v.retain(|(n, _)| !ETC.contains(&n.as_str()));
             for e in ETC {
                 let size = self.cat_etc(ni, &format!("/etc/{}", e)).map_or(0, |t| t.len() as u64);
                 v.push((String::from(e), Stat { size, mtime: 0, dir: false, builtin: true }));
@@ -1024,32 +1026,63 @@ impl Engine {
         }
     }
 
+    /// cp SRC DST, cp SRC.. DIR: files only (-r says so honestly); a made file of /etc as the
+    /// target takes the copy as settings (netsvc.rs etc_write)
     pub(crate) fn sh_cp(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
+        let rec = args.iter().any(|a| a.starts_with('-') && !a.starts_with("--") && a[1..].contains(['r', 'R', 'a']));
         let ops: Vec<&str> = args.iter().copied().filter(|a| !a.starts_with('-') || a.len() == 1).collect();
         if ops.len() < 2 {
             return self.sh_err(ni, if ops.is_empty() { "cp: missing file operand\n" } else { "cp: missing destination file operand\n" });
         }
         let Some(st) = self.store(ni).cloned() else { return self.sh_err(ni, "cp: no file system\n") };
-        let (src_t, dst_t) = (ops[0], ops[ops.len() - 1]);
-        let (src_a, dst_a) = (self.sh_abs(ni, src_t), self.sh_abs(ni, dst_t));
-        let (src, dst) = (src_a.as_str(), dst_a.as_str());
-        let data = match self.cat_etc(ni, &st.norm(src).unwrap_or_default()) {
-            Some(t) => t.into_bytes(),
-            None => match st.read(src) {
-                Ok(b) => Vec::from(b),
-                Err(FsErr::IsDir) => return self.sh_err(ni, &format!("cp: -r not specified; omitting directory '{}'\n", src_t)),
-                Err(e) => return self.sh_err(ni, &format!("cp: cannot stat '{}': {}\n", src_t, e.errno_text())),
-            },
-        };
-        let target = if st.is_dir(dst) {
-            let name = st.norm(src).map(|p| String::from(st.name_of(&p))).unwrap_or_default();
-            format!("{}/{}", st.norm(dst).unwrap_or_default().trim_end_matches('/'), name)
-        } else {
-            String::from(dst)
-        };
-        match self.file_put(ni, &target, &data, false) {
-            Ok(_) => Ok(()),
-            Err(e) => self.sh_err(ni, &format!("cp: cannot create regular file '{}': {}\n", dst_t, e.errno_text())),
+        let dst_t = ops[ops.len() - 1];
+        let srcs = &ops[..ops.len() - 1];
+        let dst_a = self.sh_abs(ni, dst_t);
+        let dst_dir = st.is_dir(&dst_a);
+        if srcs.len() > 1 && !dst_dir {
+            return self.sh_err(ni, &format!("cp: target '{}' is not a directory\n", dst_t));
+        }
+        let mut err = None;
+        for src_t in srcs {
+            let src_a = self.sh_abs(ni, src_t);
+            let data = match self.cat_etc(ni, &st.norm(&src_a).unwrap_or_default()) {
+                Some(t) => Ok(t.into_bytes()),
+                None => match st.read(&src_a) {
+                    Ok(b) => Ok(Vec::from(b)),
+                    Err(FsErr::IsDir) if rec => Err(format!("cp: '{}' is a directory: this cp copies files only, one by one\n", src_t)),
+                    Err(FsErr::IsDir) => Err(format!("cp: -r not specified; omitting directory '{}'\n", src_t)),
+                    Err(e) => Err(format!("cp: cannot stat '{}': {}\n", src_t, e.errno_text())),
+                },
+            };
+            let r = match data {
+                Err(m) => Err(m),
+                // "cp a /tmp/neu/" without that directory: no file named neu
+                Ok(_) if !dst_dir && dst_t.ends_with('/') => Err(format!("cp: cannot create regular file '{}': Not a directory\n", dst_t)),
+                Ok(data) => {
+                    let target = if dst_dir {
+                        let name = st.norm(&src_a).map(|p| String::from(st.name_of(&p))).unwrap_or_default();
+                        format!("{}/{}", st.norm(&dst_a).unwrap_or_default().trim_end_matches('/'), name)
+                    } else {
+                        dst_a.clone()
+                    };
+                    let canon = st.norm(&target).unwrap_or_default();
+                    match self.etc_write(ni, &canon, &data, false) {
+                        Some(true) => Ok(()),
+                        Some(false) => Err(String::new()),
+                        None => self.file_put(ni, &target, &data, false).map(|_| ()).map_err(|e| format!("cp: cannot create regular file '{}': {}\n", dst_t, e.errno_text())),
+                    }
+                }
+            };
+            if let Err(m) = r {
+                if !m.is_empty() {
+                    self.err_out(ni, &m);
+                }
+                err.get_or_insert(m);
+            }
+        }
+        match err {
+            Some(e) => Err(String::from(e.trim_end())),
+            None => Ok(()),
         }
     }
 

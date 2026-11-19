@@ -4,8 +4,9 @@
 // wait for Max Age after an indirect failure), RSTP's proposal and agreement and its recovery
 // within microseconds, edge ports (portfast, AutoEdge), topology changes (TCN, the TC flag and
 // fast aging; RSTP flushing), STP and RSTP bridges together, BPDU guard, costs and priorities,
-// a hub (backup port, shared link), the commands and show output, LEDs and the simulation
-// mode, the loop problem, determinism, the English of the new notes
+// a hub (backup port, shared link), OSPF over SVIs once their port forwards, the commands and
+// show output, LEDs and the simulation mode, the loop problem, determinism, the English of the
+// new notes
 //
 // The triangle: SW1 Gi1/0/1 - Gi1/0/1 SW2 Gi1/0/2 - Gi1/0/1 SW3 Gi1/0/2 - Gi1/0/2 SW1, a PC on
 // Gi1/0/3 of each (PC1..PC3 = 10.0.0.1..3).  Ids: SW1 = 1, SW2 = 2, SW3 = 3, PC1 = 4 ...; the
@@ -150,6 +151,7 @@ pub fn run(t: &mut T) {
     bpdu_guard(t);
     costs_and_priorities(t);
     hub(t);
+    svi_protocols(t);
     commands(t);
     leds_and_sim_mode(t);
     problems(t);
@@ -606,6 +608,27 @@ fn commands(t: &mut T) {
     let ap = p4.add_device("jf-ap6e", 0, 0).unwrap_or(0);
     let mut e4 = engine(&p4);
     t.check("no command on an access point", lines(&mut e4, ap, &["enable", "configure terminal", "spanning-tree mode rstp"]).contains('^'));
+}
+
+// a VLAN interface that comes up with Forwarding tells the protocols above, as a cable does:
+// OSPF over SVIs alone forms its adjacency after the 30 s of 802.1D (once never: no timer ran)
+fn svi_protocols(t: &mut T) {
+    let mut p = Project::new("svi", 5);
+    let m: Vec<u32> = (0..2).map(|i| p.add_device("jf-s24l3", i * 200, 0).unwrap_or(0)).collect();
+    let _ = p.connect(&pr(m[0], "gi1/0/1"), &pr(m[1], "gi1/0/1"), None);
+    for (i, &d) in m.iter().enumerate() {
+        if let Some(dv) = p.device_mut(d) {
+            dv.startup_config = format!("hostname MLS{0}\n!\nip routing\nspanning-tree mode stp\n!\nvlan 10\n!\ninterface GigabitEthernet1/0/1\n switchport access vlan 10\n switchport mode access\n!\ninterface Vlan10\n ip address 10.0.10.{0} 255.255.255.0\n no shutdown\n!\nrouter ospf 1\n network 10.0.10.0 0.0.0.255 area 0\n!\nend\n", i + 1);
+        }
+    }
+    let mut e = engine(&p);
+    t.eq("svi: boots clean", e.boot_errors(m[0]), Vec::new());
+    e.run_until(20 * SEC, BUDGET);
+    let _ = cli(&mut e, m[0], "enable");
+    t.check("svi: ospf waits for forwarding", !cli(&mut e, m[0], "show ip ospf neighbor").contains("FULL"));
+    e.run_until(90 * SEC, BUDGET);
+    let o = cli(&mut e, m[0], "show ip ospf neighbor");
+    t.check(&format!("svi: ospf after forwarding: {:?}", o), o.contains("FULL"));
 }
 
 // LEDs show the port states; BPDUs are frames of the simulation mode like any other

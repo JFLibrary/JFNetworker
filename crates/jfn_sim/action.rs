@@ -167,8 +167,10 @@ pub enum Action {
     Loopback { dev: u32, n: u16, add: bool },
     /// a port of an L3 switch is routed ("no switchport") or switched again
     RoutedPort { dev: u32, port: String, routed: bool },
-    /// a static route to `prefix` over a next hop and / or an interface
-    Route { dev: u32, prefix: Prefix4, via: Option<Ipv4>, iface: Option<String>, ad: u8, add: bool },
+    /// a static route to `prefix` over a next hop and / or an interface; `metric` orders routes
+    /// of one prefix (Linux "metric N"; None: 0).  Removing takes every static route of the
+    /// prefix that matches what is given (None: any next hop, interface, metric)
+    Route { dev: u32, prefix: Prefix4, via: Option<Ipv4>, iface: Option<String>, ad: u8, metric: Option<u32>, add: bool },
     /// routing between interfaces ("ip routing", net.ipv4.ip_forward)
     Forwarding { dev: u32, on: bool },
     /// a static ARP entry; `mac: None` removes it
@@ -635,16 +637,16 @@ impl Engine {
                 r
             }
             Action::RoutedPort { dev, port, routed } => self.routed_port(dev, &port, routed),
-            Action::Route { dev, prefix, via, iface, ad, add } => {
+            Action::Route { dev, prefix, via, iface, ad, metric, add } => {
                 let ni = self.node_index(dev).ok_or(ActErr::UnknownDevice(dev))?;
                 let st = self.ip_mut(ni, dev)?;
-                if !add {
-                    return if st.remove_route(prefix, via) { Ok(()) } else { Err(ActErr::Refused(msg!("Keine passende Route zu {}.", prefix.trunc()))) };
-                }
                 let out = match &iface {
                     Some(name) => Some(st.iface_by_name(name).ok_or_else(|| ActErr::UnknownIface { dev, iface: name.clone() })?),
                     None => None,
                 };
+                if !add {
+                    return if st.remove_route(prefix, via, out, metric) { Ok(()) } else { Err(ActErr::Refused(msg!("Keine passende Route zu {}.", prefix.trunc()))) };
+                }
                 if via.is_none() && out.is_none() {
                     return Err(ActErr::Refused(msg!("Eine Route braucht einen nächsten Hop oder ein Interface.")));
                 }
@@ -653,7 +655,7 @@ impl Engine {
                 {
                     return Err(ActErr::Refused(msg!("{} taugt nicht als nächster Hop.", gw)));
                 }
-                st.add_route(Route { prefix, via, iface: out, src: RouteSrc::Static, ad, metric: 0 });
+                st.add_route(Route { prefix, via, iface: out, src: RouteSrc::Static, ad, metric: metric.unwrap_or(0) });
                 Ok(())
             }
             Action::Forwarding { dev, on } => {

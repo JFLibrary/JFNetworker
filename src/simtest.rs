@@ -1,6 +1,7 @@
 // simtest -- checks of jfn_sim (part of --selftest): timing on the wire, learning and
-// flooding, VLANs on access and trunk ports, aging, link state, loss, queues, hubs, power,
-// removal while frames are under way, determinism and the inline driver
+// flooding, VLANs on access and trunk ports (the VLAN database of an IOS switch, an SVI
+// without its VLAN, a native VLAN that is not allowed), aging, link state, loss, queues, hubs,
+// power, removal while frames are under way, determinism and the inline driver
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -208,6 +209,40 @@ fn vlans(t: &mut T) {
     inject(&mut e, pcs[2], "eth0", eth::tagged(&frame(Mac::BROADCAST, mac(pcs[2]), 64), netpkt::eth::VlanTag::new(20)));
     e.run_idle(BUDGET);
     t.check("tagged on access dropped", notes(&e, sw1).iter().any(|n| matches!(n, Note::DropTagged { vid: 20, .. })));
+    // SW2 forgets VLAN 10 ("no vlan 10"): an IOS switch takes no frame of a VLAN that is not in
+    // its database, also on its access port (once it passed as before)
+    let te = || String::from("te1/1/1");
+    let _ = e.apply(Action::Trunk { dev: sw2, port: te(), native: 1, allowed: VlanSet::all() });
+    t.check("vlan removed", e.apply(Action::Vlan { dev: sw2, vid: 10, name: None, remove: true }).is_ok());
+    let before = e.trace.next_hop_id();
+    inject(&mut e, pcs[0], "eth0", frame(Mac::BROADCAST, mac(pcs[0]), 64));
+    e.run_idle(BUDGET);
+    let reached = |e: &Engine, d: u32, since: u64| e.trace.hops().any(|h| h.id >= since && h.to.0 == d);
+    t.check("unknown vlan dropped", notes(&e, sw2).iter().any(|n| matches!(n, Note::VlanUnknown { vid: 10, .. })) && !reached(&e, pc5, before));
+    let _ = e.apply(Action::Vlan { dev: sw2, vid: 10, name: None, remove: false });
+    let before = e.trace.next_hop_id();
+    inject(&mut e, pcs[0], "eth0", frame(Mac::BROADCAST, mac(pcs[0]), 64));
+    e.run_idle(BUDGET);
+    t.check("known again", reached(&e, pc5, before));
+    // an SVI is up only when its VLAN is in the database (the trunk carries VLAN 30)
+    let svi_up = |e: &Engine| e.ifaces(sw2).iter().find(|f| f.name == "Vlan30").is_some_and(|f| f.up);
+    let set = [e.apply(Action::Svi { dev: sw2, vlan: 30, add: true }), e.apply(Action::IfUp { dev: sw2, iface: String::from("Vlan30"), up: true })];
+    t.check("svi set-up", set.iter().all(|r| r.is_ok()));
+    t.check("svi down without its vlan", !svi_up(&e));
+    let _ = e.apply(Action::Vlan { dev: sw2, vid: 30, name: None, remove: false });
+    t.check("svi up with its vlan", svi_up(&e));
+    // a trunk whose native VLAN is not allowed carries it neither way: VLAN 1 of PC4 does not
+    // cross (once it did), an untagged frame on the trunk is dropped
+    let allowed = VlanSet::parse("10,20").unwrap_or_default();
+    let _ = e.apply(Action::Trunk { dev: sw1, port: te(), native: 1, allowed: allowed.clone() });
+    let _ = e.apply(Action::Trunk { dev: sw2, port: te(), native: 1, allowed });
+    let before = e.trace.next_hop_id();
+    inject(&mut e, pcs[3], "eth0", frame(Mac::BROADCAST, mac(pcs[3]), 64));
+    e.run_idle(BUDGET);
+    t.check("native not allowed: not on the trunk", !e.trace.hops().any(|h| h.id >= before && h.link == trunk) && !reached(&e, pc6, before));
+    inject(&mut e, sw1, "te1/1/1", frame(Mac::BROADCAST, mac(sw1), 64));
+    e.run_idle(BUDGET);
+    t.check("native not allowed: untagged dropped", notes(&e, sw2).iter().any(|n| matches!(n, Note::DropVlan { vid: 1, .. })) && !reached(&e, pc6, before));
     t.eq("vlan ranges", VlanSet::parse("1-10,20,30-31").map(|s| s.to_text()), Some(String::from("1-10,20,30-31")));
     t.eq("vlan all", VlanSet::all().to_text(), String::from("1-4094"));
     t.check("vlan bad range", VlanSet::parse("0-5").is_none() && VlanSet::parse("10-4095").is_none());

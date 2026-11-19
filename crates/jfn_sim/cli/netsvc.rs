@@ -705,6 +705,81 @@ impl Engine {
         Ok(())
     }
 
+    /// a write to a file of /etc the shell makes (files.rs: cat_etc), by a redirection, tee, cp
+    /// or mv: its settings take what was written instead of a file of its own beside the made
+    /// one (resolv.conf the resolver, hosts the static names, hostname the device's name); None
+    /// for any other path, Some(false) when it was refused (the reason was said)
+    pub(crate) fn etc_write(&mut self, ni: usize, canon: &str, data: &[u8], append: bool) -> Option<bool> {
+        let text = String::from_utf8_lossy(data).into_owned();
+        match canon {
+            "/etc/resolv.conf" => Some(self.resolv_write(ni, &text, append).is_ok()),
+            "/etc/hosts" => Some(self.hosts_write(ni, &text, append).is_ok()),
+            "/etc/hostname" => Some(self.hostname_write(ni, &text, append).is_ok()),
+            _ => None,
+        }
+    }
+
+    /// echo "A NAME [ALIAS ..]" > /etc/hosts (>> adds): the static names of either family
+    /// (Action::HostEntry / HostEntry6, as "ip host"); the lines of localhost and of the
+    /// device's own name (loopback and multicast addresses) stay as they are made
+    pub(crate) fn hosts_write(&mut self, ni: usize, text: &str, append: bool) -> Result<(), String> {
+        let dev = self.dev_of(ni);
+        let mut add: Vec<(String, netpkt::IpAddr)> = Vec::new();
+        for l in text.lines() {
+            let mut w = l.split('#').next().unwrap_or("").split_whitespace();
+            let Some(a) = w.next() else { continue };
+            let Some(ip) = netpkt::IpAddr::parse(a) else {
+                return self.sh_err(ni, &format!("jfn-sh: /etc/hosts: {} is no address\n", a));
+            };
+            let made = match ip {
+                netpkt::IpAddr::V4(x) => x.is_loopback() || x.is_multicast(),
+                netpkt::IpAddr::V6(x) => x == netpkt::Ipv6::LOCALHOST || x.is_multicast(),
+            };
+            if !made {
+                add.extend(w.map(|n| (String::from(n), ip)));
+            }
+        }
+        if !append {
+            let old: Vec<(String, netpkt::IpAddr)> = self.os(ni).map(|o| o.hosts.clone()).unwrap_or_default();
+            for (name, a) in old {
+                let _ = self.apply(if a.is_v4() { Action::HostEntry { dev, name, ip: None } } else { Action::HostEntry6 { dev, name, ip: None } });
+            }
+        }
+        for (name, a) in add {
+            let _ = self.apply(match a {
+                netpkt::IpAddr::V4(x) => Action::HostEntry { dev, name, ip: Some(x) },
+                netpkt::IpAddr::V6(x) => Action::HostEntry6 { dev, name, ip: Some(x) },
+            });
+        }
+        Ok(())
+    }
+
+    /// echo NAME > /etc/hostname: the device's name, as hostnamectl sets it; >> leaves the
+    /// first line, the name, as it is
+    pub(crate) fn hostname_write(&mut self, ni: usize, text: &str, append: bool) -> Result<(), String> {
+        if append {
+            return Ok(());
+        }
+        let Some(name) = text.split_whitespace().next().map(String::from) else {
+            return self.sh_err(ni, "jfn-sh: /etc/hostname: no name in it\n");
+        };
+        if !jfn_model::project::valid_name(&name) {
+            return self.sh_err(ni, "jfn-sh: /etc/hostname: the specified hostname is invalid\n");
+        }
+        let dev = self.dev_of(ni);
+        let booting = self.cdev(ni).is_some_and(|c| c.booting);
+        if name != self.host(ni) && self.apply(Action::Hostname { dev, name: name.clone() }).is_ok() && !booting {
+            self.cli.reports.push(crate::driver::Report::Hostname { dev, name });
+        }
+        Ok(())
+    }
+
+    /// the static names as the lines that make them (linux_config)
+    pub(crate) fn hosts_config(&self, ni: usize) -> String {
+        let Some(os) = self.os(ni) else { return String::new() };
+        os.hosts.iter().map(|(h, a)| format!("echo \"{} {}\" >> /etc/hosts\n", a, h)).collect()
+    }
+
     /// the static settings of the resolver as the lines that make them (linux_config)
     pub(crate) fn resolv_config(&self, ni: usize) -> String {
         let Some(os) = self.os(ni) else { return String::new() };

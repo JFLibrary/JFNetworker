@@ -145,10 +145,10 @@ pub(crate) fn gateway(doc: &mut Doc, dev: u32, text: &str) -> Result<(), String>
     let any = Prefix4::new(Ipv4::from_u32(0), 0).ok_or_else(|| String::from("0.0.0.0/0"))?;
     let mut acts = Vec::new();
     for gw in default_gateways(doc.sim.engine(), dev) {
-        acts.push(Action::Route { dev, prefix: any, via: Some(gw), iface: None, ad: 1, add: false });
+        acts.push(Action::Route { dev, prefix: any, via: Some(gw), iface: None, ad: 1, metric: None, add: false });
     }
     if let Some(gw) = new {
-        acts.push(Action::Route { dev, prefix: any, via: Some(gw), iface: None, ad: 1, add: true });
+        acts.push(Action::Route { dev, prefix: any, via: Some(gw), iface: None, ad: 1, metric: None, add: true });
     }
     let label = format!("Gateway von {} ändern", d.name);
     apply(doc, dev, &label, &acts, None)

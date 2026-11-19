@@ -93,7 +93,7 @@ pub(crate) fn run(t: &mut T) {
     ping(&mut e, r1);
     t.check("no route with both uplinks shut", no_route(&e));
     let net = Prefix4 { addr: Ipv4::parse("10.19.0.0").unwrap_or(Ipv4::UNSPECIFIED), len: 16 };
-    let _ = e.apply(Action::Route { dev: r1, prefix: net, via: None, iface: Some(String::from("Serial0/2/0")), ad: 1, add: true });
+    let _ = e.apply(Action::Route { dev: r1, prefix: net, via: None, iface: Some(String::from("Serial0/2/0")), ad: 1, metric: None, add: true });
     ping(&mut e, r1);
     t.check("a new static route counts at once", !no_route(&e));
 }

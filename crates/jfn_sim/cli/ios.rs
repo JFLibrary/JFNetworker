@@ -1023,10 +1023,14 @@ impl Engine {
             }
             K::Debug | K::Undebug => {
                 let off = p.cmd == K::Undebug || p.no;
-                let bits = if p.has("all") {
-                    D_ICMP | D_ARP | super::D_STP | D_RIP | super::D_NAT | super::D_ICMP6 | super::D_ND | super::D_OSPF | super::D_BGP | super::D_SNMP | super::D_AAA | super::D_RADIUS | super::D_SSH | super::D_DOT1X | super::D_FW
-                } else if line.split_whitespace().nth(1) == Some("dot1x") {
+                // "debug dot1x all" is all of 802.1X, not every debug; the keyword as parsed
+                // ("deb dot", "no debug dot1x", "DOT1X"), not the line's second word
+                let dot1x = p.has("dot1x");
+                let all = p.has("all") && !dot1x;
+                let bits = if dot1x {
                     super::D_DOT1X
+                } else if all {
+                    D_ICMP | D_ARP | super::D_STP | D_RIP | super::D_NAT | super::D_ICMP6 | super::D_ND | super::D_OSPF | super::D_BGP | super::D_SNMP | super::D_AAA | super::D_RADIUS | super::D_SSH | super::D_DOT1X | super::D_FW
                 } else if p.has("icmp") {
                     D_ICMP
                 } else if p.has("rip") {
@@ -1052,7 +1056,7 @@ impl Engine {
                 } else if before != 0 && after == 0 {
                     self.cli.debug = self.cli.debug.saturating_sub(1);
                 }
-                let text = match (off, p.has("all"), bits) {
+                let text = match (off, all, bits) {
                     (true, true, _) => String::from("Debug output: all off\n"),
                     (false, true, _) => String::from("Debug output: all on (a busy network prints a lot)\n"),
                     (o, _, D_ICMP) => format!("Debug output for ICMP: {}\n", if o { "off" } else { "on" }),
@@ -1515,7 +1519,9 @@ impl Engine {
         let via = p.ip("gw").map(Ipv4);
         let iface = p.text("out").map(String::from);
         if p.no {
-            return match self.apply(Action::Route { dev, prefix, via, iface: None, ad: 1, add: false }) {
+            // only the routes over the given next hop and / or interface: a floating backup over
+            // another target stays
+            return match self.apply(Action::Route { dev, prefix, via, iface, ad: 1, metric: None, add: false }) {
                 Ok(()) => Ok(()),
                 Err(_) => self.ios_err(ni, "%No matching route to delete\n"),
             };
@@ -1526,7 +1532,7 @@ impl Engine {
             return self.ios_err(ni, "%Invalid next hop address (it's this router)\n");
         }
         let ad = p.num("ad").unwrap_or(1) as u8;
-        match self.apply(Action::Route { dev, prefix, via, iface, ad, add: true }) {
+        match self.apply(Action::Route { dev, prefix, via, iface, ad, metric: None, add: true }) {
             Ok(()) => Ok(()),
             Err(_) => self.ios_err(ni, "%Invalid next hop address\n"),
         }

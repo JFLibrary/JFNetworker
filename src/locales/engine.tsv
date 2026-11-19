@@ -323,6 +323,7 @@ Ziel unbekannt oder Gruppe: an einen Port geflutet (VLAN {}).	Unknown or group d
 Gefiltert: das Ziel liegt hinter dem Eingangsport (VLAN {}).	Filtered: the destination is behind the ingress port (VLAN {}).
 Verworfen: Access-Port {} nimmt keine Frames mit Tag {} an.	Dropped: access port {} takes no frames tagged {}.
 Verworfen: VLAN {} ist an {} nicht erlaubt.	Dropped: VLAN {} is not allowed on {}.
+Verworfen: VLAN {} (an {}) steht nicht in der VLAN-Datenbank des Switches.	Dropped: VLAN {} (on {}) is not in the switch's VLAN database.
 Verworfen: unlesbarer Frame an {}.	Dropped: unreadable frame on {}.
 Steuer-Frame an {} für die Bridge selbst.	Control frame on {} for the bridge itself.
 Hub: an {} Ports wiederholt.	Hub: repeated to {} ports.

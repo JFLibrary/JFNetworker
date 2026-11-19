@@ -864,6 +864,22 @@ impl Engine {
         if states {
             // VLAN interfaces are up while a port of their VLAN forwards (log.rs, l3.rs)
             self.ios_snap_if_ios(ni);
+            // and the protocols above hear of it, as of a cable (link.rs refresh_link): a SVI
+            // that came up with Forwarding starts IPv6 and OSPF, one that lost its last
+            // forwarding port forgets what ARP learned
+            let svis: Vec<u16> = match self.stack(ni) {
+                Some(st) => (0..st.ifaces.len() as u16).filter(|&i| matches!(st.ifaces[i as usize].kind, crate::ip::IfKind::Svi(_)) && !self.iface_up(ni, i)).collect(),
+                None => Vec::new(),
+            };
+            if let Some(st) = self.stack_mut(ni) {
+                for i in svis {
+                    st.flush_arp(i);
+                }
+            }
+            self.rip_kick(ni);
+            self.ospf_kick(ni);
+            self.ip6_kick(ni);
+            self.bgp_kick(ni);
         }
     }
 }

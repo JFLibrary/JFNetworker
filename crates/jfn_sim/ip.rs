@@ -473,13 +473,17 @@ impl IpStack {
     }
     pub fn add_route(&mut self, r: Route) {
         let r = Route { prefix: r.prefix.trunc(), ..r };
-        self.statics.retain(|s| !(s.prefix == r.prefix && s.via == r.via && s.iface == r.iface));
+        // the same route again replaces it (IOS: a new distance); Linux keeps one per metric
+        self.statics.retain(|s| !(s.prefix == r.prefix && s.via == r.via && s.iface == r.iface && s.metric == r.metric));
         self.statics.push(r);
     }
-    pub fn remove_route(&mut self, prefix: Prefix4, via: Option<Ipv4>) -> bool {
+    /// removes the static routes to `prefix` that match what is given (None: any): the next
+    /// hop, the interface ("no ip route ... Serial0/0/0" leaves the floating backup via a next
+    /// hop), the metric (Linux)
+    pub fn remove_route(&mut self, prefix: Prefix4, via: Option<Ipv4>, iface: Option<u16>, metric: Option<u32>) -> bool {
         let p = prefix.trunc();
         let n = self.statics.len();
-        self.statics.retain(|s| !(s.prefix == p && (via.is_none() || s.via == via)));
+        self.statics.retain(|s| !(s.prefix == p && (via.is_none() || s.via == via) && (iface.is_none() || s.iface == iface) && metric.is_none_or(|m| s.metric == m)));
         self.statics.len() != n
     }
 

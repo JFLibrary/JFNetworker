@@ -53,7 +53,7 @@ fn if_up(e: &mut Engine, dev: u32, iface: &str, up: bool) -> Result<(), ActErr> 
 }
 
 fn gw(e: &mut Engine, dev: u32, via: &str) -> Result<(), ActErr> {
-    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, add: true })
+    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, metric: None, add: true })
 }
 
 fn once() -> PingOpts {
@@ -145,6 +145,7 @@ pub fn run(t: &mut T) {
     icmp_rates(t);
     serial(t);
     loopbacks(t);
+    down_addrs(t);
     refused(t);
     views(t);
     jobs_end(t);
@@ -211,7 +212,7 @@ fn through_router(t: &mut T) {
 fn failures(t: &mut T) {
     // the host has no route at all
     let (mut e, pc1, r1, _pc2, _) = routed();
-    let _ = e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, add: false });
+    let _ = e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, metric: None, add: false });
     let id = ping(&mut e, pc1, "192.0.2.1", PingOpts::default());
     t.eq("no route on the host", ping_ev(&e, id), vec![error(1, "0.0.0.0", IcmpKind::NoRoute)]);
     t.check("no route ends the job", done(&e, id) && e.trace.hops().count() == 0);
@@ -264,7 +265,7 @@ fn proxy_arp_broadcast(t: &mut T) {
     // PC1 with a /8 and no default route asks for 10.0.2.10 itself; IOS answers for it
     let (mut e, pc1, r1, _pc2, _) = routed();
     let ok = [
-        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, add: false }),
+        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, metric: None, add: false }),
         e.apply(Action::IfAddr { dev: pc1, iface: String::from("eth0"), prefix: pf("10.0.1.10/24"), add: false }),
         addr(&mut e, pc1, "eth0", "10.0.1.10/8"),
     ];
@@ -564,6 +565,33 @@ fn loopbacks(t: &mut T) {
     t.check("remove loopback0", e.apply(Action::Loopback { dev: r1, n: 0, add: false }).is_ok() && !e.ifaces(r1).iter().any(|f| f.name == "Loopback0"));
 }
 
+// the address of an interface that is down takes no packets on IOS (shutdown: once R1 still
+// answered for it, from either side); on Linux it still does without a carrier (the weak host
+// model) and no longer once the interface is switched off
+fn down_addrs(t: &mut T) {
+    let (mut e, pc1, r1, pc2, ok) = routed();
+    t.check("down: set-up", ok);
+    let answered = |e: &mut Engine, dev: u32, dst: &str| {
+        let id = ping(e, dev, dst, once());
+        e.run_idle(BUDGET);
+        matches!(ping_ev(e, id).first(), Some(PingEv::Reply { .. }))
+    };
+    t.check("up: R1 answers for Gi0/0/1", answered(&mut e, pc1, "10.0.2.1"));
+    let _ = if_up(&mut e, r1, "gi0/0/1", false);
+    t.check("shutdown: not from PC1", !answered(&mut e, pc1, "10.0.2.1"));
+    t.check("shutdown: not to R1 itself", !answered(&mut e, r1, "10.0.2.1"));
+    t.check("shutdown: Gi0/0/0 still answers", answered(&mut e, pc1, "10.0.1.1"));
+    let _ = if_up(&mut e, r1, "gi0/0/1", true);
+    t.check("no shutdown: answers again", answered(&mut e, pc1, "10.0.2.1"));
+    // PC2 (Linux): its cable gone, its address still its own; eth0 switched off, not
+    let link = e.view().links.iter().find(|l| l.ends.iter().any(|x| x.0 == pc2)).map(|l| l.id).unwrap_or(0);
+    let _ = e.apply(Action::Unplug { link, down: true });
+    t.check("linux without a carrier: its own", answered(&mut e, pc2, "10.0.2.10"));
+    let _ = e.apply(Action::Unplug { link, down: false });
+    let _ = if_up(&mut e, pc2, "eth0", false);
+    t.check("linux switched off: not its own", !answered(&mut e, pc2, "10.0.2.10"));
+}
+
 fn refused(t: &mut T) {
     let (mut e, pc1, r1, _pc2, _) = routed();
     t.eq("unknown interface", addr(&mut e, r1, "Gi9/9/9", "10.9.9.1/24"), Err(ActErr::UnknownIface { dev: r1, iface: String::from("Gi9/9/9") }));
@@ -574,9 +602,9 @@ fn refused(t: &mut T) {
     t.check("class E", addr(&mut e, pc1, "eth0", "240.0.0.1/24").is_err());
     t.check("overlap allowed on Linux", e.apply(Action::Loopback { dev: pc1, n: 0, add: true }).is_ok() && addr(&mut e, pc1, "dummy0", "10.0.1.200/24").is_ok());
     t.eq("mtu too small", e.apply(Action::Mtu { dev: r1, iface: String::from("gi0/0/0"), mtu: 60 }), Err(ActErr::BadMtu(60)));
-    t.check("route needs a target", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: None, iface: None, ad: 1, add: true }).is_err());
-    t.check("own address as next hop", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, add: true }).is_err());
-    t.check("no such route", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: None, iface: None, ad: 1, add: false }).is_err());
+    t.check("route needs a target", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: None, iface: None, ad: 1, metric: None, add: true }).is_err());
+    t.check("own address as next hop", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, metric: None, add: true }).is_err());
+    t.check("no such route", e.apply(Action::Route { dev: r1, prefix: pf("10.9.0.0/16"), via: None, iface: None, ad: 1, metric: None, add: false }).is_err());
     t.check("svi on a router", e.apply(Action::Svi { dev: r1, vlan: 10, add: true }) == Err(ActErr::NoBridge(r1)));
     t.eq("error text", format!("{}", ActErr::UnknownIface { dev: 3, iface: String::from("Gi0/9") }), String::from("Gerät 3 hat kein Interface \u{201e}Gi0/9\u{201c}."));
     let mut p = Project::new("hub", 15);
@@ -598,8 +626,8 @@ fn refused(t: &mut T) {
 
 fn views(t: &mut T) {
     let (mut e, pc1, r1, _pc2, _) = routed();
-    let _ = e.apply(Action::Route { dev: r1, prefix: pf("172.16.0.0/16"), via: Some(ip("10.0.2.10")), iface: None, ad: 1, add: true });
-    let _ = e.apply(Action::Route { dev: r1, prefix: pf("172.17.0.0/16"), via: Some(ip("172.16.0.1")), iface: None, ad: 1, add: true });
+    let _ = e.apply(Action::Route { dev: r1, prefix: pf("172.16.0.0/16"), via: Some(ip("10.0.2.10")), iface: None, ad: 1, metric: None, add: true });
+    let _ = e.apply(Action::Route { dev: r1, prefix: pf("172.17.0.0/16"), via: Some(ip("172.16.0.1")), iface: None, ad: 1, metric: None, add: true });
     let table = |e: &Engine| e.routes(r1).iter().map(|r| (format!("{}", r.prefix), r.src.code(), r.via, r.iface)).collect::<Vec<_>>();
     let want = vec![
         (String::from("10.0.1.0/24"), "C", None, Some(0)),

@@ -53,7 +53,7 @@ fn up(e: &mut Engine, dev: u32, iface: &str) -> bool {
 }
 
 fn gw(e: &mut Engine, dev: u32, via: &str, add: bool) -> bool {
-    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, add }).is_ok()
+    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, metric: None, add }).is_ok()
 }
 
 fn once() -> PingOpts {

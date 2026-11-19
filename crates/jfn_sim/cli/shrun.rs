@@ -678,12 +678,17 @@ impl Engine {
         }
     }
 
-    /// a file of a redirection gets what its command wrote (/etc/resolv.conf: the resolver)
+    /// a file of a redirection gets what its command wrote (the made files of /etc: their
+    /// settings, netsvc.rs etc_write)
     fn sh_write_file(&mut self, ni: usize, f: OutFile) -> bool {
         let canon = self.store(ni).and_then(|s| s.norm(&f.abs).ok()).unwrap_or_default();
-        let text = String::from_utf8_lossy(&f.data).into_owned();
-        if canon == "/etc/resolv.conf" {
-            return self.resolv_write(ni, &text, f.append).is_ok();
+        if let Some(ok) = self.etc_write(ni, &canon, &f.data, f.append) {
+            return ok;
+        }
+        // "> neu/": a name with a slash at its end is a directory, never a new file
+        if f.abs.ends_with('/') {
+            self.sh_fail(ni, &format!("jfn-sh: {}: Is a directory\n", f.path));
+            return false;
         }
         if let Err(e) = self.file_put(ni, &f.abs, &f.data, f.append) {
             self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", f.path, e.errno_text()));

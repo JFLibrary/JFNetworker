@@ -222,6 +222,9 @@ pub struct Bridge {
     pub max_entries: usize,
     /// configured VLANs and their names (VLAN 1 "default" always)
     pub vlans: BTreeMap<u16, String>,
+    /// only the VLANs of `vlans` pass (IOS switches: a VLAN forgotten on a transit switch, "no
+    /// vlan N", an SVI without its VLAN); Linux bridges, access points and clouds take any
+    pub vlan_db: bool,
     /// spanning tree: its settings and, while it runs, the protocol (stp.rs)
     pub stp: crate::stp::Stp,
     /// the shorter aging of an 802.1D topology change (Forward Delay), None: `aging`
@@ -238,9 +241,14 @@ impl Bridge {
             aging: 300 * SEC,
             max_entries: 16_384,
             vlans,
+            vlan_db: false,
             stp: crate::stp::Stp::default(),
             fast_aging: None,
         }
+    }
+    /// VLAN `vlan` may pass this bridge (vlan_db)
+    pub fn vlan_known(&self, vlan: u16) -> bool {
+        !self.vlan_db || self.vlans.contains_key(&vlan)
     }
     /// how long an entry lives now
     pub fn age_limit(&self) -> Ns {
@@ -331,14 +339,16 @@ impl Bridge {
             }
         }
     }
-    /// the port carries VLAN `vlan` (a port 802.1X keeps closed carries none)
+    /// the port carries VLAN `vlan` (a port 802.1X keeps closed carries none; a trunk only its
+    /// allowed VLANs, the native one too only when allowed; only VLANs the bridge knows)
     pub fn carries(&self, port: u16, vlan: u16) -> bool {
-        match self.ports.get(port as usize) {
+        let on = match self.ports.get(port as usize) {
             Some(BridgePort { closed: true, .. }) => false,
             Some(BridgePort { member: true, mode: PortMode::Access(v), .. }) => *v == vlan,
-            Some(BridgePort { member: true, mode: PortMode::Trunk { native, allowed }, .. }) => *native == vlan || allowed.contains(vlan),
+            Some(BridgePort { member: true, mode: PortMode::Trunk { allowed, .. }, .. }) => allowed.contains(vlan),
             _ => false,
-        }
+        };
+        on && self.vlan_known(vlan)
     }
     /// the VLAN of an authenticated port as RADIUS says (None: its own again); what the port
     /// learned goes when the VLAN changes
@@ -490,6 +500,19 @@ impl Engine {
                 return;
             }
             self.note(dev, Some(hop), Note::Consumed { port: pi });
+            return;
+        }
+        // a trunk whose native VLAN is not allowed takes no untagged frames (the control frames
+        // above still reach spanning tree); an IOS switch takes only VLANs of its database
+        let untagged = l2.tag.is_none_or(|t| t.vid == 0);
+        if untagged && matches!(&br.ports[pi as usize].mode, PortMode::Trunk { allowed, .. } if !allowed.contains(vlan)) {
+            node.ports[pi as usize].counters.drops += 1;
+            self.note(dev, Some(hop), Note::DropVlan { port: pi, vid: vlan });
+            return;
+        }
+        if !br.vlan_known(vlan) {
+            node.ports[pi as usize].counters.drops += 1;
+            self.note(dev, Some(hop), Note::VlanUnknown { port: pi, vid: vlan });
             return;
         }
         if br.ports[pi as usize].closed {

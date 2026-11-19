@@ -532,6 +532,24 @@ impl Engine {
                 continue;
             }
             let shown = if dst_dir { format!("{}/{}", dst.trim_end_matches('/'), self.store(ni).map(|s| String::from(s.name_of(&from))).unwrap_or_default()) } else { String::from(dst) };
+            // "mv a /tmp/neu/" without that directory: no file named neu
+            if !dst_dir && dst.ends_with('/') {
+                let m = format!("mv: cannot move '{}' to '{}': Not a directory\n", src, dst);
+                self.err_out(ni, &m);
+                err.get_or_insert(m);
+                continue;
+            }
+            // onto a made file of /etc: its settings take the file (netsvc.rs etc_write)
+            if let Some(data) = self.store(ni).and_then(|s| s.read(&from).ok().map(Vec::from))
+                && let Some(ok) = self.etc_write(ni, &to_c, &data, false)
+            {
+                if ok {
+                    let _ = self.file_del(ni, &from, false);
+                } else {
+                    err.get_or_insert(format!("mv: {}", src));
+                }
+                continue;
+            }
             let r = self.file_rename(ni, &from, &to_c);
             let m = match r {
                 Ok(()) => continue,
@@ -1653,6 +1671,16 @@ impl Engine {
         let mut err = None;
         for f in files {
             let abs = self.sh_abs(ni, f);
+            // a made file of /etc takes it as settings (netsvc.rs etc_write)
+            let canon = self.store(ni).and_then(|s| s.norm(&abs).ok()).unwrap_or_default();
+            if self.sh_writable(ni, &abs).is_ok()
+                && let Some(ok) = self.etc_write(ni, &canon, &data, append)
+            {
+                if !ok {
+                    err.get_or_insert(format!("tee: {}", f));
+                }
+                continue;
+            }
             if let Err(e) = self.sh_writable(ni, &abs).map_err(String::from).and_then(|_| self.file_put(ni, &abs, &data, append).map(|_| ()).map_err(|e| String::from(e.errno_text()))) {
                 let m = format!("tee: {}: {}\n", f, e);
                 self.err_out(ni, &m);

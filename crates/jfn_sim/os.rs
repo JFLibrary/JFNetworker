@@ -777,7 +777,7 @@ impl OsApi<'_> {
         }
     }
     pub fn remove_route(&mut self, prefix: Prefix4, via: Option<Ipv4>) -> bool {
-        self.eng.stack_mut(self.ni).is_some_and(|s| s.remove_route(prefix, via))
+        self.eng.stack_mut(self.ni).is_some_and(|s| s.remove_route(prefix, via, None, None))
     }
     /// name servers and search domains learned from DHCP (None: forget them)
     pub fn set_dhcp_dns(&mut self, from: Option<(Vec<Ipv4>, Vec<String>)>) {

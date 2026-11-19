@@ -3,7 +3,9 @@
 //   ip [-br] addr [show [dev] IF] | add|del PREFIX dev IF | flush dev IF
 //   ip [-br] link [show [dev] IF] | set [dev] IF up|down|mtu N
 //            | add link IF name IF.N type vlan id N | add NAME type dummy | del IF
-//   ip route [show] | add|del PREFIX|default [via ADDR] [dev IF] [metric N] | get ADDR
+//   ip route [show] | add|del|replace PREFIX|default [via ADDR] [dev IF] [metric N] | get ADDR
+//                    (a route is one prefix at one metric: add refuses a second, replace
+//                    takes its place, del removes the first that matches)
 //   ip neigh [show] | add ADDR lladdr MAC dev IF | del ADDR dev IF | flush all|dev IF
 //   ping [-c N] [-i S] [-s N] [-t TTL] [-W S] [-M do|dont|want] DEST
 //   traceroute [-n] [-m MAX] [-q N] [-w S] DEST       (DEST: an address or a name)
@@ -113,7 +115,7 @@ pub(super) fn secs(s: &str) -> Option<Ns> {
 const IP_USAGE: &str = "Usage: ip [-4] [-br] OBJECT [COMMAND ...]\n  OBJECT   address, link, neighbour or route (a unique prefix is enough)\n  COMMAND  show (the default), add, del and more: ip OBJECT help\n";
 const ADDR_USAGE: &str = "Usage: ip address [show [dev] IF]\n       ip address add|del PREFIX dev IF\n       ip address flush dev IF\n";
 const LINK_USAGE: &str = "Usage: ip link [show [dev] IF]\n       ip link set [dev] IF up|down|mtu N\n       ip link add link IF name NAME type vlan id N\n       ip link add NAME type dummy\n       ip link del IF\n";
-const ROUTE_USAGE: &str = "Usage: ip route [show]\n       ip route add|del PREFIX|default [via ADDR] [dev IF] [metric N]\n       ip route get ADDR\n";
+const ROUTE_USAGE: &str = "Usage: ip route [show]\n       ip route add|del|replace PREFIX|default [via ADDR] [dev IF] [metric N]\n       ip route get ADDR\n";
 const NEIGH_USAGE: &str = "Usage: ip neigh [show]\n       ip neigh add ADDR lladdr MAC dev IF\n       ip neigh del ADDR dev IF\n       ip neigh flush all|dev IF\n";
 
 impl Engine {
@@ -475,18 +477,9 @@ impl Engine {
         (format!("{}: {}: <{}> mtu {} qdisc {} state {}", i + 1, name, flags, mtu, qdisc, state), link)
     }
 
-    /// not shut down
+    /// not shut down (l3.rs)
     fn ifaces_admin(&self, ni: usize, i: u16) -> bool {
-        let Some(Some(n)) = self.nodes.get(ni) else {
-            return false;
-        };
-        let Some(f) = n.ip.as_ref().and_then(|s| s.ifaces.get(i as usize)) else {
-            return false;
-        };
-        match f.kind {
-            IfKind::Port(p) => n.ports.get(p as usize).is_some_and(|x| x.admin_up),
-            _ => f.admin_up,
-        }
+        self.iface_admin(ni, i)
     }
 
     pub(super) fn visible_ifaces(&self, ni: usize) -> Vec<u16> {
@@ -751,6 +744,7 @@ impl Engine {
             };
             let mut via = None;
             let mut ifn: Option<String> = None;
+            let mut metric: Option<u32> = None;
             let mut k = 2;
             while k < args.len() {
                 match args[k] {
@@ -770,14 +764,33 @@ impl Engine {
                         ifn = Some(String::from(n));
                         k += 1;
                     }
-                    "metric" | "proto" | "src" | "scope" | "table" => k += 1,
+                    "metric" | "priority" | "preference" => {
+                        let a = args.get(k + 1).copied().unwrap_or("");
+                        match a.parse::<u32>() {
+                            Ok(m) => metric = Some(m),
+                            Err(_) => return self.sh_err(ni, "Error: \"metric\" value is invalid\n"),
+                        }
+                        k += 1;
+                    }
+                    "proto" | "src" | "scope" | "table" => k += 1,
                     "onlink" => {}
                     o => return self.sh_err(ni, &format!("Error: either \"to\" is duplicate, or \"{}\" is a garbage.\n", o)),
                 }
                 k += 1;
             }
+            let dev_ix = ifn.as_ref().and_then(|n| self.sh_iface(ni, n));
             if !add {
-                return match self.apply(Action::Route { dev, prefix, via, iface: None, ad: 1, add: false }) {
+                // the kernel deletes one route: the first that matches what is given, lowest
+                // metric first
+                let hit = self.stack(ni).and_then(|s| {
+                    let mut m: Vec<&crate::ip::Route> = s.statics.iter().filter(|r| r.prefix == prefix && via.is_none_or(|v| r.via == Some(v)) && dev_ix.is_none_or(|d| r.iface == Some(d)) && metric.is_none_or(|x| r.metric == x)).collect();
+                    m.sort_by_key(|r| r.metric);
+                    m.first().map(|r| (r.via, r.iface.and_then(|i| s.ifaces.get(i as usize)).map(|f| f.name.clone()), r.metric))
+                });
+                let Some((v, f, m)) = hit else {
+                    return self.sh_err(ni, "RTNETLINK answers: No such process\n");
+                };
+                return match self.apply(Action::Route { dev, prefix, via: v, iface: f, ad: 1, metric: Some(m), add: false }) {
                     Ok(()) => Ok(()),
                     Err(_) => self.sh_err(ni, "RTNETLINK answers: No such process\n"),
                 };
@@ -795,11 +808,17 @@ impl Engine {
                     return self.sh_err(ni, "Error: Nexthop has invalid gateway.\n");
                 }
             }
-            let exists = self.stack(ni).is_some_and(|s| s.statics.iter().any(|r| r.prefix == prefix && r.via == via));
-            if exists && !is(cmd, "replace") {
-                return self.sh_err(ni, "RTNETLINK answers: File exists\n");
+            // a route is one prefix at one metric: "add" refuses a second one whatever its next
+            // hop, "replace" takes its place
+            let m = metric.unwrap_or(0);
+            let exists = self.stack(ni).is_some_and(|s| s.statics.iter().any(|r| r.prefix == prefix && r.metric == m));
+            if exists {
+                if !is(cmd, "replace") {
+                    return self.sh_err(ni, "RTNETLINK answers: File exists\n");
+                }
+                let _ = self.apply(Action::Route { dev, prefix, via: None, iface: None, ad: 1, metric: Some(m), add: false });
             }
-            return match self.apply(Action::Route { dev, prefix, via, iface: ifn, ad: 1, add: true }) {
+            return match self.apply(Action::Route { dev, prefix, via, iface: ifn, ad: 1, metric: Some(m), add: true }) {
                 Ok(()) => Ok(()),
                 Err(_) => self.sh_err(ni, "Error: Nexthop has invalid gateway.\n"),
             };
@@ -836,7 +855,7 @@ impl Engine {
         let st = self.stack(ni);
         let name = |i: Option<u16>| i.and_then(|i| st.and_then(|s| s.ifaces.get(i as usize))).map(|f| f.name.clone()).unwrap_or_default();
         // default routes first, then by network (the kernel's main table order)
-        let mut lines: Vec<(u32, u8, String)> = Vec::new();
+        let mut lines: Vec<(u32, u32, String)> = Vec::new();
         for r in &routes {
             let net = if r.prefix.len == 0 { String::from("default") } else if r.prefix.len == 32 { format!("{}", r.prefix.addr) } else { format!("{}", r.prefix) };
             let l = match r.src {
@@ -849,12 +868,16 @@ impl Engine {
                     let src = f.and_then(|f| f.addrs.iter().find(|a| a.trunc() == r.prefix).map(|a| a.addr)).unwrap_or(Ipv4::UNSPECIFIED);
                     format!("{} dev {} proto kernel scope link src {}", net, name(r.iface), src)
                 }
-                _ => match r.via {
-                    Some(v) => format!("{} via {} dev {}", net, v, name(r.iface)),
-                    None => format!("{} dev {} scope link", net, name(r.iface)),
-                },
+                _ => {
+                    let m = if r.src == RouteSrc::Static && r.metric > 0 { format!(" metric {}", r.metric) } else { String::new() };
+                    match r.via {
+                        Some(v) => format!("{} via {} dev {}{}", net, v, name(r.iface), m),
+                        None => format!("{} dev {} scope link{}", net, name(r.iface), m),
+                    }
+                }
             };
-            lines.push((if r.prefix.len == 0 { 0 } else { 1 }, 0, l));
+            // one prefix: the lower metric first
+            lines.push((if r.prefix.len == 0 { 0 } else { 1 }, if r.src == RouteSrc::Static { r.metric } else { 0 }, l));
         }
         lines.sort_by_key(|l| (l.0, l.1));
         for (_, _, l) in lines {
@@ -1159,6 +1182,9 @@ impl Engine {
             if let Some(i) = r.iface {
                 l.push_str(&format!(" dev {}", st.ifaces[i as usize].name));
             }
+            if r.metric > 0 {
+                l.push_str(&format!(" metric {}", r.metric));
+            }
             s.push_str(&l);
             s.push('\n');
         }
@@ -1171,8 +1197,10 @@ impl Engine {
         }
         // MASQUERADE and the FORWARD chain (cli/iptables.rs)
         s.push_str(&super::iptables::config(st));
-        // the name servers set by hand (netsvc.rs: resolv_write)
+        // the name servers set by hand and the static names (netsvc.rs: resolv_write,
+        // hosts_write)
         s.push_str(&self.resolv_config(ni));
+        s.push_str(&self.hosts_config(ni));
         // IPv6 (linux6.rs)
         s.push_str(&self.linux_config6(ni));
         s

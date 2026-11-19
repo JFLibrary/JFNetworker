@@ -134,6 +134,33 @@ impl Engine {
         }
     }
 
+    /// interface `i` of node `ni` is not switched off ("shutdown", "ip link set .. down"), its
+    /// line may be down
+    pub(crate) fn iface_admin(&self, ni: usize, i: u16) -> bool {
+        let Some(Some(n)) = self.nodes.get(ni) else {
+            return false;
+        };
+        let Some(f) = n.ip.as_ref().and_then(|s| s.ifaces.get(i as usize)) else {
+            return false;
+        };
+        match f.kind {
+            IfKind::Port(p) => n.ports.get(p as usize).is_some_and(|x| x.admin_up),
+            _ => f.admin_up,
+        }
+    }
+
+    /// the addresses of interface `i` take packets: on IOS-like devices while it is up (a
+    /// shutdown or a lost line takes them away with the connected route), on Linux while it is
+    /// not switched off (without a carrier they still answer: the weak host model)
+    pub(crate) fn addrs_live(&self, ni: usize, i: u16) -> bool {
+        if self.os(ni).is_some_and(|o| o.ios) { self.iface_up(ni, i) } else { self.iface_admin(ni, i) }
+    }
+
+    /// `ip` is an address of node `ni` that takes packets (addrs_live)
+    pub(crate) fn mine_live(&self, ni: usize, ip: Ipv4) -> bool {
+        self.stack(ni).is_some_and(|st| st.ifaces.iter().enumerate().any(|(i, f)| !f.hidden && f.has(ip) && self.addrs_live(ni, i as u16)))
+    }
+
     /// the next hop to `dst` from node `ni`
     pub(crate) fn route(&self, ni: usize, dst: Ipv4) -> Option<NextHop> {
         let st = self.stack(ni)?;
@@ -151,13 +178,14 @@ impl Engine {
         st.ifaces.get(nh.iface as usize)?.primary()
     }
 
-    /// `dst` is for this device (an own address, the limited broadcast, the directed broadcast
-    /// of the receiving interface, or a multicast group the interface listens to)
+    /// `dst` is for this device (an own address that takes packets, the limited broadcast, the
+    /// directed broadcast of the receiving interface, or a multicast group the interface
+    /// listens to)
     fn is_local(&self, ni: usize, iface: u16, dst: Ipv4) -> bool {
         let Some(st) = self.stack(ni) else {
             return false;
         };
-        dst.is_broadcast() || st.is_mine(dst) || st.ifaces.get(iface as usize).is_some_and(|f| f.is_broadcast(dst)) || (dst.is_multicast() && st.joined(iface, dst))
+        dst.is_broadcast() || self.mine_live(ni, dst) || st.ifaces.get(iface as usize).is_some_and(|f| f.is_broadcast(dst)) || (dst.is_multicast() && st.joined(iface, dst))
     }
 
     // ---------------------------------------------------------------- input
@@ -507,10 +535,11 @@ impl Engine {
             return;
         };
         let (dst, src) = (v.dst(), v.src());
-        // to itself (Linux: anything in 127.0.0.0/8 is the device itself)
+        // to itself (Linux: anything in 127.0.0.0/8 is the device itself; an address of an
+        // interface that is down on IOS, switched off on Linux, is not: addrs_live)
         if let Origin::Local { .. } = origin
             && let Some(st) = self.stack(ni)
-            && let Some(i) = st.ifaces.iter().position(|f| !f.hidden && (f.has(dst) || (f.is_loopback() && dst.is_loopback() && f.on_link(dst))))
+            && let Some(i) = st.ifaces.iter().enumerate().position(|(i, f)| !f.hidden && ((f.has(dst) && self.addrs_live(ni, i as u16)) || (f.is_loopback() && dst.is_loopback() && f.on_link(dst))))
         {
             let h = cause.unwrap_or(0);
             self.ip_local(ni, i as u16, pkt, h);

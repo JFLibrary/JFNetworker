@@ -54,7 +54,7 @@ fn if_up(e: &mut Engine, dev: u32, iface: &str) -> Result<(), ActErr> {
 }
 
 fn gw(e: &mut Engine, dev: u32, via: &str) -> Result<(), ActErr> {
-    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, add: true })
+    e.apply(Action::Route { dev, prefix: pf("0.0.0.0/0"), via: Some(ip(via)), iface: None, ad: 1, metric: None, add: true })
 }
 
 fn client(e: &mut Engine, dev: u32, iface: &str, on: bool) -> Result<(), ActErr> {

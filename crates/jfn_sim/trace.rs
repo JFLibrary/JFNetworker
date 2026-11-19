@@ -126,6 +126,8 @@ pub enum Note {
     /// bridge: refused at the ingress port
     DropTagged { port: u16, vid: u16 },
     DropVlan { port: u16, vid: u16 },
+    /// bridge (IOS switch): the VLAN is not in its database ("vlan N" missing)
+    VlanUnknown { port: u16, vid: u16 },
     DropMalformed { port: u16 },
     /// bridge: a link-local control frame (STP, LLDP, ...) for the bridge itself
     Consumed { port: u16 },
@@ -769,6 +771,7 @@ impl Note {
                 | Note::LostInFlight { .. }
                 | Note::DropTagged { .. }
                 | Note::DropVlan { .. }
+                | Note::VlanUnknown { .. }
                 | Note::DropMalformed { .. }
                 | Note::Filtered { .. }
                 | Note::NotForMe { .. }
@@ -883,6 +886,7 @@ impl Note {
             Note::Filtered { vlan } => msg!("Gefiltert: das Ziel liegt hinter dem Eingangsport (VLAN {}).", vlan),
             Note::DropTagged { port: p, vid } => msg!("Verworfen: Access-Port {} nimmt keine Frames mit Tag {} an.", port(*p), vid),
             Note::DropVlan { port: p, vid } => msg!("Verworfen: VLAN {} ist an {} nicht erlaubt.", vid, port(*p)),
+            Note::VlanUnknown { port: p, vid } => msg!("Verworfen: VLAN {} (an {}) steht nicht in der VLAN-Datenbank des Switches.", vid, port(*p)),
             Note::DropMalformed { port: p } => msg!("Verworfen: unlesbarer Frame an {}.", port(*p)),
             Note::Consumed { port: p } => msg!("Steuer-Frame an {} für die Bridge selbst.", port(*p)),
             Note::Repeated { ports: 1 } => msg!("Hub: an einen Port wiederholt."),

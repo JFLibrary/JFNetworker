@@ -1,9 +1,11 @@
 // clitest -- checks of the command lines of jfn_sim (part of --selftest): IOS modes and
 // prompts, abbreviations, "?" help and Tab, the error messages with their "^", the
-// configuration commands (interfaces, addresses, switchports, VLANs, routes, ARP), show
-// output, ping and traceroute with IOS and iputils output, Ctrl+C, lines typed while a command
-// runs, debug and console logs, the Linux shell (ip, ping, traceroute, hostname, sysctl), the
-// running configuration read back as the startup configuration, and the reports of the driver
+// configuration commands (interfaces, addresses, switchports, VLANs, routes and the floating
+// backup "no ip route" leaves, ARP), show output, ping and traceroute with IOS and iputils
+// output, Ctrl+C, lines typed while a command runs, debug (802.1X) and console logs, the Linux
+// shell (ip, ip route replace and metric, ping, traceroute, hostname, sysctl, the made files of
+// /etc, cp), the running configuration read back as the startup configuration, and the
+// reports of the driver
 //
 // Devices of the small projects get ids in order: PC1 = 1, R1 = 2, PC2 = 3 (MAC 02:4a:00:00:id:port+1).
 
@@ -100,11 +102,13 @@ pub fn run(t: &mut T) {
     interface_config(t);
     routes_and_arp(t);
     switching(t);
+    dot1x_debug(t);
     ios_ping(t);
     ios_traceroute_debug(t);
     saving(t);
     linux_shell(t);
     linux_ping(t);
+    linux_routes_etc(t);
     round_trip(t);
     svi_boot(t);
     driver_reports(t);
@@ -244,6 +248,13 @@ fn routes_and_arp(t: &mut T) {
     t.eq("no ip route", cli(&mut e, r1, "no ip route 10.9.0.0 255.255.0.0"), String::new());
     t.check("route gone", !e.routes(r1).iter().any(|r| format!("{}", r.prefix) == "10.9.0.0/16"));
     t.eq("no such route", cli(&mut e, r1, "no ip route 10.9.0.0 255.255.0.0"), String::from("%No matching route to delete\n"));
+    // only the routes over the given target go: the floating backup over a next hop stays (once
+    // "no ip route ... Gi0/0/1" took it too)
+    let _ = lines(&mut e, r1, &["ip route 10.8.0.0 255.255.0.0 gi0/0/1", "ip route 10.8.0.0 255.255.0.0 10.0.2.10 5"]);
+    t.eq("no ip route over an interface", cli(&mut e, r1, "no ip route 10.8.0.0 255.255.0.0 gi0/0/1"), String::new());
+    let run = e.running_config(r1);
+    t.check("floating backup stays", run.contains("ip route 10.8.0.0 255.255.0.0 10.0.2.10 5\n") && !run.contains("ip route 10.8.0.0 255.255.0.0 GigabitEthernet0/0/1\n"));
+    t.eq("no ip route over another next hop", cli(&mut e, r1, "no ip route 10.8.0.0 255.255.0.0 10.0.2.99"), String::from("%No matching route to delete\n"));
     t.eq("static arp", cli(&mut e, r1, "arp 10.0.1.77 024a.0000.7701 arpa"), String::new());
     t.eq("static arp off net", cli(&mut e, r1, "arp 192.0.2.77 024a.0000.7701 arpa"), String::from("% Invalid ARP entry - 192.0.2.77 is not on a connected network\n"));
     let arp = cli(&mut e, r1, "do show arp");
@@ -354,6 +365,21 @@ fn ios_ping(t: &mut T) {
     e.run_until(e.now() + 10 * SEC, BUDGET);
     let o = out(&mut e, r1);
     t.check("type-ahead", o.contains("..\nSuccess rate is 0 percent (0/2)\nR1#show arp\nProtocol  Address"));
+}
+
+// "debug dot1x all" is 802.1X alone (once every debug); "no debug dot1x" and abbreviations
+// reach 802.1X (once ARP)
+fn dot1x_debug(t: &mut T) {
+    let (p, _pc1, sw, _mls) = switched();
+    let mut e = engine(&p);
+    let _ = cli(&mut e, sw, "enable");
+    t.eq("debug dot1x all", cli(&mut e, sw, "debug dot1x all"), String::from("Debug output for 802.1X: on\n"));
+    let d = cli(&mut e, sw, "show debugging");
+    t.check(&format!("only 802.1X on: {:?}", d), d.contains("Debug output for 802.1X: on") && !d.contains("ICMP") && !d.contains("ARP"));
+    t.eq("no debug dot1x", cli(&mut e, sw, "no debug dot1x"), String::from("Debug output for 802.1X: off\n"));
+    t.eq("deb dot", cli(&mut e, sw, "deb dot"), String::from("Debug output for 802.1X: on\n"));
+    t.eq("undebug dot", cli(&mut e, sw, "undebug dot"), String::from("Debug output for 802.1X: off\n"));
+    t.check("802.1X off", !cli(&mut e, sw, "show debugging").contains("802.1X: on"));
 }
 
 fn ios_traceroute_debug(t: &mut T) {
@@ -504,6 +530,55 @@ fn linux_ping(t: &mut T) {
     let o = cli_run(&mut e, pc1, "traceroute -q 1 -m 1 10.0.2.10", 60 * SEC);
     t.eq("traceroute names", o, String::from("traceroute to 10.0.2.10 (10.0.2.10), 1 hops max, 60 byte packets\n 1  10.0.1.1 (10.0.1.1)  0.003 ms\n"));
     t.eq("traceroute usage", cli(&mut e, pc1, "traceroute"), String::from("Specify \"host\" missing argument.\n"));
+}
+
+// ip route: one route a prefix and metric (add refuses a second, replace takes its place; once
+// both stood), the metric orders them and stays in the configuration; the made files of /etc
+// take what is written (once a file of its own beside them); cp of several files, -r, a
+// missing directory
+fn linux_routes_etc(t: &mut T) {
+    let (p, pc1, _r1, _pc2) = routed();
+    let mut e = engine(&p);
+    t.eq("a second default", cli(&mut e, pc1, "ip route add default via 10.0.1.99"), String::from("RTNETLINK answers: File exists\n"));
+    t.eq("replace", cli(&mut e, pc1, "ip route replace default via 10.0.1.99"), String::new());
+    t.eq("with a metric", cli(&mut e, pc1, "ip route add default via 10.0.1.1 metric 100"), String::new());
+    let r = cli(&mut e, pc1, "ip route");
+    t.check(&format!("two defaults by metric: {:?}", r), r.starts_with("default via 10.0.1.99 dev eth0\ndefault via 10.0.1.1 dev eth0 metric 100\n"));
+    t.check("metric in the config", e.running_config(pc1).contains("ip route add default via 10.0.1.99\nip route add default via 10.0.1.1 metric 100\n"));
+    t.eq("del takes the first", cli(&mut e, pc1, "ip route del default"), String::new());
+    t.check("metric 100 left", cli(&mut e, pc1, "ip route").starts_with("default via 10.0.1.1 dev eth0 metric 100\n"));
+    t.eq("bad metric", cli(&mut e, pc1, "ip route add 10.9.0.0/16 via 10.0.1.1 metric x"), String::from("Error: \"metric\" value is invalid\n"));
+    // the made files of /etc
+    let _ = cli(&mut e, pc1, "echo \"10.0.2.10 srv srv.lab\" >> /etc/hosts");
+    let h = cli(&mut e, pc1, "cat /etc/hosts");
+    t.check(&format!("hosts entries: {:?}", h), h.contains("10.0.2.10\tsrv\n") && h.contains("10.0.2.10\tsrv.lab\n"));
+    let ls = cli(&mut e, pc1, "ls /etc");
+    t.eq(&format!("hosts once in /etc: {:?}", ls), ls.matches("hosts").count(), 1);
+    // (the first probe goes while R1 asks ARP for PC2, as IOS drops it)
+    let o = cli_run(&mut e, pc1, "ping -c 2 srv", 15 * SEC);
+    t.check(&format!("ping by the name: {:?}", o), o.starts_with("PING srv (10.0.2.10)") && o.contains("2 packets transmitted, 1 received"));
+    t.check("hosts in the config", e.running_config(pc1).contains("echo \"10.0.2.10 srv\" >> /etc/hosts\n"));
+    let _ = cli(&mut e, pc1, "echo \"10.0.2.11 other\" > /etc/hosts");
+    let h = cli(&mut e, pc1, "cat /etc/hosts");
+    t.check("> replaces the entries", h.contains("10.0.2.11\tother\n") && !h.contains("srv") && h.starts_with("127.0.0.1\tlocalhost\n"));
+    t.eq("no address", cli(&mut e, pc1, "echo \"nonsense x\" >> /etc/hosts"), String::from("jfn-sh: /etc/hosts: nonsense is no address\n"));
+    let _ = cli(&mut e, pc1, "echo Arbeitsplatz > /etc/hostname");
+    t.eq("hostname file", cli(&mut e, pc1, "hostname"), String::from("Arbeitsplatz\n"));
+    let _ = cli(&mut e, pc1, "echo nameserver 10.0.2.10 | tee /etc/resolv.conf");
+    t.check("tee to resolv.conf", cli(&mut e, pc1, "cat /etc/resolv.conf").contains("nameserver 10.0.2.10"));
+    let _ = lines(&mut e, pc1, &["echo nameserver 10.0.2.53 > /tmp/r", "cp /tmp/r /etc/resolv.conf"]);
+    let rc = cli(&mut e, pc1, "cat /etc/resolv.conf");
+    t.check(&format!("cp to resolv.conf: {:?}", rc), rc.contains("nameserver 10.0.2.53") && !rc.contains("10.0.2.10"));
+    // cp
+    let _ = lines(&mut e, pc1, &["echo a > /tmp/a.cfg", "echo b > /tmp/b.cfg", "mkdir /tmp/d"]);
+    t.eq("cp several", cli(&mut e, pc1, "cp /tmp/a.cfg /tmp/b.cfg /tmp/d"), String::new());
+    t.eq("both copied", cli(&mut e, pc1, "ls /tmp/d"), String::from("a.cfg  b.cfg\n"));
+    t.eq("several to a file", cli(&mut e, pc1, "cp /tmp/a.cfg /tmp/b.cfg /tmp/x"), String::from("cp: target '/tmp/x' is not a directory\n"));
+    t.eq("cp -r", cli(&mut e, pc1, "cp -r /tmp/d /tmp/e"), String::from("cp: '/tmp/d' is a directory: this cp copies files only, one by one\n"));
+    t.eq("cp to a missing directory", cli(&mut e, pc1, "cp /tmp/a.cfg /tmp/neu/"), String::from("cp: cannot create regular file '/tmp/neu/': Not a directory\n"));
+    t.eq("mv to a missing directory", cli(&mut e, pc1, "mv /tmp/a.cfg /tmp/neu/"), String::from("mv: cannot move '/tmp/a.cfg' to '/tmp/neu/': Not a directory\n"));
+    t.eq("redirect to a missing directory", cli(&mut e, pc1, "echo x > /tmp/neu/"), String::from("jfn-sh: /tmp/neu/: Is a directory\n"));
+    t.check("no file neu", !cli(&mut e, pc1, "ls /tmp").contains("neu"));
 }
 
 fn round_trip(t: &mut T) {

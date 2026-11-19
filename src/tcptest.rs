@@ -1032,14 +1032,14 @@ fn ios(t: &mut T) {
     let s = String::from;
     let ok = [
         e.apply(Action::IfAddr { dev: pc1, iface: s("eth0"), prefix: pf("10.0.0.1/24"), add: true }),
-        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.0.254")), iface: None, ad: 1, add: true }),
+        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.0.254")), iface: None, ad: 1, metric: None, add: true }),
         e.apply(Action::IfAddr { dev: r1, iface: s("Gi0/0/0"), prefix: pf("10.0.0.254/24"), add: true }),
         e.apply(Action::IfAddr { dev: r1, iface: s("Gi0/0/1"), prefix: pf("10.0.1.254/24"), add: true }),
         e.apply(Action::IfUp { dev: r1, iface: s("Gi0/0/0"), up: true }),
         e.apply(Action::IfUp { dev: r1, iface: s("Gi0/0/1"), up: true }),
         e.apply(Action::IfAddr { dev: r2, iface: s("Gi0/0/0"), prefix: pf("10.0.1.1/24"), add: true }),
         e.apply(Action::IfUp { dev: r2, iface: s("Gi0/0/0"), up: true }),
-        e.apply(Action::Route { dev: r2, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.254")), iface: None, ad: 1, add: true }),
+        e.apply(Action::Route { dev: r2, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.254")), iface: None, ad: 1, metric: None, add: true }),
         e.apply(Action::StaticArp { dev: pc1, ip: ip("10.0.0.254"), mac: Some(port_mac(r1, 0)) }),
         e.apply(Action::StaticArp { dev: r1, ip: ip("10.0.0.1"), mac: Some(mac(pc1)) }),
         e.apply(Action::StaticArp { dev: r1, ip: ip("10.0.1.1"), mac: Some(port_mac(r2, 0)) }),
@@ -1108,9 +1108,9 @@ fn icmp_pmtu(t: &mut T) {
     let s = String::from;
     let ok = [
         e.apply(Action::IfAddr { dev: pc1, iface: s("eth0"), prefix: pf("10.0.1.10/24"), add: true }),
-        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, add: true }),
+        e.apply(Action::Route { dev: pc1, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.1.1")), iface: None, ad: 1, metric: None, add: true }),
         e.apply(Action::IfAddr { dev: pc2, iface: s("eth0"), prefix: pf("10.0.2.10/24"), add: true }),
-        e.apply(Action::Route { dev: pc2, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.2.1")), iface: None, ad: 1, add: true }),
+        e.apply(Action::Route { dev: pc2, prefix: pf("0.0.0.0/0"), via: Some(ip("10.0.2.1")), iface: None, ad: 1, metric: None, add: true }),
         e.apply(Action::IfAddr { dev: r1, iface: s("Gi0/0/0"), prefix: pf("10.0.1.1/24"), add: true }),
         e.apply(Action::IfAddr { dev: r1, iface: s("Gi0/0/1"), prefix: pf("10.0.2.1/24"), add: true }),
         e.apply(Action::IfUp { dev: r1, iface: s("Gi0/0/0"), up: true }),
