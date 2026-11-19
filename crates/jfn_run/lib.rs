@@ -31,12 +31,15 @@
 //   run_sweep_ctl(&plan, threads, &ctl) -> Option<Sweep>   run_sweep with SweepCtl: counts the runs,
 //                                    None when it was cancelled
 //   check_project(&project) -> (lines, errors)   what `check` finds, without printing it
+//   below_scenario(scenario, file)   where a scenario's own pcap / series step may write (below its
+//                                    folder), None for anywhere else
 //   check_course(dir) -> (lines, errors)   jfn-sim course: a course's folder (jfn_model::academy):
 //                                    the file, its lessons in every language with their pictures and
 //                                    links, its labs with `check`'s findings; a line per finding,
 //                                    errors are what keeps the course from being offered
 //   course_findings(dir, id, stop)   the same as records, for a folder not named after the course
-//                                    (stop: the installer's Abbrechen)
+//                                    (stop: the installer's Abbrechen); a file past the app's limits
+//                                    (academy::file_max) is not read and is an error
 //   generate(&args) -> i32           jfn-sim gen: a synthetic project (jfn_model::synth)
 //   rewind(&args) -> i32             jfn-sim rewind PROJECT [SECONDS] [--traffic K]: the
 //                                    keyframes of a run (K1) and how long restores take (times
@@ -45,11 +48,15 @@
 // Exit codes: 0 everything held, 1 an expectation failed, the project has errors or the report
 // differs from the golden file, 2 a file could not be read or the command line is wrong.  The
 // report goes to stdout and with --report to a file, byte for byte the same on every machine;
-// --golden compares it with a stored one (CR LF there counts as LF).  With the app's
-// PERMISSIONS (fs.user) the files must be named on the command line: a "pcap FILE" step of a
-// scenario writes only when FILE is granted that way, else use --pcap.  --series F writes the
-// time series as CSV to F, for the scenario's "series FILE" step or, without one, as if the
-// scenario ended with "series F".
+// --golden compares it with a stored one (CR LF there counts as LF).  A scenario's own "pcap
+// FILE" / "series FILE" step writes only below the scenario's folder: FILE is taken relative to
+// it, and one with a scheme, a drive, a root or ".." is refused (a scenario someone passed on
+// would otherwise write wherever PERMISSIONS lets the program write unasked, over a project or the
+// settings).  PERMISSIONS still decide below that folder (fs.user grants what the command line
+// names, not the folder around it: Dokumente/JFNetworker is writable, most other places are not).
+// Any other target goes on the command line, which grants it: --pcap F writes the capture to F,
+// --series F the time series as CSV, for the scenario's step or, without one, as if the scenario
+// ended with "series F".
 #![no_std]
 #![forbid(unsafe_code)]
 
@@ -140,8 +147,13 @@ fn lang_of(v: &str) -> Result<Lang, String> {
     Lang::parse(v).ok_or_else(|| format!("--lang nimmt de oder en, nicht {}.", v))
 }
 
-/// a text file (a UTF-8 byte order mark at the start is dropped, as editors write one)
+/// a text file (a UTF-8 byte order mark at the start is dropped, as editors write one); one past
+/// file_limits().bytes is not read at all (a file of several GB once went whole into memory first)
 fn read_text(path: &str) -> Result<String, String> {
+    let max = jfn_model::project::file_limits().bytes as u64;
+    if let Some(m) = plat::fs::stat(path).filter(|m| m.size > max) {
+        return Err(format!("{}: {}", path, jfn_model::project::too_large(m.size).text()));
+    }
     let b = plat::read_file(path).ok_or_else(|| format!("{} lässt sich nicht lesen.", path))?;
     let s = String::from_utf8(b).map_err(|_| format!("{} ist kein UTF-8-Text.", path))?;
     Ok(match s.strip_prefix('\u{feff}') {
@@ -152,6 +164,17 @@ fn read_text(path: &str) -> Result<String, String> {
 
 fn base_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// where a scenario's own "pcap FILE" / "series FILE" writes: FILE relative to the scenario's folder
+/// (the scenario's path as given; none: the working folder); None for a FILE with a scheme, a drive
+/// or any ':', a root, or ".." -- such a target only through --pcap / --series
+pub fn below_scenario(scenario: Option<&str>, file: &str) -> Option<String> {
+    if file.trim().is_empty() || file.contains(':') || file.starts_with(['/', '\\']) || file.split(['/', '\\']).any(|s| s == "..") {
+        return None;
+    }
+    let dir = scenario.and_then(|s| s.rfind(['/', '\\']).map(|k| &s[..=k])).unwrap_or("");
+    Some(format!("{}{}", dir, file))
 }
 
 fn load(path: &str) -> Result<Project, String> {
@@ -225,17 +248,17 @@ pub fn run(o: &Opts) -> i32 {
         complain(&format!("{} lässt sich nicht schreiben.\n", f));
         code = 2;
     }
-    if let Some((file, bytes)) = &out.pcap {
-        let target = o.pcap.as_deref().unwrap_or(file);
-        if !plat::write_file(target, bytes) {
-            complain(&format!("pcap: {} lässt sich nicht schreiben (mit --pcap auf der Befehlszeile nennen).\n", target));
+    // the command line's target, else the scenario's own below its folder (the top of this file)
+    let outputs: [(&str, Option<&str>, Option<(&String, &[u8])>); 2] = [("pcap", o.pcap.as_deref(), out.pcap.as_ref().map(|(f, b)| (f, b.as_slice()))), ("series", o.series.as_deref(), out.series.as_ref().map(|(f, c)| (f, c.as_bytes())))];
+    for (what, named, made) in outputs {
+        let Some((file, bytes)) = made else { continue };
+        let Some(target) = named.map(String::from).or_else(|| below_scenario(o.scenario.as_deref(), file)) else {
+            complain(&format!("{}: {} liegt nicht im Ordner des Szenarios; ein anderes Ziel nur mit --{} auf der Befehlszeile.\n", what, file, what));
             code = code.max(1);
-        }
-    }
-    if let Some((file, csv)) = &out.series {
-        let target = o.series.as_deref().unwrap_or(file);
-        if !plat::write_file(target, csv.as_bytes()) {
-            complain(&format!("series: {} lässt sich nicht schreiben (mit --series auf der Befehlszeile nennen).\n", target));
+            continue;
+        };
+        if !plat::write_file(&target, bytes) {
+            complain(&format!("{}: {} lässt sich nicht schreiben (mit --{} auf der Befehlszeile nennen).\n", what, target, what));
             code = code.max(1);
         }
     }
@@ -341,12 +364,19 @@ pub const LAB_DEVICES_MAX: usize = 2000;
 /// before it gets its name): the findings of the course, then per lab what `check` finds (its file, its
 /// lines, how many of them are errors).  It stops when `stop` says so (Abbrechen); each file is read once
 /// (100 000 steps on one 60 MB lab once held as many copies), each lab checked and let go on its own, a lab of
-/// more than LAB_DEVICES_MAX devices refused unbooted.
+/// more than LAB_DEVICES_MAX devices refused unbooted.  A file past academy::file_max is not read and keeps
+/// the course from being offered: the app would not read it either (a course.json of 1.5 MB was checked,
+/// installed, and then "fehlt"); a picture past it is a note, as a missing one is.
 pub fn course_findings(dir: &str, id: &str, stop: &dyn Fn() -> bool) -> (Vec<jfn_model::academy::Problem>, Vec<(String, Vec<String>, usize)>) {
-    use jfn_model::academy::{fault_issues, lab_issues, load, quiz_issues, safe_path, StepKind, COURSE_FILE, LANGS};
-    let read = |rel: &str| plat::read_file(&format!("{}/{}", dir, rel)).map(|b| String::from_utf8_lossy(&b).into_owned());
+    use jfn_model::academy::{fault_issues, lab_issues, load, picture_issues, quiz_issues, safe_path, StepKind, COURSE_FILE, LANGS};
+    let size = |rel: &str| plat::fs::stat(&format!("{}/{}", dir, rel)).map_or(0, |m| m.size);
     let exists = |rel: &str| plat::file_exists(&format!("{}/{}", dir, rel)) == 1;
-    let (course, mut found) = load(id, read(COURSE_FILE).as_deref(), &exists);
+    let mut big = Vec::new();
+    let text = course_file(dir, COURSE_FILE, &mut big);
+    // what load says, then why course.json was not read
+    let (course, mut found) = load(id, text.as_deref(), &exists);
+    drop(text);
+    found.append(&mut big);
     let mut labs: Vec<(String, Vec<String>, usize)> = Vec::new();
     // a file several steps of one kind name is read and checked once
     let mut seen: alloc::collections::BTreeSet<(u8, String)> = alloc::collections::BTreeSet::new();
@@ -369,13 +399,14 @@ pub fn course_findings(dir: &str, id: &str, stop: &dyn Fn() -> bool) -> (Vec<jfn
         match s.kind() {
             Some(StepKind::Lesson) => {
                 for lang in LANGS {
-                    if let (Some(md), Some(c)) = (read(&format!("{}/{}", lang, s.file)), &course) {
+                    if let (Some(md), Some(c)) = (course_file(dir, &format!("{}/{}", lang, s.file), &mut found), &course) {
                         found.extend(c.lesson_issues(&s.id, &md, &exists));
+                        found.extend(picture_issues(&s.id, &md, &size));
                     }
                 }
             }
             Some(k @ (StepKind::Lab | StepKind::Fault)) => {
-                if let Some(t) = read(&s.file) {
+                if let Some(t) = course_file(dir, &s.file, &mut found) {
                     found.extend(if k == StepKind::Lab { lab_issues(&s.id, &t) } else { fault_issues(&s.id, &t) });
                     if let Ok(p) = Project::from_text(&t) {
                         drop(t);
@@ -390,7 +421,7 @@ pub fn course_findings(dir: &str, id: &str, stop: &dyn Fn() -> bool) -> (Vec<jfn
                 }
             }
             Some(k @ (StepKind::Quiz | StepKind::Exam)) => {
-                if let Some(t) = read(&s.file) {
+                if let Some(t) = course_file(dir, &s.file, &mut found) {
                     found.extend(quiz_issues(&s.id, k, &t));
                 }
             }
@@ -398,6 +429,17 @@ pub fn course_findings(dir: &str, id: &str, stop: &dyn Fn() -> bool) -> (Vec<jfn
         }
     }
     (found, labs)
+}
+
+// a file of the course in folder `dir` as text, if it is there and within academy::file_max; one past
+// it is not read, and `found` says so
+fn course_file(dir: &str, rel: &str, found: &mut Vec<jfn_model::academy::Problem>) -> Option<String> {
+    let path = format!("{}/{}", dir, rel);
+    if let Some(m) = plat::fs::stat(&path).filter(|m| m.size > jfn_model::academy::file_max(rel)) {
+        found.push(jfn_model::academy::too_large(rel, m.size));
+        return None;
+    }
+    plat::read_file(&path).map(|b| String::from_utf8_lossy(&b).into_owned())
 }
 
 /// jfn-sim course DIR: the lines of check_course and a last line; 0: nothing keeps it from being offered

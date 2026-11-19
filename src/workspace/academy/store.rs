@@ -9,7 +9,8 @@
 //   lesson(dir, file, lang) -> (text, lang)   the lesson in that language, else in the other
 //   read_quiz(dir, file) -> text      a quiz's or test's file
 //   image(dir, addr) -> Option<bytes> a lesson's picture: only what jfn_model::academy::image_file allows
-//   read_progress(path) / write_progress(path, &progress)   missing or corrupt: empty
+//   read_progress(path) / write_progress(path, &progress) -> Saved   missing or corrupt: empty; a file that
+//                                     cannot be read is kept as progress.json.bak before it is written
 //
 // jfn_run::install installs into the same folders, install.rs lists them again; index.json and its checksums
 // are their business.  A folder whose name starts with a dot is not a course: the installer fills one and
@@ -25,10 +26,13 @@ use jfn_model::academy::{self, Course, Problem, Progress, COURSE_FILE, PROGRESS_
 /// its folders); a headless run's file
 const DATA: &str = "data://academy";
 const MEMORY: &str = "mem://jfn-academy/progress.json";
-/// the largest course.json, lesson and picture that are read (bytes)
-const COURSE_MAX: u64 = 1 << 20;
-const LESSON_MAX: u64 = 4 << 20;
-const IMAGE_MAX: u64 = 16 << 20;
+/// the largest course.json (and quiz), lesson and picture that are read: jfn_model's, which the installer's
+/// check and the index hold too
+const COURSE_MAX: u64 = academy::JSON_MAX;
+const LESSON_MAX: u64 = academy::LESSON_MAX;
+const IMAGE_MAX: u64 = academy::IMAGE_MAX;
+/// the names a learner's file that cannot be read is kept under (progress.json.bak, .bak2 ..): the first free one
+const KEEP_MAX: u32 = 9;
 /// the courses that are listed at most (the block of ids of their cards has room for them)
 const COURSES_MAX: usize = 512;
 
@@ -152,7 +156,32 @@ pub(crate) fn read_progress(path: &str) -> Progress {
     read_text(path, COURSE_MAX).map(|t| Progress::from_text(&t)).unwrap_or_default()
 }
 
-/// the learner's file -> it was written
-pub(crate) fn write_progress(path: &str, p: &Progress) -> bool {
-    plat::write_file(path, p.to_text().as_bytes())
+/// what writing the learner's file did
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Saved {
+    Written,
+    /// written; the file that was there could not be read (a newer version's, too large, corrupt, a read
+    /// error) and was kept under this name beside it
+    Kept(String),
+    /// not written (nor was such a file kept: it stays as it was)
+    Failed,
+}
+
+/// the learner's file -> what happened.  A file there that this program cannot read is never written over:
+/// it moves to the first free name of progress.json.bak, .bak2 .. first (a downgrade once lost a newer
+/// version's progress with the next step done); if that fails, nothing is written.
+pub(crate) fn write_progress(path: &str, p: &Progress) -> Saved {
+    let mut kept = None;
+    if plat::file_exists(path) != 0 && read_text(path, COURSE_MAX).and_then(|t| Progress::read(&t)).is_none() {
+        let free = (1..=KEEP_MAX).map(|k| if k == 1 { format!("{}.bak", path) } else { format!("{}.bak{}", path, k) }).find(|b| plat::file_exists(b) == 0);
+        match free {
+            Some(b) if plat::rename(path, &b) => kept = Some(b),
+            _ => return Saved::Failed,
+        }
+    }
+    match (plat::write_file(path, p.to_text().as_bytes()), kept) {
+        (false, _) => Saved::Failed,
+        (true, Some(b)) => Saved::Kept(b),
+        (true, None) => Saved::Written,
+    }
 }

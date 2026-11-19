@@ -5,7 +5,7 @@
 // collapsed group hides), the file (groups and the picture's bytes intact, an older file
 // without either, members that are gone dropped on reading), the picture (its formats, the
 // limits, decoding the fixture, its place in a view), the steps of doc/groups.rs with undo and
-// redo (the bytes shared), the canvas' scene (frames around their members with room for their
+// redo (the bytes shared), Delete with the picture selected (one step), the canvas' scene (frames around their members with room for their
 // names, an expanded group changes no cable, clusters at the middle of their members, one line
 // per pair of ends and kind with the worst of their LEDs, a single cable keeps its key, cables
 // inside a cluster hidden, nested groups, labels, what a drag moves, reveal), the colours of
@@ -355,6 +355,22 @@ fn steps(t: &mut T) {
     t.check("out", dgroups::set_bg(&mut doc, "Hintergrund entfernen", None) && doc.proj.background.is_none());
     t.check("undo: the same bytes", doc.undo() && doc.proj.background.as_ref().is_some_and(|b| Arc::ptr_eq(&b.data, &data)));
     t.check("the simulator knows nothing of it", doc.sim.errors.is_empty() && doc.proj.devices.len() == 6);
+    // Delete with the picture selected (Löschen was active and did nothing): it goes as Hintergrund entfernen
+    // would, one step with whatever else is selected
+    use crate::workspace::canvas::{delete_selected, paint::BG_KEY};
+    let (p, i) = project();
+    let mut n = crate::app::Net::new();
+    n.doc.replace(p, None);
+    dgroups::set_bg(&mut n.doc, "Hintergrundbild einfügen", Background::new("bg_plan.png", PLAN.to_vec(), 160, 120).ok());
+    let before = n.doc.hist.len();
+    n.canvas.st.sel = [BG_KEY].into_iter().collect();
+    delete_selected(&mut n);
+    t.check("Delete: the picture alone goes", n.doc.proj.background.is_none() && n.canvas.st.sel.is_empty() && n.doc.proj.devices.len() == 6);
+    t.check("  one step, undone", n.doc.hist.len() == before + 1 && n.doc.undo() && n.doc.proj.background.is_some());
+    n.canvas.st.sel = [BG_KEY, i.pc2 as u64].into_iter().collect();
+    delete_selected(&mut n);
+    t.check("Delete: the picture with a device", n.doc.proj.background.is_none() && n.doc.proj.device(i.pc2).is_none());
+    t.check("  one step brings both back", n.doc.hist.len() == before + 1 && n.doc.undo() && n.doc.proj.background.is_some() && n.doc.proj.device(i.pc2).is_some());
 }
 
 // ---------------------------------------------------------------- the canvas' scene

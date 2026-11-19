@@ -1,7 +1,9 @@
 // academytest -- checks of the Akademie without a window (part of --selftest, group "academy"): the
 // files (a good course and index, a newer version, the wrong format, a bad path, a lesson missing in one
 // language, an unknown step kind, what a lesson refers to), the progress (a round trip, a corrupt file,
-// another course version), step order and state, where a run looks for its files, what the page reads and
+// another course version, a file it cannot read kept beside the new one), the limits of a course's files
+// (the app's, jfn-sim course's and the index's the same), step order and state, where a run looks for its
+// files, what the page reads and
 // what it refuses; and every course below --academy-dir (tests/model.uis names academy):
 // its files, both languages, its labs with jfn-sim check's findings, unsolved and solved.
 
@@ -17,7 +19,7 @@ use ui::MdViewState;
 
 use crate::doc::sim::Sim;
 use crate::selftest::T;
-use crate::workspace::academy::store::{self, Place};
+use crate::workspace::academy::store::{self, Place, Saved};
 use crate::workspace::academy::{Academy, Card};
 
 const COURSE: &str = r#"{
@@ -315,10 +317,39 @@ fn progress_t(t: &mut T) {
     // through its file; the test's own folder, never the user's
     let path = "mem://jfn-selftest/academy/progress.json";
     t.eq("no file yet", store::read_progress(path).courses.len(), 0);
-    t.check("written", store::write_progress(path, &q));
+    t.eq("written", store::write_progress(path, &q), Saved::Written);
     t.check("read back", store::read_progress(path).is_done("l", "x"));
     plat::write_file(path, b"{ \"format\": kaputt");
     t.eq("a corrupt file", store::read_progress(path).courses.len(), 0);
+    // a file it cannot read is kept beside it, never written over (a downgrade once lost a newer version's
+    // progress with the next step done)
+    let bak = |k: u32| if k == 1 { format!("{}.bak", path) } else { format!("{}.bak{}", path, k) };
+    t.eq("a corrupt file is kept, not written over", store::write_progress(path, &q), Saved::Kept(bak(1)));
+    t.eq("  as it was", plat::read_file(&bak(1)).as_deref(), Some(&b"{ \"format\": kaputt"[..]));
+    t.check("  the new file reads", store::read_progress(path).is_done("l", "x"));
+    t.eq("a file it reads is written over", store::write_progress(path, &q), Saved::Written);
+    let newer = br#"{"format": "jfn-progress", "version": 2, "courses": {"k": {"steps": {"a": {"state": "done"}}}}}"#;
+    t.check("Progress::read: a newer version is none, a file of this one is some", Progress::read(core::str::from_utf8(newer).unwrap_or("")).is_none() && Progress::read(&q.to_text()).is_some());
+    plat::write_file(path, newer);
+    t.eq("a newer version's file: the next free name", store::write_progress(path, &q), Saved::Kept(bak(2)));
+    t.eq("  as it was", plat::read_file(&bak(2)).as_deref(), Some(&newer[..]));
+    t.eq("  the first one stays", plat::read_file(&bak(1)).as_deref(), Some(&b"{ \"format\": kaputt"[..]));
+    plat::write_file(path, &alloc::vec![b' '; JSON_MAX as usize + 1]);
+    t.eq("one too large to read", store::write_progress(path, &q), Saved::Kept(bak(3)));
+    for k in 4..=9 {
+        plat::write_file(&bak(k), b"x");
+    }
+    plat::write_file(path, newer);
+    t.eq("no free name left: not written", store::write_progress(path, &q), Saved::Failed);
+    t.eq("  the file stays", plat::read_file(path).as_deref(), Some(&newer[..]));
+    // the info bar names the file it kept
+    let mut n = crate::app::Net::new();
+    crate::workspace::academy::saved(&mut n, Saved::Kept(bak(1)));
+    t.check("the info bar names the kept file", n.file.msg.as_ref().is_some_and(|m| m.0 == ui::IB_WARNING && m.2.contains("progress.json.bak")));
+    for k in 1..=9 {
+        plat::delete(&bak(k));
+    }
+    plat::delete(path);
 }
 
 fn order_t(t: &mut T) {

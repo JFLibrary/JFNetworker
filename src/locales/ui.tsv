@@ -2034,6 +2034,8 @@ Erfahrene	Advanced
 {} Min.	{} min
 Der Link „{}“ geht nicht auf	The link “{}” does not open
 Der Fortschritt wurde nicht gespeichert	The progress was not saved
+Die bisherige Fortschrittsdatei ließ sich nicht lesen	The previous progress file could not be read
+Sie stammt vielleicht von einer neueren Version des Programms oder ist beschädigt. Sie liegt unverändert als {} daneben; der Fortschritt wird ab jetzt neu gespeichert.	It may come from a newer version of the program or be damaged. It lies unchanged beside it as {}; progress is saved anew from now on.
 Kursübersicht	Course overview
 Alle Kurse	All courses
 Zurück zum Labor	Back to the lab
@@ -2251,6 +2253,12 @@ Was schon angekommen ist, bleibt, und beim nächsten Mal geht es dort weiter. Wa
 Die Kursliste ist geladen	The course list is loaded
 Sie nennt {} Kurse, davon {} noch nicht installiert.	It names {} courses, {} of them not installed yet.
 Alles aus der Kursliste ist schon da.	Everything on the course list is here already.
+Die {} Kurse der Kursliste sind zusammen {} groß; auf einmal installiert das Programm höchstens {}. Einzelne Kurse lassen sich unter Verfügbar installieren.	The {} courses of the course list come to {} together; the program installs at most {} at once. Single courses can be installed under Available.
+Kurse installieren?	Install the courses?
+Ein Kurs mit {} wird von {} geladen und installiert.	One course of {} is downloaded from {} and installed.
+{} Kurse mit zusammen {} werden von {} geladen und installiert.	{} courses of {} together are downloaded from {} and installed.
+{} weitere	{} more
+Installieren	Install
 Nichts zu installieren	Nothing to install
 Der Kurs steht unter Meine Kurse.	The course is under My courses.
 „{}“ ist installiert	“{}” is installed

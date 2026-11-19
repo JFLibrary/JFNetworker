@@ -9,7 +9,8 @@
 //   canvas.reset(&project)      after open / new: no selection, the saved view (or fit)
 //   canvas.store_view(&mut p)   the view into the project's layout (before saving)
 //   canvas.open_rename(p, id)   the flyout under a device (its name) or a note (its text)
-//   select_all / delete_selection / zoom(n, k)    the commands of the menus
+//   select_all / delete_selection / zoom(n, k)    the commands of the menus (delete_selected: the
+//                               same without the window)
 //
 // Diagram keys are the project's ids (devices, links and notes share the id counter; ports
 // have keys of their own, paint::port_key).  A drag moves the project's positions live and
@@ -26,7 +27,8 @@
 // groups.rs (G1): the groups' frames and clusters, the lines of a collapsed group's cables,
 // Gruppieren / Gruppierung aufheben / zuklappen / aufklappen; a drag of a frame or cluster
 // moves everything below it, Delete on a group ungroups it (its members stay), F2 renames it.
-// backdrop.rs (G1): the background picture under the grid, its drag and handle while unlocked.
+// backdrop.rs (G1): the background picture under the grid, its drag and handle while unlocked;
+// Delete removes it while it is selected (as Hintergrund entfernen, one step with the rest).
 // labels.rs (H3): slim texts; a double click on free canvas opens their input there, a double
 // click on one (or Enter, F2) edits it in place.
 
@@ -503,11 +505,21 @@ fn move_items(n: &mut Net, keys: &[u64], total: [f32; 2], done: bool) {
 }
 
 /// delete the selected devices (with their links) and notes; a selected group goes, its
-/// members stay (G1: one step with the rest)
+/// members stay; the selected background picture goes as Hintergrund entfernen would (G1: one
+/// step with the rest)
 pub(crate) fn delete_selection(n: &mut Net, ui: &mut Ui) {
+    delete_selected(n);
+    ui.repass();
+}
+
+/// delete_selection without the window (the selftest)
+pub(crate) fn delete_selected(n: &mut Net) {
     let ids = n.canvas.selected();
     let gids = groups::selected_groups(n);
-    if !gids.is_empty() {
+    // (only an unlocked picture can be selected; Delete once did nothing with it alone)
+    let bg = n.canvas.st.sel.contains(&paint::BG_KEY) && n.doc.proj.background.is_some();
+    let group = !gids.is_empty() || bg;
+    if group {
         n.doc.hist.group_begin("Löschen");
     }
     if let Some(e) = edits::delete(&n.doc.proj, &ids) {
@@ -522,11 +534,15 @@ pub(crate) fn delete_selection(n: &mut Net, ui: &mut Ui) {
             }
             Ok(())
         });
+    }
+    if bg {
+        backdrop::remove(n);
+    }
+    if group {
         n.doc.hist.group_end();
     }
     n.canvas.st.sel.clear();
     n.canvas.st.focus = 0;
-    ui.repass();
 }
 
 /// the ids of every device, cable, note and group

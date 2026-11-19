@@ -1,7 +1,9 @@
 // installtest -- checks of installing courses without a window (part of --selftest, group "install"): the list
-// and each refusal with its exact message, a fake source that fails half way, cancels and resumes, an update that
-// fails and keeps the old course, what a crash leaves, uninstalling with the progress kept, versions, the setting, a
-// folder as the source, the list of courses after a change; and with --academy-dir (tests/model.uis names
+// and each refusal with its exact message, the limits of a course's files (the app's, jfn-sim course's and the
+// index's alike), a fake source that fails half way, cancels and resumes, an update that fails and keeps the old
+// course, what a crash leaves (settled only under the lock), uninstalling with the progress kept, versions, what
+// Jetzt installieren asks, the setting, a folder as the source, the list of courses after a change; and with
+// --academy-dir (tests/model.uis names
 // academy) every file against index.json, every course as jfn-sim course sees it, the sample
 // course from its folder end to end.  Everything is written to mem://, nothing touches the network: the only
 // connection tried goes to a host no rule names, which is refused before it starts.  The real HTTP path is
@@ -18,7 +20,7 @@ use jfn_run::install::{self, Counters, Failure, Folder, Kind, Phase, Source, Web
 
 use crate::app::prefs::Prefs;
 use crate::selftest::T;
-use crate::workspace::academy::install::{failure_text, first_install_of, size_text, ASK_REASON};
+use crate::workspace::academy::install::{failure_text, first_install_of, first_offer, first_question, size_text, First, ASK_REASON};
 use crate::workspace::academy::store;
 use crate::workspace::academy::{Academy, LabStep, View};
 
@@ -408,7 +410,12 @@ fn resume_t(t: &mut T) {
     plat::write_file(&format!("{}/.alt.part/a", root), b"x");
     plat::write_file(&format!("{}/.k.part/a", root), b"x");
     let list = Index { format: s(INDEX_FORMAT), version: 1, courses: alloc::vec![e.clone()] };
-    install::forget_parts(&root, &list);
+    // only under the lock: another window's installation may be filling that part
+    let lock = plat::FileLock::acquire(&format!("{}/.install-lock", root));
+    t.check("forget_parts while another installation runs: it waits", lock.is_some() && !install::forget_parts(&root, &list));
+    t.eq("  nothing touched", names(&root), alloc::vec![s(".alt.part"), s(".k.part")]);
+    drop(lock);
+    t.check("forget_parts", install::forget_parts(&root, &list));
     t.eq("forget_parts: what the list does not name", names(&root), alloc::vec![s(".k.part")]);
 }
 
@@ -463,8 +470,18 @@ fn update_t(t: &mut T) {
     plat::write_file(&format!("{}/.c.trash/x/y", root), b"weg");
     plat::write_file(&format!("{}/.d.part/x", root), b"bleibt");
     plat::write_file(&format!("{}/.e.other/x", root), b"nicht von hier");
-    install::recover(&root);
+    // only under the lock: another window may stand between the renames of its place
+    let before = names(&root);
+    let lock = plat::FileLock::acquire(&format!("{}/.install-lock", root));
+    t.check("recover while another installation runs: it waits", lock.is_some() && !install::recover(&root));
+    t.eq("  nothing touched", names(&root), before);
+    drop(lock);
+    t.check("recover", install::recover(&root));
     t.eq("a crash: what is settled", names(&root), alloc::vec![s(".d.part"), s(".e.other"), s("a"), s("b")]);
+    // nothing to settle: no lock file is made (a folder that never saw an installation stays as it is)
+    let quiet = fresh(t, "quiet");
+    plat::write_file(&format!("{}/k/course.json", quiet), b"x");
+    t.check("recover with nothing to do", install::recover(&quiet) && plat::file_exists(&format!("{}/.install-lock", quiet)) == 0);
     t.eq("  an old version without its new one comes back", text(&format!("{}/a/course.json", root)), s("a"));
     t.eq("  an old version beside its new one goes", text(&format!("{}/b/course.json", root)), s("neu"));
 
@@ -486,7 +503,7 @@ fn uninstall_t(t: &mut T) {
     let mut p = Progress::default();
     p.mark_done("k", "a", 1000);
     p.record("k", "a", 80, 1000);
-    t.check("the learner's file", store::write_progress(&progress_file, &p));
+    t.eq("the learner's file", store::write_progress(&progress_file, &p), store::Saved::Written);
     t.eq("it goes out", said(&install::uninstall(&root, "k")), None);
     t.eq("  only the progress stays", names(&root), alloc::vec![s("progress.json")]);
     let kept = store::read_progress(&progress_file);
@@ -556,6 +573,23 @@ fn words_t(t: &mut T) {
     t.eq("  all here", first_install_of(&list, &[(s("a"), 1), (s("b"), 2)]), Vec::<String>::new());
     let only = Index { format: s(INDEX_FORMAT), version: 1, courses: alloc::vec![sample] };
     t.eq("  a list with only samples: its samples", first_install_of(&only, &[]), alloc::vec![s("beispiel")]);
+    // Jetzt installieren asks first, with how many and how large; past ALL_BYTES_MAX it takes nothing at once
+    let bytes = list.courses[0].total() + list.courses[1].total();
+    t.eq("a first install asks: the courses, their bytes", first_offer(&list, &[]), First::Ask { list: list.courses[..2].to_vec(), bytes });
+    t.eq("  nothing to ask", first_offer(&list, &[(s("a"), 1), (s("b"), 2)]), First::Nothing);
+    t.eq("  the question", first_question(2, bytes), format!("2 Kurse mit zusammen {} werden von raw.githubusercontent.com geladen und installiert.", size_text(bytes)));
+    t.eq("  one course", first_question(1, 2048), s("Ein Kurs mit 2 KB wird von raw.githubusercontent.com geladen und installiert."));
+    // three courses of 420 MiB (seven labs of 60 MiB): each within a course's limits, together past what goes at once
+    let big = |id: &str| {
+        let (mut c, _) = good(id, 1);
+        c.files.extend((0..7).map(|k| FileEntry { path: format!("labs/x{}.jfnet", k), size: 60 << 20, sha256: "c".repeat(64) }));
+        c
+    };
+    let huge = Index { format: s(INDEX_FORMAT), version: 1, courses: alloc::vec![big("a"), big("b"), big("c")] };
+    t.check("  each course within its limits", huge.issues().iter().all(|p| !p.fatal));
+    let total = huge.courses.iter().fold(0u64, |a, c| a + c.total());
+    t.eq("  1.2 GB at once: refused, with how many and how large", first_offer(&huge, &[]), First::TooLarge { count: 3, bytes: total });
+    t.check("  two of them would go", matches!(first_offer(&huge, &[(s("c"), 1)]), First::Ask { ref list, .. } if list.len() == 2));
 
     // every failure has its words and says what to do, each its own
     let kinds = [Kind::Address, Kind::Offline, Kind::Interrupted, Kind::Denied, Kind::OtherHost, Kind::Tls, Kind::Missing, Kind::BadIndex, Kind::Checksum, Kind::TooLarge, Kind::BadCourse, Kind::Disk, Kind::Busy, Kind::Cancelled];
@@ -794,9 +828,69 @@ fn repo_t(t: &mut T, root: &str) {
     t.eq("  and uninstalled", said(&install::uninstall(&target, "beispiel")), None);
 }
 
+// ---------------------------------------------------------------- the limits of a course's files
+
+// a list with one course k of these files (path, size)
+fn sized(files: &[(&str, u64)]) -> Vec<u8> {
+    let list: Vec<String> = files.iter().map(|(p, n)| format!(r#"{{"path": "{}", "size": {}, "sha256": "{}"}}"#, p, n, "b".repeat(64))).collect();
+    format!(r#"{{"format": "jfn-academy", "version": 1, "courses": [{{"id": "k", "title": ["K", "K"], "version": 1, "files": [{}]}}]}}"#, list.join(", ")).into_bytes()
+}
+
+// what the app reads of a course at most is what jfn-sim course and the index allow: a course.json of 1.5 MB
+// was checked, installed, and then "course.json fehlt" in the app
+fn limits_t(t: &mut T) {
+    t.eq("file_max by kind", [file_max("course.json"), file_max("quiz/a.json"), file_max("de/a.md"), file_max("img/x.PNG"), file_max("labs/a.jfnet"), file_max("x.bin")], [JSON_MAX, JSON_MAX, LESSON_MAX, IMAGE_MAX, FILE_MAX, FILE_MAX]);
+    t.eq("a lab may be what a project may be", FILE_MAX, jfn_model::project::file_limits().bytes as u64);
+    let over = |p: &str, n: u64| Some((Kind::TooLarge, format!("Kurs k: die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.", p, n, file_max(p))));
+    t.eq("the index: a course.json the app would not read", index_said(install::parse_index(&sized(&[("course.json", JSON_MAX + 1)]))), over("course.json", JSON_MAX + 1));
+    t.eq("  a quiz", index_said(install::parse_index(&sized(&[("course.json", 9), ("quiz/q.json", JSON_MAX + 1)]))), over("quiz/q.json", JSON_MAX + 1));
+    t.eq("  a lesson", index_said(install::parse_index(&sized(&[("course.json", 9), ("de/a.md", LESSON_MAX + 1)]))), over("de/a.md", LESSON_MAX + 1));
+    t.eq("  a picture", index_said(install::parse_index(&sized(&[("course.json", 9), ("img/a.png", IMAGE_MAX + 1)]))), over("img/a.png", IMAGE_MAX + 1));
+    t.check("  each at its limit is fine", install::parse_index(&sized(&[("course.json", JSON_MAX), ("de/a.md", LESSON_MAX), ("img/a.png", IMAGE_MAX), ("labs/a.jfnet", FILE_MAX)])).is_ok());
+    // jfn-sim course and the installer's check: the file is not read, the course is not offered
+    let root = fresh(t, "limits-files");
+    let dir = format!("{}/k", root);
+    let padded = format!("{}{}", course_text(1, "a.md"), " ".repeat(JSON_MAX as usize + 1 - course_text(1, "a.md").len()));
+    plat::write_file(&format!("{}/course.json", dir), padded.as_bytes());
+    plat::write_file(&format!("{}/de/a.md", dir), b"Lektion\n");
+    plat::write_file(&format!("{}/en/a.md", dir), b"Lesson\n");
+    let (lines, errors) = jfn_run::check_course(&dir);
+    t.check("jfn-sim course: a course.json too large is an error", errors > 0 && lines.iter().any(|l| l == &format!("Fehler: Die Datei course.json ist mit {} Bytes größer als die erlaubten {} Bytes.\n", JSON_MAX + 1, JSON_MAX)));
+    t.check("  the app does not offer it either", store::entry(&root, "k").usable().is_none());
+    plat::write_file(&format!("{}/course.json", dir), course_text(1, "a.md").as_bytes());
+    t.eq("  within it: fine", jfn_run::check_course(&dir).1, 0);
+    plat::write_file(&format!("{}/de/a.md", dir), &alloc::vec![b'x'; LESSON_MAX as usize + 1]);
+    let (lines, errors) = jfn_run::check_course(&dir);
+    t.check("a lesson too large is an error", errors > 0 && lines.iter().any(|l| l.starts_with("Fehler: Die Datei de/a.md ist mit")));
+    t.eq("  the app does not read it either", store::lesson(&dir, "a.md", "de").map(|x| x.1), Some("en"));
+    // a picture: a note, as a missing one is (the app shows neither)
+    plat::write_file(&format!("{}/de/a.md", dir), b"Lektion\n\n![Plan](img/plan.png)\n");
+    plat::write_file(&format!("{}/img/plan.png", dir), &alloc::vec![0u8; IMAGE_MAX as usize + 1]);
+    let (lines, errors) = jfn_run::check_course(&dir);
+    t.check("a picture too large is a note", errors == 0 && lines.iter().any(|l| l == &format!("Hinweis: Schritt a: das Bild img/plan.png ist mit {} Bytes größer als die erlaubten {} Bytes.\n", IMAGE_MAX + 1, IMAGE_MAX)));
+    t.eq("  the app does not read it either", store::image(&dir, &format!("{}/img/plan.png", dir)), None);
+    plat::write_file(&format!("{}/img/plan.png", dir), b"klein");
+    t.eq("  a small one: no note", jfn_run::check_course(&dir).0.iter().filter(|l| l.contains("img/plan.png")).count(), 0);
+    let _ = remove_below(&root);
+}
+
+// a folder below mem:// with everything in it
+fn remove_below(dir: &str) -> bool {
+    for e in plat::fs::read_dir(dir).unwrap_or_default() {
+        let p = format!("{}/{}", dir, e.name);
+        if e.kind == plat::fs::FileKind::Dir {
+            remove_below(&p);
+        } else {
+            plat::delete(&p);
+        }
+    }
+    plat::delete(dir)
+}
+
 /// the group's checks
 pub(crate) fn run(t: &mut T) {
     index_t(t);
+    limits_t(t);
     install_t(t);
     resume_t(t);
     update_t(t);

@@ -28,7 +28,8 @@
 // about unsaved changes (After::CourseLab) and replaces the project.  A lesson is done when the learner
 // goes on from it with Weiter; a lab when all its goals are reached, and going on without that leaves it
 // open.  Progress is written at once to its own file (store.rs), never into the project and without an
-// undo step; it goes by ids, so a new version of a course keeps it.
+// undo step; it goes by ids, so a new version of a course keeps it.  A file there that this program cannot
+// read (a newer version's, say) is never written over: it is kept beside it, and the info bar names it.
 //
 // A quiz or a test is a page of its own (quiz.rs); what this session knows of it stays while other pages show.
 // A fault hunt is a lab whose project is broken (Lab::start_faults, Lab::lock) and that grades: handing it
@@ -63,7 +64,7 @@ use crate::app::constants::*;
 use crate::app::tr::{self, t, tf};
 use crate::app::Net;
 use crate::doc::file::{self, After};
-use store::{Entry, Place};
+use store::{Entry, Place, Saved};
 
 /// what the page shows
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,10 +282,10 @@ impl Academy {
         self.ids(course, step).and_then(|(c, s)| self.progress.best_of(&c, &s))
     }
 
-    /// an attempt was handed in: its result, done when it passed; at once in its file (false: it could not
-    /// be written)
-    pub(crate) fn result(&mut self, course: usize, step: usize, percent: u32, passed: bool) -> bool {
-        let Some((c, s)) = self.ids(course, step) else { return true };
+    /// an attempt was handed in: its result, done when it passed; at once in its file (store::Saved: written,
+    /// written with an unreadable old file kept, not written)
+    pub(crate) fn result(&mut self, course: usize, step: usize, percent: u32, passed: bool) -> Saved {
+        let Some((c, s)) = self.ids(course, step) else { return Saved::Written };
         let when = plat::unix_time_ns() / 1_000_000_000;
         self.progress.record(&c, &s, percent, when);
         if passed {
@@ -294,22 +295,25 @@ impl Academy {
     }
 
     /// practice reached this: kept if it is the most so far, done when it passes
-    pub(crate) fn note(&mut self, course: usize, step: usize, percent: u32, passed: bool) -> bool {
-        let Some((c, s)) = self.ids(course, step) else { return true };
+    pub(crate) fn note(&mut self, course: usize, step: usize, percent: u32, passed: bool) -> Saved {
+        let Some((c, s)) = self.ids(course, step) else { return Saved::Written };
         let mut changed = self.progress.note_best(&c, &s, percent);
         if passed {
             changed |= self.progress.mark_done(&c, &s, plat::unix_time_ns() / 1_000_000_000);
         }
-        !changed || store::write_progress(&self.place.progress, &self.progress)
+        if !changed {
+            return Saved::Written;
+        }
+        store::write_progress(&self.place.progress, &self.progress)
     }
 
-    // a step is done: at once in its file (false: it could not be written)
-    fn mark_done(&mut self, course: usize, step: usize) -> bool {
-        let Some(e) = self.entries.get(course) else { return true };
-        let Some(s) = e.course.as_ref().and_then(|c| c.step_at(step)) else { return true };
+    // a step is done: at once in its file
+    pub(crate) fn mark_done(&mut self, course: usize, step: usize) -> Saved {
+        let Some(e) = self.entries.get(course) else { return Saved::Written };
+        let Some(s) = e.course.as_ref().and_then(|c| c.step_at(step)) else { return Saved::Written };
         let when = plat::unix_time_ns() / 1_000_000_000;
         if !self.progress.mark_done(&e.id, &s.id, when) {
-            return true;
+            return Saved::Written;
         }
         store::write_progress(&self.place.progress, &self.progress)
     }
@@ -502,10 +506,13 @@ pub(crate) fn follow_link(n: &mut Net, ui: &mut Ui, target: &str) {
     }
 }
 
-// the learner's file could not be written: said once per attempt, what was done still counts in memory
-pub(crate) fn saved(n: &mut Net, ok: bool) {
-    if !ok {
-        n.file.msg = Some((IB_WARNING, String::from(t("Der Fortschritt wurde nicht gespeichert")), String::from(t("Die Datei ließ sich nicht schreiben."))));
+// the learner's file could not be written: said once per attempt, what was done still counts in memory; a file
+// that could not be read was kept beside it: said with its name
+pub(crate) fn saved(n: &mut Net, s: Saved) {
+    match s {
+        Saved::Written => {}
+        Saved::Kept(name) => n.file.msg = Some((IB_WARNING, String::from(t("Die bisherige Fortschrittsdatei ließ sich nicht lesen")), tf("Sie stammt vielleicht von einer neueren Version des Programms oder ist beschädigt. Sie liegt unverändert als {} daneben; der Fortschritt wird ab jetzt neu gespeichert.", &[file::base_name(&name)]))),
+        Saved::Failed => n.file.msg = Some((IB_WARNING, String::from(t("Der Fortschritt wurde nicht gespeichert")), String::from(t("Die Datei ließ sich nicht schreiben.")))),
     }
 }
 
@@ -571,7 +578,7 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32, arg: u32) -> bool {
                 _ => return true,
             };
             let cur = n.academy.cur;
-            let ok = !lesson || n.academy.mark_done(cur, i);
+            let ok = if lesson { n.academy.mark_done(cur, i) } else { Saved::Written };
             let next = n.academy.next_after(i);
             match next {
                 Some(k) => open_step(n, ui, k),

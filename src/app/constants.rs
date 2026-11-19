@@ -793,11 +793,12 @@ pub(crate) const ID_QZ_Q: u32 = 0x0002_3900;
 pub(crate) const QZ_SLOTS: u32 = 28;
 
 // ---- AK3: installing courses (commands 1020 .. 1039, widgets 0x0002_4000 .. 0x0002_47FF, timers 0x1D1 .. 0x1D3;
-// 1031 .. 1038 and 0x1D2, 0x1D3 are not used)
+// 1035 .. 1038 and 0x1D2, 0x1D3 are not used; 1031 .. 1033 are docs.rs')
 /// Nach Kursen suchen; Jetzt installieren of the empty list; a course of the list (arg: its place in the list);
 /// Aktualisieren (arg: the place of the course); the question before uninstalling (arg: the same), its answer;
 /// Aus Ordner installieren, the folder chosen, back to the server's list; Abbrechen; a web link after its
-/// question; `cmd 1039 N` lets N files through the gate of a script (install.rs)
+/// question; `cmd 1039 N` lets N files through the gate of a script; the answer to the question before a first
+/// install (install.rs)
 pub(crate) const CMD_AI_SEARCH: u32 = 1020;
 pub(crate) const CMD_AI_ALL: u32 = 1021;
 pub(crate) const CMD_AI_GET: u32 = 1022;
@@ -810,6 +811,7 @@ pub(crate) const CMD_AI_FOLDER_CLOSE: u32 = 1028;
 pub(crate) const CMD_AI_CANCEL: u32 = 1029;
 pub(crate) const CMD_AI_LINK: u32 = 1030;
 pub(crate) const CMD_AI_GATE: u32 = 1039;
+pub(crate) const CMD_AI_ALL_GO: u32 = 1034;
 /// what a worker has done moves
 pub(crate) const TIMER_AI_JOB: u32 = 0x1D1;
 /// the page's buttons, the worker's Abbrechen and bar, the way there on the start page, the two questions, the
@@ -832,6 +834,8 @@ pub(crate) const ID_AI_GET: u32 = 0x0002_4500;
 pub(crate) const ID_AI_NOTE_CLOSE: u32 = 0x0002_4007;
 /// the question before leaving with a test under way (quiz.rs)
 pub(crate) const ID_AI_QUIT_DLG: u32 = 0x0002_4040;
+/// the question before a first install: how many courses, how large together
+pub(crate) const ID_AI_ALL_DLG: u32 = 0x0002_4060;
 /// Aufgabe erstellen: a new diagnosis, its cause, Diagnose hinzufügen (workspace/author.rs)
 pub(crate) const ID_AI_DIAG_NEW: u32 = 0x0002_4050;
 pub(crate) const ID_AI_DIAG_ADD: u32 = 0x0002_4051;

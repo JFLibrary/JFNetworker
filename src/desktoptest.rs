@@ -2,8 +2,9 @@
 // processes of jfn_sim/procs.rs against ps (a background job, its PID and command, killable, a
 // service that is not, the job gone after kill), the CPU time per second against the web
 // server's own numbers, the Dateimanager's names, copies and moves on a store (devwin/
-// filemgr.rs), the editor's paths, which window draws the console (devwin/desktop.rs), and the
-// labels' contrast on every background of the desktop in both themes
+// filemgr.rs), the editor's paths, which window draws the console (devwin/desktop.rs), the
+// labels' contrast on every background of the desktop in both themes, and how many desktops of
+// closed device windows are kept (devwin/mod.rs)
 //
 // The project is tests/fixtures/shell_tour.jfnet: PC1 (10.0.0.1), SRV1 (10.0.0.10, a web
 // server "web"), SW1, R1.
@@ -58,6 +59,23 @@ pub(crate) fn run(t: &mut T) {
     files_t(t);
     console_t(t);
     contrast_t(t);
+    kept_t(t);
+}
+
+// the desktops of closed device windows: at most KEPT_MAX, the one closed longest ago goes first, an older one
+// of the same device goes for the new one (every closed window once kept its desktop with a browser's picture
+// cache, history and page scripts, without a limit)
+fn kept_t(t: &mut T) {
+    use crate::workspace::devwin::{DevWins, KEPT_MAX};
+    let mut w = DevWins::new();
+    let last = KEPT_MAX as u32 + 2;
+    let gone: Vec<u32> = (1..=last).filter_map(|dev| w.keep(Desk::new(dev)).map(|d| d.dev)).collect();
+    t.eq("kept: the two closed longest ago went", gone, alloc::vec![1, 2]);
+    t.check("kept: not kept any more", w.desk_of(1).is_none() && w.desk_of(2).is_none());
+    t.eq("kept: KEPT_MAX others", (1..=last).filter(|&d| w.desk_of(d).is_some()).count(), KEPT_MAX);
+    t.eq("kept: the same device again takes its older desktop's place", w.keep(Desk::new(5)).map(|d| d.dev), Some(5));
+    t.eq("kept: still KEPT_MAX", (1..=last).filter(|&d| w.desk_of(d).is_some()).count(), KEPT_MAX);
+    t.eq("kept: then the oldest goes, not the one closed again", w.keep(Desk::new(99)).map(|d| d.dev), Some(3));
 }
 
 // the processes as ps shows them, a background job ended with kill

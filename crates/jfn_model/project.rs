@@ -10,14 +10,18 @@
 //   suggest_ports_for(a, b, kind)                 the same for a cable the user chose: only pairs
 //                                                 it fits, the fastest first
 //   ports / free_ports / link_at / find / model_of / bounds
+//   max_id() / free_id()                          the largest id in use, the one a new thing gets
 //   check() -> Vec<Issue>                         consistency (names, ports, cables, ids)
-//   to_text() / from_text(text)                   the .jfnet file: indented JSON
+//   to_text() / from_text(text)                   the .jfnet file: indented JSON; a file with an id past
+//                                                 ID_MAX or the same id twice is refused
+//   file_limits() / too_large(size)               what a file may hold, why a larger one is not read
 //   ProjErr::msg(), Issue::msg, LoadErr::msg      the German texts as a Msg (msg.rs) for the
 //                                                 app's catalogue
 //
 // A device's configuration is its startup-config text (the simulator replays it through the
 // command line); services carry their settings as JSON.  Ids come from `next_id` and are never
-// reused while the project is open, so undo, the canvas and the simulator agree on them.
+// reused while the project is open, so undo, the canvas and the simulator agree on them.  A file
+// holds ids up to ID_MAX only, so the counter never runs past u32::MAX back to ids in use.
 //
 // A lab project (assets/labs of the app) has a "lab" member, a free one null (lab.rs):
 //
@@ -381,9 +385,19 @@ fn no_default_hw(v: &mut Value) {
     }
 }
 
+/// the largest id of a device, cable, note, group or place a file may hold: room for the counter
+/// above it (an id of 4294967295 once made it run over to 0 and hand out ids in use)
+pub const ID_MAX: u32 = (1 << 31) - 1;
+
 /// the limits of project files: large topologies with long configurations
 pub fn file_limits() -> Limits {
     Limits { bytes: 64 << 20, depth: 32, values: 4_000_000, string_bytes: 16 << 20, members: 1_000_000 }
+}
+
+/// why a file of `size` bytes past file_limits().bytes is not read (whoever reads one checks its
+/// size first, so that it never goes whole into memory)
+pub fn too_large(size: u64) -> Msg {
+    msg!("Die Datei ist mit {} Bytes größer als die erlaubten {} Bytes.", size, file_limits().bytes)
 }
 
 /// a host name as IOS accepts it: a letter first, letters, digits and hyphens, a letter or
@@ -474,9 +488,13 @@ impl Project {
         let g = self.groups.iter().map(|g| g.id).max().unwrap_or(0);
         d.max(l).max(n).max(g)
     }
+    /// the id the next new device, cable, note or group gets (above every id in use)
+    pub fn free_id(&self) -> u32 {
+        self.next_id.max(self.max_id().saturating_add(1)).max(1)
+    }
     pub(crate) fn alloc_id(&mut self) -> u32 {
-        let id = self.next_id.max(self.max_id() + 1).max(1);
-        self.next_id = id + 1;
+        let id = self.free_id();
+        self.next_id = id.saturating_add(1);
         id
     }
     /// the canvas area of all devices and notes: [x0, y0, x1, y1]
@@ -535,7 +553,7 @@ impl Project {
         if self.find(&d.name).is_some() {
             return Err(ProjErr::NameTaken(d.name));
         }
-        self.next_id = self.next_id.max(d.id + 1);
+        self.next_id = self.next_id.max(d.id.saturating_add(1));
         self.devices.push(d);
         Ok(())
     }
@@ -631,7 +649,7 @@ impl Project {
                 return Err(ProjErr::Cable(Why::PortInUse(String::from(p.name.as_str()))));
             }
         }
-        self.next_id = self.next_id.max(l.id + 1);
+        self.next_id = self.next_id.max(l.id.saturating_add(1));
         self.links.push(l);
         Ok(())
     }
@@ -828,6 +846,37 @@ impl Project {
             Err(m) => panic!("{}", m.text()),
         }
     }
+    // the ids of a file read in: none past ID_MAX (devices, cables, notes, groups, places, the
+    // target network of an assessment), no device, cable or note twice -- device(id) would find
+    // only the first, and edits, undo and the simulator would hit the wrong one
+    fn ids_ok(&self) -> Result<(), Msg> {
+        let target = self.lab.as_ref().and_then(|l| l.assess.as_ref()).map(|a| &a.target);
+        let all = self.devices.iter().map(|d| d.id)
+            .chain(self.links.iter().map(|l| l.id))
+            .chain(self.notes.iter().map(|n| n.id))
+            .chain(self.groups.iter().map(|g| g.id))
+            .chain(self.places.iter().map(|x| x.id))
+            .chain(target.into_iter().flat_map(|t| t.devices.iter().map(|d| d.id).chain(t.links.iter().map(|l| l.id))));
+        for id in all {
+            if id > ID_MAX {
+                return Err(msg!("Die Nummer {} ist zu groß; erlaubt sind 1 bis {}.", id, ID_MAX));
+            }
+        }
+        let mut seen = alloc::collections::BTreeSet::new();
+        if let Some(d) = self.devices.iter().find(|d| !seen.insert(d.id)) {
+            return Err(msg!("Die Gerätenummer {} kommt doppelt vor.", d.id));
+        }
+        seen.clear();
+        if let Some(l) = self.links.iter().find(|l| !seen.insert(l.id)) {
+            return Err(msg!("Die Verbindungsnummer {} kommt doppelt vor.", l.id));
+        }
+        seen.clear();
+        if let Some(n) = self.notes.iter().find(|n| !seen.insert(n.id)) {
+            return Err(ProjErr::IdTaken(n.id).msg());
+        }
+        Ok(())
+    }
+
     /// reads a .jfnet file; missing members take their defaults, unknown ones are ignored
     pub fn from_text(text: &str) -> Result<Project, LoadErr> {
         let v = json::parse_with_limits(text.as_bytes(), file_limits()).map_err(|e| LoadErr::new(e.offset, msg!("Die Datei ist kein gültiges JSON ({} an Byte {}).", e.kind, e.offset)))?;
@@ -838,7 +887,12 @@ impl Project {
         if p.version == 0 || p.version > VERSION {
             return Err(LoadErr::new(0, msg!("Die Datei hat die Version {}; dieses Programm liest Version 1 bis {}.", p.version, VERSION)));
         }
-        p.next_id = p.next_id.max(p.max_id() + 1);
+        p.ids_ok().map_err(|m| LoadErr::new(0, m))?;
+        // a counter past ID_MAX is no help: the next id above those in use
+        if p.next_id > ID_MAX {
+            p.next_id = 0;
+        }
+        p.next_id = p.free_id();
         // groups as they resolve: no ids that are gone, no member twice, no cycles (group.rs)
         crate::group::normalize(&mut p);
         Ok(p)

@@ -390,7 +390,7 @@ fn progress_t(t: &mut T) {
     t.eq("an older file", (old.is_done("k", "a"), old.tries_of("k", "a"), old.best_of("k", "a")), (true, 0, None));
     // through the window's functions: a result, done when it passed; a reset takes the session's pages too
     let path = "mem://jfn-selftest/quiz/progress.json";
-    t.check("written", store::write_progress(path, &p));
+    t.eq("written", store::write_progress(path, &p), store::Saved::Written);
     t.eq("read", store::read_progress(path).tries_of("k", "x"), 4);
     t.check("reset", p.clear("k"));
     t.eq("all gone", (p.best_of("k", "x"), p.tries_of("k", "x")), (None, 0));

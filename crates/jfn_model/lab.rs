@@ -501,7 +501,7 @@ impl Target {
         p.metered = base.metered;
         p.devices = self.devices.clone();
         p.links = self.links.clone();
-        p.next_id = p.max_id() + 1;
+        p.next_id = p.free_id();
         p
     }
     /// a device of the target by id, else by name

@@ -8,7 +8,7 @@
 //   autosave     copies of other sessions: newest first, a running session's (locked) copy
 //                is never offered, a recovered or dropped copy goes
 //   save limits  a project past the file limits is not written: the file stays, the reason is
-//                said
+//                said; a file past them is not read
 //   catalogue    every label of the command table, the menus, the settings page and the
 //                tables marked "// i18n" has an English row; English differs where it should
 
@@ -43,6 +43,13 @@ fn save_limits(t: &mut T) {
     p.description = String::from("klein");
     t.check("save limits small project written", crate::doc::file::write(path, &p).is_ok() && plat::read_file(path).is_some_and(|b| b.starts_with(b"{")));
     plat::delete(path);
+    // a file past them is refused by its size before anything of it is read (a file of several GB once went
+    // whole into memory first; JSON's own limit came after that)
+    let big = "mem://jfn-selftest/big.jfnet";
+    let n = jfn_model::project::file_limits().bytes + 1;
+    plat::write_file(big, &alloc::vec![b' '; n]);
+    t.check("read limits refused by its size", crate::doc::file::read(big).is_err_and(|m| m.contains(&format!("{}", n))));
+    plat::delete(big);
 }
 
 // the canvas colour of a theme of the linked style (netlab)

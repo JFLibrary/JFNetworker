@@ -387,6 +387,6 @@ pub fn topology(n: usize) -> Project {
         g.reroute(id, Route::Curve, alloc::vec![Point { x, y: 0 }]);
     }
     let mut p = g.p;
-    p.next_id = p.next_id.max(p.max_id() + 1);
+    p.next_id = p.free_id();
     p
 }

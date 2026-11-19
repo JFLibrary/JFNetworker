@@ -152,7 +152,7 @@ impl Edit<Project> for AddNote {
     fn apply(&mut self, p: &mut Project) {
         if p.note(self.note.id).is_none() {
             p.notes.push(self.note.clone());
-            p.next_id = p.next_id.max(self.note.id + 1);
+            p.next_id = p.next_id.max(self.note.id.saturating_add(1));
         }
     }
     fn revert(&mut self, p: &mut Project) {

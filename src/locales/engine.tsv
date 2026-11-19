@@ -140,6 +140,8 @@ Die Datei enthält kein Projekt.	The file contains no project.
 Das ist keine JFNetworker-Datei.	This is not a JFNetworker file.
 Die Datei hat die Version {}; dieses Programm liest Version 1 bis {}.	The file has version {}; this program reads versions 1 to {}.
 Das Projekt ist zu groß für eine Projektdatei ({}).	The project is too big for a project file ({}).
+Die Datei ist mit {} Bytes größer als die erlaubten {} Bytes.	The file at {} bytes is larger than the {} bytes allowed.
+Die Nummer {} ist zu groß; erlaubt sind 1 bis {}.	The number {} is too large; 1 to {} are allowed.
 
 # jfn_sim: refused actions (ActErr, action.rs, svcact.rs, os.rs, cli)
 Gerät {} hat keinen Port „{}“.	Device {} has no port “{}”.
@@ -2002,6 +2004,8 @@ Kurs {}: die Kursliste nennt mehr als {} Dateien.	Course {}: the course list nam
 Kurs {}: er ist mit {} Bytes größer als die erlaubten {} Bytes.	Course {}: at {} bytes it is larger than the {} bytes allowed.
 Kurs {}: die Datei {} kommt doppelt vor.	Course {}: the file {} is listed twice.
 Kurs {}: die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.	Course {}: the file {} at {} bytes is larger than the {} bytes allowed.
+Die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.	The file {} at {} bytes is larger than the {} bytes allowed.
+Schritt {}: das Bild {} ist mit {} Bytes größer als die erlaubten {} Bytes.	Step {}: the picture {} at {} bytes is larger than the {} bytes allowed.
 Abgebrochen.	Cancelled.
 {} lässt sich nicht schreiben.	{} cannot be written.
 Die Datei {} hat {} Bytes; die Kursliste nennt {} Bytes.	The file {} has {} bytes; the course list says {} bytes.

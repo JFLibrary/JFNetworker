@@ -8,10 +8,12 @@
 //   pending() -> bool         the sync hook of scripts: a worker runs and is not waiting at the gate
 //   command(n, ui, id, arg)   CMD_AI_SEARCH .. CMD_AI_GATE
 //   tools(n, ui)              on the list of courses: Nach Kursen suchen, Aus Ordner installieren, what a worker does
-//   empty(n, ui)              what the empty list offers: Jetzt installieren
+//   empty(n, ui)              what the empty list offers: Jetzt installieren (the list first, then a question that
+//                             names how many courses and how large they are together; ALL_BYTES_MAX at once)
 //   row(n, ui, i)             under a course's card: version, size, state, Aktualisieren, Deinstallieren
 //   offered(n, ui)            what the list offers that is not here
-//   dialog(n, ui)             "Kurs deinstallieren?", "Diese Adresse öffnen?"
+//   dialog(n, ui)             "Kurse installieren?", "Kurs deinstallieren?", "Diese Adresse öffnen?"
+//   first_offer(index, here) / first_question(count, bytes)   what Jetzt installieren would take, and how it asks
 //   ask_link(n, ui, url)      a lesson's web link: the question that shows the address
 //   standing_of(n, e)         a course against the list
 //
@@ -58,6 +60,9 @@ const STACK: usize = 4 << 20;
 const LAST_INDEX: &str = "last-index.json";
 /// how often the progress moves (ms)
 const TICK_MS: u32 = 100;
+/// the most bytes Jetzt installieren takes at once (a list of 512 courses of 512 MiB once meant 256 GiB unasked);
+/// beyond it the courses go one by one from the list
+pub(crate) const ALL_BYTES_MAX: u64 = 1 << 30;
 
 /// workers running
 static BUSY: AtomicU32 = AtomicU32::new(0);
@@ -76,6 +81,8 @@ pub(crate) fn pending() -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum What {
     Search,
+    /// the list for Jetzt installieren: then the question
+    First,
     Folder,
     Install,
     Remove,
@@ -92,8 +99,6 @@ enum Spec {
 enum Work {
     /// read the list; `keep`: write it there
     Read { from: Spec, root: String, keep: Option<String> },
-    /// read the list, then what a first install takes
-    All { from: Spec, root: String, keep: Option<String>, here: Vec<(String, u32)> },
     Courses { from: Spec, root: String, list: Vec<IndexCourse> },
     Remove { root: String, id: String },
 }
@@ -106,8 +111,17 @@ struct Done {
     changed: Vec<String>,
     titles: Vec<Text>,
     failure: Option<Failure>,
-    /// everything was here already
-    nothing: bool,
+}
+
+/// what Jetzt installieren would take of a list
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum First {
+    /// everything is here already
+    Nothing,
+    /// more than ALL_BYTES_MAX together: how many, how large
+    TooLarge { count: usize, bytes: u64 },
+    /// these, so large together: the question names both
+    Ask { list: Vec<IndexCourse>, bytes: u64 },
 }
 
 /// what a worker and the page share
@@ -145,6 +159,9 @@ pub(crate) struct Inst {
     /// the question before a web link: its address
     pub ask_link: Shared<i32>,
     pub link: String,
+    /// the question before a first install: where from, the courses (how many and how large it says)
+    pub ask_all: Shared<i32>,
+    first: Option<(Spec, Vec<IndexCourse>)>,
     /// where the folder dialog starts
     pub start_folder: String,
     /// this run has the scripts' gate
@@ -155,7 +172,7 @@ pub(crate) struct Inst {
 
 impl Inst {
     pub(crate) fn new() -> Inst {
-        Inst { server: None, folder: None, job: None, armed: false, relist: false, changed: Vec::new(), ask_remove: Shared::new(0), remove: None, ask_link: Shared::new(0), link: String::new(), start_folder: String::new(), gate: false, note: None }
+        Inst { server: None, folder: None, job: None, armed: false, relist: false, changed: Vec::new(), ask_remove: Shared::new(0), remove: None, ask_link: Shared::new(0), link: String::new(), ask_all: Shared::new(0), first: None, start_folder: String::new(), gate: false, note: None }
     }
 
     /// Net::init: what a run without a window was given for its scripts
@@ -236,6 +253,33 @@ fn first_install(index: &Index, here: &[(String, u32)]) -> Vec<IndexCourse> {
     index.courses.iter().filter(wanted).filter(|c| matches!(stands(c), Standing::NotInstalled | Standing::Update)).cloned().collect()
 }
 
+/// what Jetzt installieren would take of this list: nothing, too much at once, or these courses to ask about
+pub(crate) fn first_offer(index: &Index, here: &[(String, u32)]) -> First {
+    let list = first_install(index, here);
+    let bytes = list.iter().fold(0u64, |a, c| a.saturating_add(c.total()));
+    if list.is_empty() {
+        First::Nothing
+    } else if bytes > ALL_BYTES_MAX {
+        First::TooLarge { count: list.len(), bytes }
+    } else {
+        First::Ask { list, bytes }
+    }
+}
+
+/// the question before a first install: how many courses, how large together, from where
+pub(crate) fn first_question(count: usize, bytes: u64) -> String {
+    if count == 1 {
+        tf("Ein Kurs mit {} wird von {} geladen und installiert.", &[&size_text(bytes), COURSE_HOST])
+    } else {
+        tf("{} Kurse mit zusammen {} werden von {} geladen und installiert.", &[&count.to_string(), &size_text(bytes), COURSE_HOST])
+    }
+}
+
+// the courses here with the versions of their content
+fn here_of(a: &Academy) -> Vec<(String, u32)> {
+    a.entries.iter().filter_map(|e| e.course.as_ref().map(|c| (e.id.clone(), c.course_version))).collect()
+}
+
 // course after course; the first failure ends it, what came before stands
 fn take_courses(src: &dyn Source, root: &str, list: &[IndexCourse], st: &State, done: &mut Done) {
     st.courses.store(list.len() as u32, SeqCst);
@@ -262,24 +306,6 @@ fn run(work: Work, st: &State) -> Done {
             Ok(i) => done.index = Some(i),
             Err(e) => done.failure = Some(e),
         },
-        Work::All { from, root, keep, here } => {
-            let src = match source_of(&from) {
-                Ok(s) => s,
-                Err(e) => {
-                    done.failure = Some(e);
-                    return done;
-                }
-            };
-            match read_list(src.as_ref(), &root, keep.as_deref()) {
-                Ok(i) => {
-                    let list = first_install(&i, &here);
-                    done.index = Some(i);
-                    done.nothing = list.is_empty();
-                    take_courses(&Gated(src.as_ref()), &root, &list, st, &mut done);
-                }
-                Err(e) => done.failure = Some(e),
-            }
-        }
         Work::Courses { from, root, list } => match source_of(&from) {
             Ok(src) => take_courses(&Gated(src.as_ref()), &root, &list, st, &mut done),
             Err(e) => done.failure = Some(e),
@@ -365,14 +391,28 @@ fn finish(n: &mut Net, ui: &mut Ui) {
     let a = &mut n.academy;
     let en = tr::en();
     let title_of = |d: &Done| d.titles.first().map_or(String::new(), |x| String::from(x.get(en)));
+    // Jetzt installieren: what the list offers against what is here, before anything comes
+    let first = match (&done.failure, job.what, done.index.as_ref()) {
+        (None, What::First, Some(i)) => first_offer(i, &here_of(a)),
+        _ => First::Nothing,
+    };
     let said = match (&done.failure, job.what) {
         (Some(f), _) => Some(failure_text(f)),
         (None, What::Search) => {
             let (all, new) = done.index.as_ref().map_or((0, 0), |i| (i.courses.len(), i.courses.iter().filter(|c| !a.entries.iter().any(|e| e.id == c.id)).count()));
             Some((IB_INFO, String::from(t("Die Kursliste ist geladen")), tf("Sie nennt {} Kurse, davon {} noch nicht installiert.", &[&all.to_string(), &new.to_string()])))
         }
+        (None, What::First) => match first {
+            First::Nothing => Some((IB_INFO, String::from(t("Nichts zu installieren")), String::from(t("Alles aus der Kursliste ist schon da.")))),
+            First::TooLarge { count, bytes } => Some((IB_ERROR, String::from(t("Das ist zu groß")), tf("Die {} Kurse der Kursliste sind zusammen {} groß; auf einmal installiert das Programm höchstens {}. Einzelne Kurse lassen sich unter Verfügbar installieren.", &[&count.to_string(), &size_text(bytes), &size_text(ALL_BYTES_MAX)]))),
+            // the question says how many and how large; nothing has come yet
+            First::Ask { list, .. } => {
+                a.inst.first = Some((Spec::Web(n.prefs.academy_base.clone()), list));
+                a.inst.ask_all.set(1);
+                None
+            }
+        },
         (None, What::Folder) => None,
-        (None, What::Install) if done.nothing => Some((IB_INFO, String::from(t("Nichts zu installieren")), String::from(t("Alles aus der Kursliste ist schon da.")))),
         (None, What::Install) if done.titles.len() == 1 => Some((IB_SUCCESS, tf("„{}“ ist installiert", &[&title_of(&done)]), String::from(t("Der Kurs steht unter Meine Kurse.")))),
         (None, What::Install) => Some((IB_SUCCESS, tf("{} Kurse sind installiert", &[&done.titles.len().to_string()]), String::from(t("Sie stehen unter Meine Kurse.")))),
         (None, What::Remove) => {
@@ -475,12 +515,17 @@ pub(crate) fn command(n: &mut Net, ui: &mut Ui, id: u32, arg: u32) -> bool {
             let (from, keep) = (Spec::Web(n.prefs.academy_base.clone()), keep_path(&root));
             start(n, ui, What::Search, None, Work::Read { from, root, keep });
         }
+        // the list first; its courses only after the question that says how many and how large (finish)
         CMD_AI_ALL => {
             let Some(root) = root_of(&n.academy) else { return true };
-            let here = n.academy.entries.iter().filter_map(|e| e.course.as_ref().map(|c| (e.id.clone(), c.course_version))).collect();
             let (from, keep) = (Spec::Web(n.prefs.academy_base.clone()), keep_path(&root));
             n.academy.inst.folder = None;
-            start(n, ui, What::Install, None, Work::All { from, root, keep, here });
+            start(n, ui, What::First, None, Work::Read { from, root, keep });
+        }
+        CMD_AI_ALL_GO => {
+            let Some(root) = root_of(&n.academy) else { return true };
+            let Some((from, list)) = n.academy.inst.first.take() else { return true };
+            start(n, ui, What::Install, None, Work::Courses { from, root, list });
         }
         CMD_AI_GET => {
             let Some(c) = n.academy.inst.offer().and_then(|i| i.courses.get(arg as usize)).cloned() else { return true };
@@ -574,7 +619,7 @@ fn job_panel(n: &mut Net, ui: &mut Ui) {
     let title = String::from(j.st.title.lock().get(tr::en()));
     let (course, courses) = (j.st.course.load(SeqCst), j.st.courses.load(SeqCst));
     let (head, line) = match what {
-        What::Search => (String::from(t("Die Kursliste wird geladen")), String::from(COURSE_HOST)),
+        What::Search | What::First => (String::from(t("Die Kursliste wird geladen")), String::from(COURSE_HOST)),
         What::Folder => (String::from(t("Der Ordner wird gelesen")), String::new()),
         What::Remove => (String::from(t("Der Kurs wird deinstalliert")), String::new()),
         What::Install if course == 0 => (String::from(t("Die Kursliste wird geladen")), String::from(COURSE_HOST)),
@@ -805,8 +850,27 @@ pub(crate) fn offered(n: &mut Net, ui: &mut Ui) {
     ui.box_end();
 }
 
-/// "Kurs deinstallieren?", "Diese Adresse öffnen?"
+/// "Kurse installieren?", "Kurs deinstallieren?", "Diese Adresse öffnen?"
 pub(crate) fn dialog(n: &mut Net, ui: &mut Ui) {
+    let open = n.academy.inst.ask_all.clone();
+    if ui.dialog_begin(ID_AI_ALL_DLG, t("Kurse installieren?"), &open) {
+        let (count, bytes) = n.academy.inst.first.as_ref().map_or((0, 0), |(_, l)| (l.len(), l.iter().fold(0u64, |a, c| a.saturating_add(c.total()))));
+        ui.next_size(420, 0);
+        ui.text(TS_BODY | TX_WRAP, &first_question(count, bytes));
+        let en = tr::en();
+        let names: Vec<&str> = n.academy.inst.first.as_ref().map_or_else(Vec::new, |(_, l)| l.iter().take(8).map(|c| c.title.get(en)).collect());
+        if !names.is_empty() {
+            ui.next_size(420, 0);
+            let more = if count > names.len() { format!(", {}", tf("{} weitere", &[&(count - names.len()).to_string()])) } else { String::new() };
+            ui.text(TS_BODY | TX_SECONDARY | TX_WRAP, &format!("{}{}", names.join(", "), more));
+        }
+        match ui.dialog_buttons(Some(t("Installieren")), None, Some(t("Abbrechen"))) {
+            DLG_PRIMARY => ui.cmd_run(CMD_AI_ALL_GO, 0),
+            DLG_CLOSE => n.academy.inst.first = None,
+            _ => {}
+        }
+    }
+    ui.dialog_end();
     let open = n.academy.inst.ask_remove.clone();
     if ui.dialog_begin(ID_AI_REMOVE_DLG, t("Kurs deinstallieren?"), &open) {
         let a = &n.academy;

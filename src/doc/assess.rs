@@ -61,7 +61,7 @@ struct Network {
 fn put(p: &mut Project, net: &(Vec<Device>, Vec<Link>)) {
     p.devices = net.0.clone();
     p.links = net.1.clone();
-    p.next_id = p.next_id.max(p.max_id() + 1);
+    p.next_id = p.free_id();
 }
 
 impl Edit<Project> for Network {

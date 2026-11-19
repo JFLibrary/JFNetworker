@@ -1170,7 +1170,11 @@ den Bericht in eine Datei, `--golden F` vergleicht ihn mit einer gespeicherten F
 Linux-Shell englisch antworten (die Wörter des Berichts selbst bleiben deutsch; ohne die Option
 deutsch). Die GUI-Exe nimmt dieselben Argumente
 (`JFNetworker.exe PROJEKT --scenario S`). Weil die App nur Dateien öffnen darf, die auf der
-Befehlszeile stehen (`fs.user`), gehören Projekt, Vergleichsdatei und pcap-Datei dorthin.
+Befehlszeile stehen (`fs.user`), gehören Projekt, Vergleichsdatei und pcap-Datei dorthin. Die Schritte `pcap DATEI`
+und `series DATEI` eines Szenarios schreiben nur in den Ordner des Szenarios: DATEI gilt relativ zu ihm, und ein Name
+mit Schema (`documents://`, `config://`, `data://`), Laufwerk, Wurzel oder `..` wird abgelehnt. Auch dort gilt
+`PERMISSIONS` (schreibbar ist etwa Dokumente/JFNetworker); ein anderes Ziel geht nur mit `--pcap F` oder `--series F`
+auf der Befehlszeile.
 
 `fault` spielt einen Fehler des Labors ein: `link GERÄT PORT`, `impair GERÄT PORT delay …
 jitter … loss … rate …`, `power GERÄT`, `stop GERÄT DIENST`, `disk GERÄT delay … factor …`,
@@ -4600,7 +4604,9 @@ die Prüfsummen stimmen, hält `.gitattributes` die Bytes unter `academy/` unver
 
 **`progress.json`** schreibt das Programm sofort beim Erledigen: `format` `"jfn-progress"`, `version`, `courses`, je
 Kurs `steps`, je Schritt `state` (`open`, `done`), `when` (Sekunden seit 1970), `best` (das beste Ergebnis in Prozent),
-`tries` (abgegebene Versuche). Eine kaputte oder fehlende Datei bedeutet „noch nichts erledigt“, nie einen Absturz. Sie steht nie in
+`tries` (abgegebene Versuche). Eine kaputte oder fehlende Datei bedeutet „noch nichts erledigt“, nie einen Absturz.
+Eine Datei, die das Programm nicht lesen kann (von einer neueren Version, über 1 MiB, kaputt), überschreibt es nie: Vor dem
+ersten Schreiben wird sie zu `progress.json.bak` (oder `.bak2` … `.bak9`), und die Infoleiste nennt sie. Sie steht nie in
 der Projektdatei und ist kein Rückgängig-Schritt; „Fortschritt zurücksetzen“ auf der Seite eines Kurses
 fragt vorher. Einträge von Schritten, die ein neuer Kurs nicht mehr hat, bleiben stehen, falls sie wiederkommen. Mit
 `--academy-dir` liegt die Datei in jenem Ordner, ein Lauf ohne Fenster hält sie im Speicher und sieht ohne den
@@ -4615,8 +4621,9 @@ Selbsttest prüft jeden Kurs unter `academy/`.
 Kurse“ mit Version, Größe und Stand und darunter „Verfügbar“: was die zuletzt geladene Kursliste sonst noch anbietet,
 mit Version und Größe. Das Programm verbindet sich nur nach einem Klick, nie beim Start:
 
-- **Jetzt installieren** in der leeren Liste lädt die Kursliste und alle Kurse, die kein Beispiel sind (nennt die
-  Liste nur Beispiele, diese); neben einem Kurs der Liste installiert es diesen einen.
+- **Jetzt installieren** in der leeren Liste lädt die Kursliste und fragt dann, mit Anzahl und Größe, nach allen
+  Kursen, die kein Beispiel sind (nennt die Liste nur Beispiele, diese); mehr als 1 GB auf einmal nimmt es nicht, dann
+  bleiben die einzelnen Kurse der Liste. Neben einem Kurs der Liste installiert es diesen einen.
 - **Nach Kursen suchen** lädt nur die Kursliste. Mit dem ersten Klick kommt die Frage nach der Verbindung
   (`ask net.connect raw.githubusercontent.com:443` in `PERMISSIONS`); die Antwort „für immer“ lässt sich in den
   Einstellungen unter Berechtigungen zurücksetzen. Die letzte Liste bleibt in `data://academy/last-index.json`, so
@@ -4636,7 +4643,9 @@ Kurse in JFLib). Eine andere Repo auf GitHub liegt auf demselben Host, die Regel
 ab. `netio` kennt keinen HTTP-Proxy, und ein Netz, das TLS aufbricht, geht nur mit seiner Wurzel im System.
 
 **So kommt ein Kurs an:** Die Kursliste wird gelesen und auf ihre Grenzen geprüft (4 MiB, 512 Kurse, je Kurs 4096 Dateien
-und 512 MiB, je Datei 64 MiB; Pfade und Kennungen wie oben). Ein Ordner `.<kurs>.part` neben den Kursen füllt sich, nur
+und 512 MiB, je Datei so viel, wie das Programm davon liest: `course.json` und Quizdateien 1 MiB, Lektionen 4 MiB, Bilder
+16 MiB, Labore und alles andere 64 MiB; Pfade und Kennungen wie oben), `jfn-sim course` hält dieselben Grenzen. Ein
+Ordner `.<kurs>.part` neben den Kursen füllt sich, nur
 mit dem, was die Liste nennt, und jede Datei wird auf Größe und SHA-256 geprüft. Dann prüft das Programm den Ordner wie
 `jfn-sim course`. Erst danach wird er umbenannt, eine alte Version weicht erst in diesem Moment. Ein Abbruch, ein
 Absturz oder ein Fehler lässt also das Alte nutzbar; was schon angekommen ist, bleibt liegen und geht beim nächsten Mal

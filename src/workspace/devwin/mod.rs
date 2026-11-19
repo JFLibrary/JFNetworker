@@ -19,7 +19,13 @@
 //
 // A device's desktop (desktop.rs) lives in its window while it is open and in DevWins::kept
 // while it is closed: the session's state, so the desktop comes back as it was (its windows,
-// programs and what they show); a new or loaded project starts without any.
+// programs and what they show); a new or loaded project starts without any.  At most KEPT_MAX
+// closed desktops are kept (a browser's picture cache, its history with page scripts each): the
+// one closed longest ago goes for good, its sessions ended and its requests cancelled, and so does
+// the desktop of a device that was deleted.
+//
+//   devwins.keep(desk) -> Option<Desk>   (close, the selftest) a closed window's desktop is kept;
+//                                         the one that had to go
 //
 //   config.rs    Konfiguration: forms that type command lines (doc/console.rs run_lines)
 //   firewall.rs  Firewall: access lists, what protects which interface, NAT, which rule a packet
@@ -77,7 +83,6 @@ pub(crate) mod pagescript;
 // the Webbrowser's developer view (B4)
 pub(crate) mod devtools;
 
-use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -176,20 +181,37 @@ pub(crate) struct DevWins {
     pub ide: crate::workspace::ide::Ides,
     /// the Dateien tab's file dialog
     pub files: files::FilesUi,
-    /// the desktops of devices whose window is closed (the session's: back when it opens)
-    kept: BTreeMap<u32, desktop::Desk>,
+    /// the desktops of devices whose window is closed (the session's: back when it opens), the one
+    /// closed longest ago first; at most KEPT_MAX
+    kept: Vec<desktop::Desk>,
 }
+
+/// the closed desktops kept at most
+pub(crate) const KEPT_MAX: usize = 8;
 
 impl DevWins {
     pub(crate) fn new() -> DevWins {
-        DevWins { wins: (0..DEVWINS).map(|_| None).collect(), clock: 0, svc: svcedit::SvcEdit::new(), ide: crate::workspace::ide::Ides::new(), files: files::FilesUi::new(), kept: BTreeMap::new() }
+        DevWins { wins: (0..DEVWINS).map(|_| None).collect(), clock: 0, svc: svcedit::SvcEdit::new(), ide: crate::workspace::ide::Ides::new(), files: files::FilesUi::new(), kept: Vec::new() }
     }
 
-    // a window goes: its desktop is kept for the device
-    fn close(&mut self, k: usize) {
-        if let Some(w) = self.wins.get_mut(k).and_then(|w| w.take()) {
-            self.kept.insert(w.dev, w.desk);
-        }
+    // a window goes: its desktop is kept for the device -> the desktop that had to go (give_up)
+    fn close(&mut self, k: usize) -> Option<desktop::Desk> {
+        let w = self.wins.get_mut(k).and_then(|w| w.take())?;
+        self.keep(w.desk)
+    }
+
+    /// a closed window's desktop is kept for its device -> the one that goes for it: an older one of
+    /// the same device, else the one closed longest ago when more than KEPT_MAX are kept
+    pub(crate) fn keep(&mut self, d: desktop::Desk) -> Option<desktop::Desk> {
+        let old = self.kept.iter().position(|x| x.dev == d.dev).map(|i| self.kept.remove(i));
+        self.kept.push(d);
+        old.or_else(|| (self.kept.len() > KEPT_MAX).then(|| self.kept.remove(0)))
+    }
+
+    // the desktop kept for a device, taken out
+    fn take_kept(&mut self, dev: u32) -> Option<desktop::Desk> {
+        let i = self.kept.iter().position(|x| x.dev == dev)?;
+        Some(self.kept.remove(i))
     }
 
     /// device window k (for the tabs' modules)
@@ -204,7 +226,7 @@ impl DevWins {
         let open = self.wins.iter().position(|w| w.as_ref().is_some_and(|w| w.dev == dev && w.open.get() != 0));
         match open.or_else(|| self.wins.iter().position(|w| w.as_ref().is_some_and(|w| w.dev == dev))) {
             Some(k) => self.wins[k].as_mut().map(|w| &mut w.desk),
-            None => self.kept.get_mut(&dev),
+            None => self.kept.iter_mut().find(|x| x.dev == dev),
         }
     }
 
@@ -212,6 +234,27 @@ impl DevWins {
     pub(crate) fn peek(&self, k: usize) -> Option<&DevWin> {
         self.wins.get(k).and_then(|w| w.as_ref())
     }
+}
+
+// a desktop that goes for good: its terminal sessions end, its browser's requests are cancelled
+// (what desktop.rs does when a program's window closes)
+fn give_up(n: &mut Net, mut d: desktop::Desk) {
+    for s in d.terms.iter().copied().chain(d.ide_term) {
+        console::close_session(n, d.dev, s);
+    }
+    for req in d.web.close() {
+        let _ = n.doc.sim.send(jfn_sim::Cmd::Apply(jfn_sim::Action::WebCancel { dev: d.dev, id: req }));
+    }
+}
+
+// a window closes: its desktop is kept; the one that went for it ends; the desktops of devices that
+// were deleted go (their device's sessions went with it)
+fn close_window(n: &mut Net, k: usize) {
+    if let Some(gone) = n.devwin.close(k) {
+        give_up(n, gone);
+    }
+    let p = &n.doc.proj;
+    n.devwin.kept.retain(|d| p.device(d.dev).is_some());
 }
 
 /// the id of device window k
@@ -253,10 +296,10 @@ pub(crate) fn open(n: &mut Net, ui: &mut Ui, dev: u32) {
         .unwrap_or_else(|| w.wins.iter().enumerate().min_by_key(|(_, x)| x.as_ref().map_or(0, |x| x.age)).map_or(0, |(k, _)| k));
     // the old window's place and size stay; its desktop is kept for its device
     let rect = w.wins[k].as_ref().map_or_else(|| Shared::new(WinRect::new(0, 0, 820, 560, 0)), |x| x.rect.clone());
-    w.close(k);
+    close_window(n, k);
     let open = Shared::new(1);
     // a host's desktop as the session left it
-    let desk = w.kept.remove(&dev).unwrap_or_else(|| desktop::Desk::new(dev));
+    let desk = n.devwin.take_kept(dev).unwrap_or_else(|| desktop::Desk::new(dev));
     let tab = if tabs_of(n, dev).contains(&Tab::Desktop) { Tab::Desktop } else { Tab::Overview };
     let w = &mut n.devwin;
     w.wins[k] = Some(DevWin {
@@ -307,7 +350,7 @@ pub(crate) fn frame(n: &mut Net, ui: &mut Ui) {
         let Some(d) = n.doc.proj.device(dev) else {
             open.set(0);
             n.devwin.wins[k] = None;
-            n.devwin.kept.remove(&dev);
+            n.devwin.kept.retain(|x| x.dev != dev);
             continue;
         };
         let title = format!("{} – {}", d.name, catalog::model(&d.model).map_or(t("Gerät"), |m| t(m.name)));
@@ -321,7 +364,7 @@ pub(crate) fn frame(n: &mut Net, ui: &mut Ui) {
             if ui.window_state(id) & UWS_FULLSCREEN != 0 {
                 ui.window_fullscreen(id, false);
             }
-            n.devwin.close(k);
+            close_window(n, k);
         }
     }
 }

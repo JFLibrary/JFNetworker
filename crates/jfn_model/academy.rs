@@ -16,12 +16,17 @@
 //                                                name, its course.json (None: it cannot be read), its files
 //   index.issues() / course.issues() -> Vec<Problem>   what is wrong in the file itself; for the index also
 //                                its limits: INDEX_MAX bytes, INDEX_COURSES_MAX courses, per course
-//                                COURSE_FILES_MAX files of FILE_MAX bytes, COURSE_BYTES_MAX bytes in all
+//                                COURSE_FILES_MAX files of file_max(path) bytes, COURSE_BYTES_MAX bytes in all
+//   file_max(path) -> bytes      the largest a file of a course may be, by its kind: what the app reads at
+//                                most (JSON_MAX course.json and quizzes, LESSON_MAX, IMAGE_MAX), a lab
+//                                and anything else FILE_MAX; the installer's check and the index hold the same
+//   too_large(path, size) -> Problem   a file past file_max (fatal)
 //   standing(installed, offered) -> Standing     a course against the index, by the versions of its content
 //   entry.total() -> bytes                       an index entry's files together
 //   course.file_issues(&exists) -> Vec<Problem>  the lessons in every language, the labs (exists: a
 //                                                path relative to the course's folder)
 //   course.lesson_issues(step, text, &exists)    a lesson's pictures and links
+//   picture_issues(step, text, &size)            a lesson's pictures past IMAGE_MAX (notes)
 //   lab_issues(step, text) -> Vec<Problem>       a lab step's file: a project with a lab and goals
 //   fault_issues(step, text) -> Vec<Problem>     a fault hunt's file: a project with a lab it grades (AK2)
 //   quiz_issues(step, kind, text) -> Vec<Problem>   a quiz's or test's file (quiz.rs, AK2)
@@ -38,6 +43,8 @@
 //   course.steps() / step_at(i) / index_of(id) / next_ready(i) / prev_ready(i) / ready_count()
 //                                                the steps in order, across the units
 //   Progress::from_text(text) -> Progress        corrupt or newer: empty, never an error
+//   Progress::read(text) -> Option<Progress>     the same, None for what from_text takes as empty (the
+//                                                app keeps such a file rather than write over it)
 //   progress.to_text() / is_done(course, step) / mark_done(course, step, when) / clear(course)
 //   progress.record(course, step, percent, when) / note_best(course, step, percent) / best_of(course, step)
 //   / tries_of(course, step)                     a test's result: the best per cent, how many were handed in
@@ -94,6 +101,13 @@ pub const INDEX_COURSES_MAX: usize = 512;
 pub const COURSE_FILES_MAX: usize = 4096;
 pub const FILE_MAX: u64 = 64 << 20;
 pub const COURSE_BYTES_MAX: u64 = 512 << 20;
+/// the largest files of a course the app reads: course.json and a quiz's or test's file, a lesson, a
+/// picture (a lab is a project: FILE_MAX, file_limits().bytes)
+pub const JSON_MAX: u64 = 1 << 20;
+pub const LESSON_MAX: u64 = 4 << 20;
+pub const IMAGE_MAX: u64 = 16 << 20;
+/// the endings of the pictures a lesson may show
+const IMAGE_ENDS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "bmp", "svg"];
 
 wire_enum! {
     /// who a course is for
@@ -270,8 +284,34 @@ pub fn safe_id(s: &str) -> bool {
 pub fn image_file<'a>(base: &str, addr: &'a str) -> Option<&'a str> {
     let rel = addr.strip_prefix(base)?;
     safe_path(rel).ok()?;
-    let low = rel.to_ascii_lowercase();
-    ["png", "jpg", "jpeg", "gif", "bmp", "svg"].iter().any(|e| low.rsplit('.').next() == Some(*e)).then_some(rel)
+    is_image(rel).then_some(rel)
+}
+
+// a picture by its ending
+fn is_image(path: &str) -> bool {
+    let low = path.to_ascii_lowercase();
+    IMAGE_ENDS.iter().any(|e| low.rsplit('.').next() == Some(*e))
+}
+
+/// the largest a file of a course may be, by its kind (its ending): what the app reads of it at most
+/// (course.json and quizzes JSON_MAX, lessons LESSON_MAX, pictures IMAGE_MAX), a lab and anything else
+/// FILE_MAX.  The installer's check (jfn_run course_findings), the index and the app go by this.
+pub fn file_max(path: &str) -> u64 {
+    let low = path.to_ascii_lowercase();
+    if low.ends_with(".json") {
+        JSON_MAX
+    } else if low.ends_with(".md") {
+        LESSON_MAX
+    } else if is_image(&low) {
+        IMAGE_MAX
+    } else {
+        FILE_MAX
+    }
+}
+
+/// a file of a course past file_max: it cannot be offered
+pub fn too_large(path: &str, size: u64) -> Problem {
+    fatal(msg!("Die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.", path, size, file_max(path)))
 }
 
 /// the files of a lesson (its `file` in the folders of the languages) with their language code, the
@@ -358,6 +398,19 @@ pub fn link_to(target: &str) -> LinkTo<'_> {
     }
     let low = target.get(..8).unwrap_or(target).to_ascii_lowercase();
     if low.starts_with("http://") || low.starts_with("https://") { LinkTo::Web } else { LinkTo::Other }
+}
+
+/// a lesson's pictures past IMAGE_MAX (`size`: the bytes of a path relative to the course's folder, 0
+/// when it is not there): notes, as for a picture that is missing (the app shows neither)
+pub fn picture_issues(step: &str, text: &str, size: &dyn Fn(&str) -> u64) -> Vec<Problem> {
+    let mut v = Vec::new();
+    for r in lesson_refs(text).into_iter().filter(|r| r.image && safe_path(&r.target).is_ok()) {
+        let n = size(&r.target);
+        if n > IMAGE_MAX {
+            v.push(note(msg!("Schritt {}: das Bild {} ist mit {} Bytes größer als die erlaubten {} Bytes.", step, r.target, n, IMAGE_MAX)));
+        }
+    }
+    v
 }
 
 /// a lab step's file: a project that loads, with a lab and goals the simulator can check
@@ -647,8 +700,9 @@ impl Index {
                     v.push(fatal(msg!("Kurs {}: die Datei {} kommt doppelt vor.", c.id, f.path)));
                 }
                 names.push(low);
-                if f.size > FILE_MAX {
-                    v.push(fatal(msg!("Kurs {}: die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.", c.id, f.path, f.size, FILE_MAX)));
+                // what the app would not read (a course.json of 1.5 MB: checked, installed, then "fehlt")
+                if f.size > file_max(&f.path) {
+                    v.push(fatal(msg!("Kurs {}: die Datei {} ist mit {} Bytes größer als die erlaubten {} Bytes.", c.id, f.path, f.size, file_max(&f.path))));
                 }
                 if f.sha256.len() != 64 || !f.sha256.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
                     v.push(fatal(msg!("Kurs {}: die Prüfsumme von {} ist kein SHA-256.", c.id, f.path)));
@@ -748,8 +802,13 @@ pub enum StepState {
 impl Progress {
     /// the text of progress.json; corrupt, of another format or newer: empty
     pub fn from_text(text: &str) -> Progress {
+        Progress::read(text).unwrap_or_default()
+    }
+
+    /// the text of progress.json; None: corrupt, of another format or newer (what from_text takes as empty)
+    pub fn read(text: &str) -> Option<Progress> {
         let read = parse(text).ok().and_then(|v| Progress::from_json(&v));
-        read.filter(|p| p.format == PROGRESS_FORMAT && version_ok(p.version).is_ok()).unwrap_or_default()
+        read.filter(|p| p.format == PROGRESS_FORMAT && version_ok(p.version).is_ok())
     }
 
     /// the text of progress.json

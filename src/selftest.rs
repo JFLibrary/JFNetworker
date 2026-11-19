@@ -556,9 +556,40 @@ fn file_t(t: &mut T) {
     t.check("newer version", Project::from_text("{\"format\": \"jfn\", \"version\": 99}").is_err_and(|e| e.text.contains("99")));
     let min = Project::from_text("{\"format\": \"jfn\", \"version\": 1, \"future\": true, \"devices\": [{\"id\": 5, \"name\": \"R1\", \"model\": \"jf-r4\"}]}");
     t.check("defaults for missing members", min.as_ref().is_ok_and(|p| p.devices.len() == 1 && !p.devices[0].off && p.links.is_empty() && p.next_id == 6));
+    ids_t(t);
     let v = Value::object([("a", Value::Array(alloc::vec![Value::u64(1), Value::u64(2)])), ("b", Value::Object(Vec::new()))]);
     t.eq("pretty json", json::stringify_pretty(&v, Limits::default(), 2), Ok(String::from("{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": {}\n}")));
     t.eq("compact json unchanged", json::stringify(&v), Ok(String::from("{\"a\":[1,2],\"b\":{}}")));
+}
+
+// the ids of a file: none past ID_MAX, none twice (an id of 4294967295 once made the counter run over
+// to 0, so that the second new device got the id of one in use)
+fn ids_t(t: &mut T) {
+    use jfn_model::project::ID_MAX;
+    let file = |devices: &str, more: &str| format!("{{\"format\": \"jfn\", \"version\": 1, \"next_id\": 1, \"devices\": [{}]{}}}", devices, more);
+    let dev = |id: u64, name: &str| format!("{{\"id\": {}, \"name\": \"{}\", \"model\": \"pc\"}}", id, name);
+    let refused = |text: &str| Project::from_text(text).err().map(|e| e.text);
+    t.eq("ids: 4294967295 is refused", refused(&file(&format!("{}, {}", dev(2, "PC1"), dev(4294967295, "PC2")), "")), Some(format!("Die Nummer 4294967295 ist zu groß; erlaubt sind 1 bis {}.", ID_MAX)));
+    t.eq("ids: one past ID_MAX", refused(&file(&dev(ID_MAX as u64 + 1, "PC1"), "")), Some(format!("Die Nummer {} ist zu groß; erlaubt sind 1 bis {}.", ID_MAX as u64 + 1, ID_MAX)));
+    t.eq("ids: a device twice", refused(&file(&format!("{}, {}", dev(2, "PC1"), dev(2, "PC2")), "")), Some(String::from("Die Gerätenummer 2 kommt doppelt vor.")));
+    let link = |id: u32, a: u32, b: u32| format!("{{\"id\": {}, \"a\": {{\"dev\": {}, \"port\": \"eth0\"}}, \"b\": {{\"dev\": {}, \"port\": \"eth0\"}}}}", id, a, b);
+    let two = format!("{}, {}, {}", dev(1, "PC1"), dev(2, "PC2"), dev(3, "PC3"));
+    t.eq("ids: a cable twice", refused(&file(&two, &format!(", \"links\": [{}, {}]", link(7, 1, 2), link(7, 2, 3)))), Some(String::from("Die Verbindungsnummer 7 kommt doppelt vor.")));
+    t.eq("ids: a note twice", refused(&file(&two, ", \"notes\": [{\"id\": 8, \"text\": \"a\"}, {\"id\": 8, \"text\": \"b\"}]")), Some(String::from("Die Nummer 8 ist schon vergeben.")));
+    t.check("ids: a place past ID_MAX", refused(&file(&two, ", \"places\": [{\"id\": 4294967295, \"kind\": \"site\", \"name\": \"S\"}]")).is_some_and(|m| m.contains("4294967295")));
+    t.check("ids: the target network of an assessment", refused(&file(&two, &format!(", \"lab\": {{\"assess\": {{\"target\": {{\"devices\": [{}]}}}}}}", dev(4294967295, "PC1")))).is_some_and(|m| m.contains("4294967295")));
+    // at ID_MAX the counter goes on above it: two new devices, two new ids, none in use
+    match Project::from_text(&file(&format!("{}, {}", dev(2, "PC1"), dev(ID_MAX as u64, "PC2")), "")) {
+        Ok(mut p) => {
+            let (a, b) = (p.add_device("pc", 0, 0), p.add_device("pc", 0, 0));
+            t.check("ids at ID_MAX: new ones above every id", a.as_ref().is_ok_and(|&a| a > ID_MAX) && b.as_ref().is_ok_and(|&b| b > ID_MAX) && a != b);
+            t.check("  and nothing twice", p.check().iter().all(|i| !i.text.contains("doppelt")));
+        }
+        Err(e) => t.check(&format!("ids at ID_MAX read: {}", e), false),
+    }
+    // a counter past ID_MAX is taken from the ids instead
+    let high = format!("{{\"format\": \"jfn\", \"version\": 1, \"next_id\": 4294967295, \"devices\": [{}]}}", dev(5, "PC1"));
+    t.eq("ids: a counter past ID_MAX", Project::from_text(&high).map(|p| p.next_id).ok(), Some(6));
 }
 
 fn scenario_t(t: &mut T) {
@@ -606,4 +637,13 @@ fn scenario_t(t: &mut T) {
         Err(e) => t.eq("error lines", e.iter().map(|x| x.line).collect::<Vec<_>>(), alloc::vec![1, 2, 3, 4, 5, 6]),
     }
     t.check("compare", Cmp::Ge.holds(8, 8) && Cmp::Lt.holds(1, 2) && !Cmp::Ne.holds(3, 3) && Cmp::parse("=") == Some(Cmp::Eq));
+    // where a scenario's own pcap / series step writes: below the scenario's folder only (a scenario passed
+    // on once wrote wherever PERMISSIONS let the program write unasked: projects, the settings, data://)
+    let below = jfn_run::below_scenario;
+    t.eq("pcap below the scenario", below(Some("tests/scen/a.scn"), "build/run.pcapng"), Some(String::from("tests/scen/build/run.pcapng")));
+    t.eq("  a scenario in the working folder", below(Some("a.scn"), "x.csv"), Some(String::from("x.csv")));
+    t.eq("  its folder with backslashes", below(Some("C:\\lab\\a.scn"), "out\\x.csv"), Some(String::from("C:\\lab\\out\\x.csv")));
+    for bad in ["documents://JFNetworker/Unbenannt.jfnet", "config://settings.ini", "data://academy/progress.json", "C:/x.csv", "c:x.csv", "/etc/x", "\\x", "../x.csv", "build/../../x.csv", "build\\..\\..\\x", " ", "x.csv:stream"] {
+        t.eq(&format!("  refused: {}", bad), below(Some("tests/scen/a.scn"), bad), None);
+    }
 }

@@ -1,6 +1,7 @@
 // file -- .jfnet files: reading, writing, the file dialogs, "save changes?", recent files
 //
-//   read(path) / write(path, &project)      the file as indented JSON (jfn_model's format)
+//   read(path) / write(path, &project)      the file as indented JSON (jfn_model's format); a file past
+//                                           file_limits() is refused by its size, unread
 //   request(n, ui, After)                   New / Open / a recent file / Quit: asks first when
 //                                           the project has unsaved changes
 //   save(n, ui) / save_as(n)                Speichern (Speichern unter without a file)
@@ -109,8 +110,12 @@ pub(crate) fn base_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(path)
 }
 
-/// a .jfnet file -> the project, or why not (German)
+/// a .jfnet file -> the project, or why not (German); one past file_limits().bytes is refused by its
+/// size before anything of it is read (a file of several GB once went whole into memory first)
 pub(crate) fn read(path: &str) -> Result<Project, String> {
+    if let Some(m) = plat::fs::stat(path).filter(|m| m.size > jfn_model::project::file_limits().bytes as u64) {
+        return Err(crate::app::tr::msg(&jfn_model::project::too_large(m.size)));
+    }
     let bytes = plat::read_file(path).ok_or_else(|| String::from(t("Die Datei ließ sich nicht lesen.")))?;
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
     let text = core::str::from_utf8(bytes).map_err(|_| String::from(t("Die Datei ist kein UTF-8-Text.")))?;
@@ -185,7 +190,8 @@ fn run(n: &mut Net, ui: &mut Ui, after: After) {
             n.file.fd_open.set(1);
         }
         After::OpenPath(p) => {
-            if plat::read_file(&p).is_some() {
+            // a file the app may read (without reading it: open_path reads it once)
+            if plat::file_exists(&p) == 1 {
                 open_path(n, ui, &p);
             } else {
                 // gone, or outside what the app may read without the user's choice (a

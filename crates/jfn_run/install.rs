@@ -10,9 +10,11 @@
 //   Counters                      what a worker reports (seen(): phase, file n of m, bytes) and its cancel flag
 //   install(&src, root, &course, &counters) -> Result<(), Failure>   the course in folder root/<id>
 //   uninstall(root, id)           the course goes, whatever the learner did stays (it is not in its folder)
-//   recover(root)                 after a crash: what a rename left behind (run before the courses are listed)
-//   has_part(root, id) / forget_parts(root, &index)   a started installation: is there one, drop the ones of
-//                                 courses the list no longer names
+//   recover(root) -> bool         after a crash: what a rename left behind (run before the courses are listed)
+//   has_part(root, id) / forget_parts(root, &index) -> bool   a started installation: is there one, drop the
+//                                 ones of courses the list no longer names
+//                                 (recover and forget_parts only under the lock; false: another installation
+//                                 holds it, nothing was touched)
 //   Failure { kind, msg, problems }   what went wrong: Kind for the words and what to do (the app's), msg the
 //                                 exact message, problems what is wrong with a bad course
 //   cli_install(args) / cli_list(args) / cli_remove(args)   jfn-sim's commands
@@ -27,7 +29,7 @@
 //      after: until the new one is complete nothing happens to it, and a failure leaves it as it was.
 // A dot in front keeps these folders out of the list of courses (store.rs).  An interruption at any point leaves
 // what was there usable: .part goes on at the next attempt, recover() settles .old and .trash.  A lock file in
-// root keeps two programs from installing at once.
+// root keeps two programs from installing at once, and from tidying up (recover, forget_parts) under a running one.
 //
 // Nothing of a course is executed here: its labs go through the simulator's checks, and the only things written
 // are the files the list names, below root.
@@ -382,8 +384,8 @@ pub fn parse_index(bytes: &[u8]) -> Result<Index, Failure> {
 
 // too large is a kind of its own: the message of Index::issues says by how much
 fn limit_or_bad(index: &Index) -> Kind {
-    use jfn_model::academy::{COURSE_BYTES_MAX, COURSE_FILES_MAX, FILE_MAX, INDEX_COURSES_MAX};
-    let over = index.courses.len() > INDEX_COURSES_MAX || index.courses.iter().any(|c| c.files.len() > COURSE_FILES_MAX || c.total() > COURSE_BYTES_MAX || c.files.iter().any(|f| f.size > FILE_MAX));
+    use jfn_model::academy::{file_max, COURSE_BYTES_MAX, COURSE_FILES_MAX, INDEX_COURSES_MAX};
+    let over = index.courses.len() > INDEX_COURSES_MAX || index.courses.iter().any(|c| c.files.len() > COURSE_FILES_MAX || c.total() > COURSE_BYTES_MAX || c.files.iter().any(|f| f.size > file_max(&f.path)));
     if over { Kind::TooLarge } else { Kind::BadIndex }
 }
 
@@ -563,7 +565,7 @@ pub fn install(src: &dyn Source, root: &str, course: &IndexCourse, c: &Counters)
         return Err(no_write(root));
     }
     let _lock = lock(root)?;
-    recover(root);
+    settle(root);
     c.begin(course);
     let part = part_of(root, &course.id);
     if !plat::mkdir(&part) {
@@ -622,9 +624,26 @@ fn left_id<'a>(name: &'a str, end: &str) -> Option<&'a str> {
     name.strip_prefix('.')?.strip_suffix(end)?.strip_suffix('.').filter(|id| jfn_model::academy::safe_id(id))
 }
 
+// the leftovers of root that recover settles (old versions, what was on its way out)
+fn leftovers(root: &str) -> bool {
+    plat::fs::read_dir(root).unwrap_or_default().iter().any(|e| e.kind == FileKind::Dir && (left_id(&e.name, "old").is_some() || left_id(&e.name, "trash").is_some()))
+}
+
 /// what an interrupted change left: an old version whose new one never arrived comes back, an old version beside
-/// its new one goes, and so does what was on its way out.  A .part stays: the next attempt goes on with it.
-pub fn recover(root: &str) {
+/// its new one goes, and so does what was on its way out.  A .part stays: the next attempt goes on with it.  Only
+/// under the lock: while another window installs in root (between the renames of its place, say) nothing is
+/// touched and this says false; the next start settles it.  Nothing to settle: no lock is taken.
+pub fn recover(root: &str) -> bool {
+    if !leftovers(root) {
+        return true;
+    }
+    let Ok(_lock) = lock(root) else { return false };
+    settle(root);
+    true
+}
+
+// recover's work, under the lock
+fn settle(root: &str) {
     for e in plat::fs::read_dir(root).unwrap_or_default() {
         if e.kind != FileKind::Dir {
             continue;
@@ -648,15 +667,22 @@ pub fn has_part(root: &str, id: &str) -> bool {
     plat::file_exists(&part_of(root, id)) == 2
 }
 
-/// the started installations of courses the list does not name any more go
-pub fn forget_parts(root: &str, index: &Index) {
-    for e in plat::fs::read_dir(root).unwrap_or_default() {
-        if let Some(id) = left_id(&e.name, "part")
-            && !index.courses.iter().any(|c| c.id == id)
-        {
-            remove_tree(&format!("{}/{}", root, e.name));
-        }
+// the parts in root of courses the list does not name
+fn stale_parts(root: &str, index: &Index) -> Vec<String> {
+    plat::fs::read_dir(root).unwrap_or_default().into_iter().filter(|e| left_id(&e.name, "part").is_some_and(|id| !index.courses.iter().any(|c| c.id == id))).map(|e| e.name).collect()
+}
+
+/// the started installations of courses the list does not name any more go.  Only under the lock: while
+/// another window installs in root nothing is touched (its .part may be the one it fills) and this says false.
+pub fn forget_parts(root: &str, index: &Index) -> bool {
+    if stale_parts(root, index).is_empty() {
+        return true;
     }
+    let Ok(_lock) = lock(root) else { return false };
+    for name in stale_parts(root, index) {
+        remove_tree(&format!("{}/{}", root, name));
+    }
+    true
 }
 
 // ---------------------------------------------------------------- jfn-sim
@@ -794,7 +820,10 @@ pub fn cli_list(args: &[String]) -> i32 {
     };
     for c in &list.courses {
         let state = into.as_deref().map(|d| {
-            let here = plat::read_file(&format!("{}/{}/{}", d, c.id, COURSE_FILE)).and_then(|b| jfn_model::academy::Course::from_text(&String::from_utf8_lossy(&b)).ok());
+            // what the app reads of it (a course.json past JSON_MAX is none for it either)
+            let path = format!("{}/{}/{}", d, c.id, COURSE_FILE);
+            let fits = plat::fs::stat(&path).is_some_and(|m| m.size <= jfn_model::academy::JSON_MAX);
+            let here = fits.then(|| plat::read_file(&path)).flatten().and_then(|b| jfn_model::academy::Course::from_text(&String::from_utf8_lossy(&b)).ok());
             match standing(here.map(|x| x.course_version), Some(c.version)) {
                 Standing::NotInstalled => " nicht installiert",
                 Standing::Current | Standing::Unlisted => " aktuell",

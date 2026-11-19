@@ -712,8 +712,8 @@ pub fn patch_clones(p: &mut Project, a: &Axis, i: usize, addr: &dyn Fn(&str) -> 
             return Err(msg!("Die Adresse {} der Kopie {} hat schon ein anderes Gerät.", new_ip, k + 1));
         }
         let name = format!("{}-{}", tpl.name, k + 1);
-        let id = p.next_id.max(p.max_id() + 1);
-        p.next_id = id + 1;
+        let id = p.free_id();
+        p.next_id = id.saturating_add(1);
         let mut d = tpl.clone();
         d.id = id;
         d.name = name.clone();
