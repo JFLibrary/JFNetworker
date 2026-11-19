@@ -82,6 +82,8 @@ Ed25519-Signatur), damit JFNetworker sich selbst aktualisiert.
 
 ## Was du einrichten musst (einmal)
 
+Stand 2026-11-19: 1 bis 3 und 5 erledigt, 4 (GPG) ist freiwillig und offen.
+
 1. **Environment** `release` anlegen (GitHub › Settings › Environments), dich als *Required
    reviewer*, Deployment-Branches/Tags auf `main` und `v*` beschränken.
 2. **Developer ID** (Mac mini, Schlüsselbundverwaltung): „Developer ID Application: … (6RBCBNA6DJ)“
@@ -108,8 +110,8 @@ Ich fasse dabei keine Passwörter oder Schlüssel an; das Eintragen der Secrets 
 | 4 | kein `CHANGELOG.md` | erledigt: `CHANGELOG.md` mit dem Inhalt von 0.1.0 unter `[Unreleased]` |
 | 5 | macOS-Warnung (ungenutzter Import in `src/simmodetest.rs`) | erledigt (`cargo check --target aarch64-apple-darwin` ohne Warnung) |
 | 6 | `ci.yml` holte noch „JFLib beside this repository“ | erledigt |
-| 7 | Download-Seite auf networker.jfreund.org | Inhalt abgestimmt (2026-11-17): macOS (.dmg, macOS 13+) und Linux (.deb, AppImage), Windows als Hinweis mit Link auf den GitHub-Release (keine .exe auf der Website, auch nicht jfn-sim für Windows), die Knöpfe laden direkt vom GitHub-Release, MSIX/RPM/Flatpak nur als Zeile „folgen später“, dazu Prüfen (SHA256SUMS, Attestierung), überarbeitetes „Gut zu wissen“, News-Eintrag (auch Hub) und Roadmap; noch nicht gebaut, live erst mit dem Release |
-| 8 | der Workflow lief noch nie auf GitHub | erledigt: Probelauf ohne Schlüssel grün (unten); mit den Secrets noch einmal, dann der Tag |
+| 7 | Download-Seite auf networker.jfreund.org | Inhalt abgestimmt (2026-11-17): macOS (.dmg, macOS 13+) und Linux (.deb, AppImage), Windows als Hinweis mit Link auf den GitHub-Release (keine .exe auf der Website, auch nicht jfn-sim für Windows), die Knöpfe laden direkt vom GitHub-Release, MSIX/RPM/Flatpak nur als Zeile „folgen später“, dazu Prüfen (SHA256SUMS, Attestierung), überarbeitetes „Gut zu wissen“, News-Eintrag (auch Hub) und Roadmap; gebaut und gepusht (jfreundWebsite 73f0fe7), nicht deployt: live erst mit dem Release (Schritt 5) |
+| 8 | der Workflow lief noch nie auf GitHub | erledigt: Probeläufe ohne Schlüssel grün, mit Developer ID und Notarisierung grün (vierter Lauf, unten); als Nächstes der Tag |
 | 9 | Actions auf Node.js 20 (`cache@v4`, `upload-artifact@v4`, `download-artifact@v4`, `attest-build-provenance@v2`) | erledigt: `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `attest-build-provenance@v4` |
 | 10 | die macOS-Runner haben kein Rosetta: der Intel-Teil des .dmg lief dort nicht | erledigt: der Rauchtest installiert Rosetta vorher (`softwareupdate --install-rosetta`), der Intel-Teil besteht den Selbsttest (zweiter Lauf) |
 | 11 | `ubuntu-latest` ist seit Oktober 2026 Ubuntu 26.04: eine neuere glibc hätte die Pakete für ältere Systeme unbrauchbar machen können | kein Problem: `JFNetworker-netlab` und `jfn-sim` verlangen nur `GLIBC_2.2.5` (JFLib bindet die alten Symbolversionen), die AppImage-Laufzeit ist statisch |
@@ -142,6 +144,23 @@ Alle fünf Jobs grün: Windows 25 min, Linux 9 min, macOS 19 min, `publish` 19 s
 über Node.js 20 (Lücke 9). Auf dem Mac besteht jetzt auch der Intel-Teil unter Rosetta den
 Selbsttest `l3` mit 163/163 (Lücke 10). Die heruntergeladenen Dateien passen zu `SHA256SUMS`. Die
 Linux-Programme brauchen nur `GLIBC_2.2.5`, obwohl sie auf Ubuntu 26.04 gebaut sind (Lücke 11).
+
+### Dritter Lauf (2026-11-18, Lauf 44409976580 auf 767ab3e, mit den Secrets)
+
+Das Environment `release` steht seit dem 2026-11-18 (Prüfer Graphsto, Branch `main` und Tags `v*`),
+mit Developer ID und notarytool-Schlüssel, ohne GPG. Windows und Linux grün, der Import der
+Developer ID auf dem Mac ging („1 identity imported“). Dann brach `notarytool store-credentials` ab:
+„App Store Connect API Key ID contains invalid characters: ["\n"]“, die Key-ID war samt
+Zeilenumbruch eingefügt. Der Workflow entfernt jetzt Leerraum aus Key-ID und Issuer (acf04f3).
+
+### Vierter Lauf (2026-11-19, Lauf 44563622212 auf acf04f3, mit den Secrets)
+
+Alle fünf Jobs grün: Windows 29 min, Linux 14 min, macOS 28 min, `publish` 17 s. Auf dem Mac:
+Zugangsdaten geprüft, `JFNetworker.app` und das `.dmg` je notarisiert und das Ticket angeheftet
+(„The staple and validate action worked!“), im Rauchtest `TeamIdentifier=6RBCBNA6DJ`,
+`spctl`: „accepted, source=Notarized Developer ID“, Selbsttest nativ und unter Rosetta 163/163.
+`publish` mit `NOTARIZED: true`, Attestierung für alle 8 Dateien. Die Notizen fehlen erwartungsgemäß,
+weil `CHANGELOG.md` noch keinen Abschnitt 0.1.0 hat (das macht `release.py prepare`). GPG bleibt aus.
 
 ## Entscheidungen, die noch offen sind
 
