@@ -33,7 +33,8 @@
 //          between the nodes GET /_kv/KEY and PUT /_kv/KEY with X-Version (X-Deleted: 1 for a
 //          tombstone, X-Kv-Repair: 1 for read repair; 204 with X-Stored: 1 when it was newer)
 //
-// Metrics: requests, reads, writes, ok, not_found, unavailable, full, forwards, led,
+// Metrics: requests, reads, writes, ok, not_found, unavailable and full (the 503 and 507 answers
+// to clients; a replica's full disk shows in its Note::DiskFull), forwards, led,
 // replica_writes, replica_reads, stale_reads (a read answered an older version than another
 // replica had), read_repairs (sent), repaired (received), keys, bytes, members_up,
 // member_downs, p50_us, p95_us, p99_us (client requests at this node; the time series take them
@@ -653,8 +654,9 @@ impl KvNode {
             self.answer(os, r.id, 204, Vec::new(), h, None);
             return;
         }
+        // (not counted in `full`: that is of the requests of clients, and the coordinator counts
+        // the 507 its client gets)
         if self.local_write(os, &key, &e, IoFor::ReplicaWrite { sid: r.id, repair }).is_none() {
-            self.stats.full += 1;
             self.text(os, r.id, 507, "Disk voll\n", None);
         }
     }

@@ -661,6 +661,18 @@ fn kv_disk(t: &mut T) {
     t.eq("disk: a slow disk adds exactly 20 ms", lat(7, 3 * SEC) - lat(6, 2 * SEC), 20 * MS);
     t.check("disk: one millisecond of latency", lat(6, 2 * SEC) > MS && lat(6, 2 * SEC) < 2 * MS);
     t.eq("disk: full noted", notes_of(&e, h[0], |n| matches!(n, Note::DiskFull)).len(), 1);
+    // two nodes, eventual: the replica's disk is too small for the value, the leader's is not; the
+    // replica refuses the leader's copy with 507, which is no request of a client it failed
+    let (mut e, h) = net(3);
+    let two = "\"nodes\": [\"10.0.0.1\", \"10.0.0.2\"], \"rf\": 2, \"consistency\": \"eventual\"";
+    let ok = add(&mut e, h[0], "kv", "kv", &format!("{{{}}}", two)) && add(&mut e, h[1], "kv", "kv", &format!("{{{}, \"disk\": {{\"capacity_mb\": 0.001, \"latency_us\": 1000, \"iops\": 0}}}}", two));
+    // a key the first node leads
+    let key = (0..64).map(|i| format!("k{}", i)).find(|k| e.service::<KvNode>(h[0], "kv").and_then(|n| n.replicas(k).first().copied()) == Some(addr(0))).unwrap_or_default();
+    t.check("replica full: set up", ok && !key.is_empty() && probe(&mut e, h[2], vec![(100 * MS, req("PUT", &format!("http://10.0.0.1:7000/kv/{}", key), &"x".repeat(1200)))]));
+    run_to(&mut e, SEC);
+    t.eq("replica full: the client's write", got(&e, h[2]).first().map(|x| x.status), Some(201));
+    t.eq("replica full: the replica refused it", notes_of(&e, h[1], |n| matches!(n, Note::DiskFull)).len(), 1);
+    t.eq("replica full: no client's request failed (requests, full)", [h[0], h[1]].map(|d| (metric(&e, d, "kv", "requests"), metric(&e, d, "kv", "full"))), [(1, 0), (0, 0)]);
 }
 
 fn web_kv(t: &mut T) {
