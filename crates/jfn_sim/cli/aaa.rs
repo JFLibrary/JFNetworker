@@ -22,6 +22,9 @@
 //   Engine::aaa_result            the NAS reports a RADIUS login's outcome (radiusd.rs)
 //   Engine::aaa_sync_method / aaa_servers_of   a local method's decision, a method's servers
 //   Engine::ios_aaa_config(ni)    the lines of the running configuration
+//   Engine::banner_line(ni, delim, line)   a line of a banner whose text goes on ("banner motd
+//                                 #" or "^C" and Enter: the lines up to the delimiter, as IOS
+//                                 reads them; the running configuration writes "^C ... ^C")
 //
 // Texts are our own words; only "Username:" and "Password:" follow the usual prompts.  A plain
 // console (no "login" on line con 0, no AAA for it) opens at the user level as it always has.
@@ -41,6 +44,42 @@ use crate::driver::Report;
 use crate::kernel::Engine;
 use crate::os::Service;
 use crate::trace::Note;
+
+/// the delimiter "^C" of a banner (the characters ^ and C as the running configuration writes
+/// them, or Ctrl+C itself)
+pub const ETX: char = '\u{3}';
+
+/// the delimiter of "banner motd X..." and the text after it: "^C", else the first character
+fn banner_delim(raw: &str) -> Option<(char, &str)> {
+    if let Some(rest) = raw.strip_prefix("^C") {
+        return Some((ETX, rest));
+    }
+    let mut cs = raw.chars();
+    let d = cs.next()?;
+    Some((d, cs.as_str()))
+}
+
+/// where the delimiter is on a line of a banner: (its byte offset, its length)
+fn banner_end(line: &str, delim: char) -> Option<(usize, usize)> {
+    if delim != ETX {
+        return line.find(delim).map(|i| (i, delim.len_utf8()));
+    }
+    let caret = line.find("^C").map(|i| (i, 2));
+    let etx = line.find(ETX).map(|i| (i, 1));
+    match (caret, etx) {
+        (Some(a), Some(b)) => Some(if a.0 <= b.0 { a } else { b }),
+        (a, b) => a.or(b),
+    }
+}
+
+/// the delimiter the running configuration writes around a banner: "^C" as IOS does, else a
+/// character the text does not hold (a text with "^C" in it comes back whole)
+fn banner_mark(text: &str) -> String {
+    if !text.contains("^C") && !text.contains(ETX) {
+        return String::from("^C");
+    }
+    "#%&$@~*+=|".chars().find(|c| !text.contains(*c)).map_or_else(|| String::from("^C"), String::from)
+}
 
 /// the stage a login or enable gate is in
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -433,22 +472,44 @@ impl Engine {
             return Ok(());
         }
         let raw = p.text("text").unwrap_or("").trim_start();
-        // the first character is the delimiter; the text runs to its next occurrence
-        let mut cs = raw.chars();
-        let text = match cs.next() {
-            Some(delim) => {
-                let rest = cs.as_str();
-                match rest.find(delim) {
-                    Some(i) => &rest[..i],
-                    None => rest,
+        let Some((delim, rest)) = banner_delim(raw) else { return Ok(()) };
+        match banner_end(rest, delim) {
+            // "banner motd #text#": what comes after the delimiter is left out, as on IOS
+            Some((i, _)) => {
+                if let Some(cfg) = self.cfg_mut(ni) {
+                    cfg.motd = String::from(&rest[..i]);
                 }
             }
-            None => "",
-        };
-        if let Some(cfg) = self.cfg_mut(ni) {
-            cfg.motd = String::from(text);
+            // no delimiter on the line: the next lines are text until it comes
+            None => {
+                if let Some(cfg) = self.cfg_mut(ni) {
+                    cfg.motd = format!("{}\n", rest);
+                }
+                if !self.booting(ni) {
+                    let shown = if delim == ETX { String::from("^C") } else { String::from(delim) };
+                    self.out(ni, &format!("The banner text follows, line by line; it ends at the character '{}'.\n", shown));
+                }
+                if let Some(c) = self.cdev_mut(ni) {
+                    c.ask = Some(super::Ask { prompt: String::new(), kind: super::AskKind::Banner { delim } });
+                }
+            }
         }
         Ok(())
+    }
+
+    /// a line of a banner that goes on (AskKind::Banner): its text up to the delimiter (the
+    /// rest of that line is left out), else the whole line and the next one asked for
+    pub(crate) fn banner_line(&mut self, ni: usize, delim: char, line: &str) {
+        let end = banner_end(line, delim);
+        let Some(c) = self.cdev_mut(ni) else { return };
+        match end {
+            Some((i, _)) => c.cfg.motd.push_str(&line[..i]),
+            None => {
+                c.cfg.motd.push_str(line);
+                c.cfg.motd.push('\n');
+                c.ask = Some(super::Ask { prompt: String::new(), kind: super::AskKind::Banner { delim } });
+            }
+        }
     }
 
     fn cmd_auth_login(&mut self, ni: usize, p: &Parsed<K>) -> Result<(), String> {
@@ -1209,7 +1270,8 @@ impl Engine {
             s.push_str("!\n");
         }
         if !c.cfg.motd.is_empty() {
-            let d = if c.cfg.motd.contains('#') { '^' } else { '#' };
+            // between ^C as IOS writes it, the lines of a longer text as they are
+            let d = banner_mark(&c.cfg.motd);
             s.push_str(&format!("banner motd {}{}{}\n!\n", d, c.cfg.motd, d));
         }
         for srv in &aaa.servers {

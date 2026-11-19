@@ -312,6 +312,16 @@ pub enum AskKind {
     ClearOspf,
     /// a question of copy or delete (files.rs: CliDev::files holds the dialog)
     Files,
+    /// the lines of a banner after "banner motd #" until the delimiter comes (cli/aaa.rs;
+    /// aaa::ETX stands for "^C"); no prompt, every line is text
+    Banner { delim: char },
+}
+
+impl Ask {
+    /// the console reads the lines of a banner (they are text, not commands)
+    pub fn banner(&self) -> bool {
+        matches!(self.kind, AskKind::Banner { .. })
+    }
 }
 
 /// a console command that runs over virtual time
@@ -678,8 +688,8 @@ impl Engine {
     /// the text of "?" typed after `line` (IOS; Linux shells have no such help)
     pub fn cli_help(&self, dev: u32, line: &str) -> String {
         match self.node_index(dev) {
-            // a login gate takes no help
-            Some(ni) if self.cdev(ni).is_some_and(|c| c.gate.is_some()) => String::new(),
+            // a login gate takes no help, nor does the text of a banner
+            Some(ni) if self.cdev(ni).is_some_and(|c| c.gate.is_some() || c.ask.as_ref().is_some_and(Ask::banner)) => String::new(),
             Some(ni) if self.cdev(ni).is_some_and(|c| c.style == CliStyle::Ios) => self.ios_help(ni, line),
             _ => String::new(),
         }
@@ -687,7 +697,7 @@ impl Engine {
 
     /// Tab: the completed line (None: nothing to complete) and what the last word may become
     pub fn cli_complete(&self, dev: u32, line: &str) -> (Option<String>, Vec<String>) {
-        if self.node_index(dev).and_then(|ni| self.cdev(ni)).is_some_and(|c| c.gate.is_some()) {
+        if self.node_index(dev).and_then(|ni| self.cdev(ni)).is_some_and(|c| c.gate.is_some() || c.ask.as_ref().is_some_and(Ask::banner)) {
             return (None, Vec::new());
         }
         match self.node_index(dev) {
@@ -758,6 +768,12 @@ impl Engine {
             c.mode = Mode::Config;
         }
         for (i, raw) in text.lines().enumerate() {
+            // the lines of a banner that goes on are its text as they are: blank, "!" or "end"
+            // too (cli/aaa.rs)
+            if self.cdev(ni).is_some_and(|c| c.ask.as_ref().is_some_and(Ask::banner)) {
+                let _ = self.cli_run(ni, raw);
+                continue;
+            }
             let t = raw.trim();
             if t.is_empty() || t.starts_with('!') || t.starts_with('#') {
                 continue;
@@ -782,6 +798,10 @@ impl Engine {
             c.mode = Mode::User;
             c.ifs.clear();
             c.vlans.clear();
+            // a banner without its closing delimiter took the rest of the file
+            if c.ask.as_ref().is_some_and(Ask::banner) {
+                c.ask = None;
+            }
         }
         // spanning tree starts with the whole configuration read (stp.rs)
         self.stp_booted(ni);

@@ -309,7 +309,7 @@ const CURL_HELP: &str = concat!(
 
 const CURL_VERSION: &str = "curl 8.5.0 (JFNetworker): HTTP/1.1 over the simulator's TCP and TLS 1.3\nProtocols: http https\nFeatures: SSL\n";
 
-/// the value of a time option ("1.5" seconds)
+/// the value of a time option ("1.5" seconds); None past 2^64 ns (584 years)
 fn secs_of(s: &str) -> Option<Ns> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
     if (i.is_empty() && f.is_empty()) || !i.bytes().all(|b| b.is_ascii_digit()) || !f.bytes().all(|b| b.is_ascii_digit()) {
@@ -318,7 +318,8 @@ fn secs_of(s: &str) -> Option<Ns> {
     let mut ns = if i.is_empty() { 0 } else { i.parse::<u64>().ok()?.checked_mul(SEC)? };
     let f = &f[..f.len().min(9)];
     if !f.is_empty() {
-        ns += f.parse::<u64>().ok()? * 10u64.pow(9 - f.len() as u32);
+        // (the fraction may carry it past the end: "18446744073.9")
+        ns = ns.checked_add(f.parse::<u64>().ok()? * 10u64.pow(9 - f.len() as u32))?;
     }
     Some(ns)
 }
@@ -1258,7 +1259,7 @@ impl Nc {
             Ok(s) => {
                 self.sock = Some(s);
                 if let Some(w) = self.o.wait {
-                    let at = os.now() + w;
+                    let at = os.now().saturating_add(w);
                     os.timer(K_OWN, at);
                 }
             }
@@ -1311,7 +1312,7 @@ impl Nc {
                 os.tcp_shutdown(s);
             }
             if let Some(q) = self.o.quit {
-                let at = os.now() + q;
+                let at = os.now().saturating_add(q);
                 os.timer(2, at);
             }
         }
@@ -2306,7 +2307,7 @@ impl Engine {
             c.job = Some(super::CliJob { id: jid, out: JobOut::Top { left: if n == 0 { 0 } else { n - 1 }, delay, batch }, start });
         }
         self.cli.jobs.insert(jid, ni);
-        let at = self.now + delay;
+        let at = self.now.saturating_add(delay);
         self.cli_wake_at(ni, at);
         self.cli_state(ni);
         Ok(())
@@ -2359,7 +2360,7 @@ impl Engine {
         if let Some(c) = self.cdev_mut(ni) {
             c.job = Some(cj);
         }
-        let at = self.now + delay;
+        let at = self.now.saturating_add(delay);
         self.cli_wake_at(ni, at);
     }
 

@@ -13,7 +13,9 @@
 //   Engine::sh_abs(ni, path)      a path of the session made absolute (the store resolves .
 //                                 and ..); sh_prompt_dir: "~", "~/app", "/srv/ftp"
 //   Engine::sh_expand(ni, word)   the fields of a word: ~, $NAME ${NAME} $? $$ $! $0 $#,
-//                                 quotes, splitting of unquoted expansions, globs
+//                                 quotes, splitting of unquoted expansions, globs; sh_value(ni,
+//                                 value) the value of NAME=value: the same, neither split nor
+//                                 globbed
 //   Engine::sh_complete(ni, line) Tab: command words (the list of linux.rs), the objects of ip,
 //                                 else paths (a trailing / for directories, the common prefix
 //                                 of several matches)
@@ -407,11 +409,14 @@ pub fn parse(line: &str) -> Result<Vec<AndOr>, String> {
     }
     if !cmd.words.is_empty() || !cmd.redirs.is_empty() {
         pipe.cmds.push(cmd);
+    } else if !pipe.cmds.is_empty() {
+        // "a |": the command after the pipe is missing
+        return Err(String::from("jfn-sh: syntax error: unexpected end of file\n"));
     }
     if !pipe.cmds.is_empty() {
         cur.parts.push((conn, pipe));
     } else if conn != Conn::First || pipe.bang {
-        // "a &&" or "a |": the rest of the command is missing
+        // "a &&" or "a && !": the rest of the command is missing
         return Err(String::from("jfn-sh: syntax error: unexpected end of file\n"));
     }
     if !cur.parts.is_empty() {
@@ -631,6 +636,12 @@ impl Engine {
             i += 1;
         }
         (v, quoted_any)
+    }
+
+    /// the value of an assignment (NAME=value): expanded and unquoted as a word is, but neither
+    /// split nor globbed, as in bash ("X=*.txt" keeps the star, "X=$Y" keeps Y's blanks)
+    pub(crate) fn sh_value(&self, ni: usize, raw: &str) -> String {
+        self.sh_chars(ni, raw).0.iter().map(|c| c.c).collect()
     }
 
     /// the fields of a word: expanded, split where an unquoted expansion had blanks, globs

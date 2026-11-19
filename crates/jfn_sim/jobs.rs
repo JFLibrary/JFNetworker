@@ -2,7 +2,8 @@
 //
 //   Engine::ping(dev, dst, PingOpts) -> JobId          ICMP echo, one probe per interval
 //                                                      (interval 0: the next one when the
-//                                                      previous is answered or timed out, as IOS)
+//                                                      previous is answered or timed out, as IOS;
+//                                                      a deadline ends it as iputils -w does)
 //   Engine::ping_host(dev, host, PingOpts) -> JobId    the same for a name: the device's
 //                                                      resolver finds the address first (the
 //                                                      job's `lookup`); a failed lookup ends
@@ -100,11 +101,15 @@ pub struct PingOpts {
     pub interval: Ns,
     pub timeout: Ns,
     pub src: Option<Ipv4>,
+    /// iputils -w: the job ends this long after its first probe whatever `count` says (0: no
+    /// deadline); until then it sends past `count` until that many probes are answered, and
+    /// an error ends it
+    pub deadline: Ns,
 }
 
 impl Default for PingOpts {
     fn default() -> PingOpts {
-        PingOpts { count: 4, size: 56, ttl: None, df: false, interval: SEC, timeout: 2 * SEC, src: None }
+        PingOpts { count: 4, size: 56, ttl: None, df: false, interval: SEC, timeout: 2 * SEC, src: None, deadline: 0 }
     }
 }
 
@@ -133,6 +138,8 @@ pub struct PingJob {
     pub rtt_max: Ns,
     pub rtt_sum: Ns,
     next_send: Ns,
+    /// the end of a deadline (PingOpts::deadline), from the first probe on
+    until: Ns,
     /// the name it was started with (ping_host)
     pub host: Option<String>,
     /// the lookup of the device's resolver for the name
@@ -141,6 +148,24 @@ pub struct PingJob {
     pub then6: bool,
     /// the ICMPv6 data bytes when the name leads to IPv6 (None: those of IPv4)
     pub size6: Option<u16>,
+}
+
+impl PingJob {
+    /// probes still to send: `count` of them (0: until cancelled); with a deadline until it
+    /// is over
+    fn more(&self) -> bool {
+        self.opts.deadline > 0 || self.opts.count == 0 || self.sent < self.opts.count
+    }
+    /// a ping with a deadline is over at its time, once `count` probes are answered, or after
+    /// an error (iputils' main loop)
+    fn over(&self, now: Ns) -> bool {
+        self.opts.deadline > 0 && (now >= self.until || self.errors > 0 || (self.opts.count > 0 && self.received >= self.opts.count))
+    }
+    /// it failed as iputils' exit status counts: no reply, or with a deadline fewer replies
+    /// than `count`
+    pub fn failed(&self) -> bool {
+        self.received == 0 || (self.opts.deadline > 0 && self.received < self.opts.count)
+    }
 }
 
 /// how to trace a route
@@ -311,6 +336,7 @@ impl Engine {
             rtt_max: 0,
             rtt_sum: 0,
             next_send: now,
+            until: Ns::MAX,
             host: None,
             lookup: None,
             then6: false,
@@ -372,6 +398,7 @@ impl Engine {
             rtt_max: 0,
             rtt_sum: 0,
             next_send: Ns::MAX,
+            until: Ns::MAX,
             host: Some(String::from(host.trim())),
             lookup: None,
             then6,
@@ -487,9 +514,13 @@ impl Engine {
         };
         let seq = p.next_seq;
         p.next_seq = p.next_seq.wrapping_add(1);
+        // a deadline runs from the first probe (iputils sets its alarm once it pings)
+        if p.sent == 0 && p.opts.deadline > 0 {
+            p.until = now.saturating_add(p.opts.deadline);
+        }
         p.sent += 1;
         p.out.insert(seq, now);
-        p.next_send = now + p.opts.interval;
+        p.next_send = now.saturating_add(p.opts.interval);
         let (src, dst, ident, size, ttl, df) = (p.src, p.dst, p.ident, p.opts.size, p.opts.ttl, p.opts.df);
         let data: Vec<u8> = (0..size as usize).map(|i| (i & 0xFF) as u8).collect();
         let Some(st) = self.stack_mut(ni) else {
@@ -517,10 +548,13 @@ impl Engine {
         let JobKind::Ping(p) = &j.kind else {
             return;
         };
-        let more = p.opts.count == 0 || p.sent < p.opts.count;
-        let mut at = p.out.values().map(|t| t + probe_wait(p.opts.timeout)).min();
+        let more = p.more();
+        let mut at = p.out.values().map(|t| t.saturating_add(probe_wait(p.opts.timeout))).min();
         if more && p.opts.interval > 0 {
             at = Some(at.map_or(p.next_send, |a| a.min(p.next_send)));
+        }
+        if p.opts.deadline > 0 {
+            at = Some(at.map_or(p.until, |a| a.min(p.until)));
         }
         if let Some(t) = at {
             self.job_tick_at(id, t);
@@ -536,8 +570,9 @@ impl Engine {
         let JobKind::Ping(p) = &mut j.kind else {
             return;
         };
-        let more = p.opts.count == 0 || p.sent < p.opts.count;
-        if !more && p.out.is_empty() {
+        let more = p.more();
+        // (probes still out when a deadline is over count as lost, as iputils counts them)
+        if p.over(now) || (!more && p.out.is_empty()) {
             j.done = true;
             j.epoch = j.epoch.wrapping_add(1);
             self.cli_job(id);
@@ -556,7 +591,7 @@ impl Engine {
         if let Some(j) = self.jobs.get_mut(&id)
             && let JobKind::Ping(p) = &mut j.kind
         {
-            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + probe_wait(p.opts.timeout) <= now).map(|(s, _)| *s).collect();
+            let late: Vec<u16> = p.out.iter().filter(|(_, t)| t.saturating_add(probe_wait(p.opts.timeout)) <= now).map(|(s, _)| *s).collect();
             for s in late {
                 p.out.remove(&s);
                 p.events.push(PingEv::Timeout { seq: s });
@@ -795,7 +830,7 @@ impl Engine {
         h.id = ipid;
         h.push_onto(&mut pk);
         self.ip_output(ni, pk.into_vec(), Origin::Local { job: Some((id, dport)) }, None);
-        self.job_tick_at(id, now + probe_wait(timeout));
+        self.job_tick_at(id, now.saturating_add(probe_wait(timeout)));
     }
 
     /// the probe is settled: the next probe of this hop, the next hop, or the end

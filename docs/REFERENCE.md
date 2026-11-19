@@ -1059,8 +1059,9 @@ IOS-artige Befehlszeile:
   (siehe [SNMP](#snmp)).
 
 Hosts und Server haben eine Linux-Shell (`root@PC1:~#`): `ip addr|link|route|neigh` mit den
-Ausgaben und Fehlermeldungen von iproute2, `ping` wie iputils (bis Strg+C oder `-c`; `-i`,
-`-s`, `-t`, `-W`, `-M do`), `traceroute`, `hostname` und `sysctl net.ipv4.ip_forward`.
+Ausgaben und Fehlermeldungen von iproute2, `ping` wie iputils (bis Strg+C, `-c` oder die Frist
+`-w`; `-i`, `-s`, `-t`, `-W`, `-I` Adresse oder Interface als Quelle, `-M do`), `traceroute`,
+`hostname` und `sysctl net.ipv4.ip_forward`.
 Dazu Programme auf den Sockets, die die Konsole belegen, bis sie enden (Strg+C bricht ab):
 `curl` (`-v`, `-i`, `-I`, `-s`/`-S`, `-o`, `-w`, `-L`, `-f`, `-d`, `-X`, `-H`, `-m`,
 `--connect-timeout`, `-0`; mehrere URLs über eine Verbindung, Fortschrittsanzeige und
@@ -2786,13 +2787,14 @@ Befehl mit Pfaden nimmt relative (auch `ls`, `cat`, `cp`, `rm`, `mkdir`, `touch`
 - Umleitungen `>`, `>>`, `<`, `2>`, `2>>`, `2>&1`, `1>&2`, `&>`, `&>>` und `/dev/null`; die
   Reihenfolge zählt wie bei bash (`> f 2>&1` gegen `2>&1 > f`). Eine Datei, die sich nicht
   schreiben lässt, lehnt die Shell vor dem Befehl ab (`jfn-sh: /x/y: No such file or
-  directory`); geschrieben wird, wenn der Befehl endet – ein Schritt des Projekts wie jede
+  directory`); `>` leert die Datei vor dem Befehl wie bei bash (`sort f > f` hinterlässt eine
+  leere Datei); geschrieben wird, wenn der Befehl endet – ein Schritt des Projekts wie jede
   geänderte Datei, `/etc/resolv.conf` stellt wie bisher den Resolver ein;
 - Wörter: `'…'` wörtlich, `"…"` mit `$`-Ersetzung und `\` vor `$ " \`, `\` außerhalb von
   Anführungszeichen, `#` am Wortanfang beginnt einen Kommentar;
 - Variablen: `NAME=WERT`, `NAME=WERT befehl` (nur für diesen Befehl), `$NAME`, `${NAME}`, `$?`,
   `$$` (100, die Shell), `$!`, `$0`, `$#`, `~` und `~root`; unquotierte Ersetzungen werden an
-  Leerraum geteilt;
+  Leerraum geteilt, der Wert einer Zuweisung nicht (und er ist auch kein Platzhalter);
 - Platzhalter `*`, `?` und `[…]` (mit `!`/`^` und Klassen) über die Dateien des Geräts,
   Komponente für Komponente, Dateien mit Punkt nur mit Punkt im Muster, sortiert nach Bytes wie
   bash mit `LC_COLLATE=C`; ohne Treffer bleibt das Wort stehen;
@@ -2848,8 +2850,9 @@ Socket, Server, keine offene Anfrage; Status 0), nach einem Fehler (`DATEI:ZEILE
 …` auf stderr, Status 1) oder mit Strg+C (130); ein Übersetzungsfehler meldet sich wie beim Runner
 `jfs`. `BEFEHL &` läuft im Hintergrund: sofort `[N] PID`, die Ausgabe kommt ins Terminal, wann
 immer sie entsteht, und vor dem nächsten Prompt `[N]+  Done                    BEFEHL` (`Exit N`,
-`Terminated`, `Killed`) wie bei bash. `jobs [-l] [-p]` zeigt die Jobs, `fg [%N]` und `wait`
-warten auf einen (Strg+C beendet ihn), `kill [-SIGNAL] PID|%N` beendet ihn (TERM, KILL, INT, HUP; `kill -l`),
+`Terminated`, `Killed`) wie bei bash. `jobs [-l] [-p]` zeigt die Jobs, `fg [%N]` und `wait %N`
+warten auf einen (Strg+C beendet ihn), `wait` ohne Argument auf alle (Strg+C beendet nur das
+Warten), `kill [-SIGNAL] PID|%N` beendet ihn (TERM, KILL, INT, HUP; `kill -l`),
 `sleep` läuft als Job über die virtuelle Zeit. `ps` zeigt init (1), die Shell (100), die
 laufenden Dienste mit 100 + ihrer Nummer – dieselben PIDs wie `top` und `ss -p` – mit ihrer
 Rechenzeit und die Jobs; ein Job ohne eigenen Dienst bekommt eine Nummer aus demselben Vorrat.
@@ -2874,7 +2877,8 @@ weiterhin genau wie bisher.
 - **Lokale Anmeldungen** ([`crates/jfn_sim/auth.rs`](crates/jfn_sim/auth.rs),
   [`cli/aaa.rs`](crates/jfn_sim/cli/aaa.rs)): `enable secret` und `enable password` (auch
   `level N`), `username NAME [privilege N] secret|password …`, auf den Leitungen `password`,
-  `login`, `login local`, `exec-timeout`, `banner motd`, `service password-encryption`;
+  `login`, `login local`, `exec-timeout`, `banner motd` (Trennzeichen `^C` oder ein Zeichen,
+  auch über mehrere Zeilen; die Running-Config schreibt `^C … ^C`), `service password-encryption`;
   Rechtestufen 1 und 15 mit `enable`/`disable`. Die Konsole (Terminal-Tab und Gerätefenster)
   zeigt `Username:` und `Password:` und tippt das Passwort ohne Echo (drei Versuche, eigene
   Worte bei Fehlern). `show users`, `show aaa servers`, `show radius statistics`.

@@ -200,7 +200,7 @@ impl Engine {
         let size6 = bytes.max(48) - 48;
         let six = v6 || (h6 && !h4);
         let (fam, size) = if six { (Family::V6, size6) } else { (Family::V4, bytes.saturating_sub(28)) };
-        let o = PingOpts { count, size, ttl: None, df, interval: 0, timeout, src };
+        let o = PingOpts { count, size, ttl: None, df, interval: 0, timeout, src, deadline: 0 };
         // a name the name servers know: IPv6 when it has no IPv4 address
         let Ok(id) = self.ping_host_fam(dev, name, o, fam, !six && !hosted, Some(size6)) else {
             return Ok(());

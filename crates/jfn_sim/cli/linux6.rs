@@ -392,7 +392,7 @@ impl Engine {
     /// "ping -6", "ping6", "ping X:X::X"
     pub(crate) fn sh_ping6(&mut self, ni: usize, args: &[&str]) -> Result<(), String> {
         let dev = self.dev_of(ni);
-        let mut o = Ping6Opts { count: 0, size: 56, hops: None, no_frag: false, interval: SEC, timeout: 10 * SEC, src: None, oif: None };
+        let mut o = Ping6Opts { count: 0, size: 56, hops: None, no_frag: false, interval: SEC, timeout: 10 * SEC, src: None, oif: None, deadline: 0 };
         let mut dst: Option<&str> = None;
         let mut via: Option<String> = None;
         let mut k = 0;
@@ -445,7 +445,11 @@ impl Engine {
                             }
                         }
                     }
-                    "n" | "q" | "6" | "w" => {}
+                    "w" => match super::linux::deadline_of(val) {
+                        Some(d) => o.deadline = d,
+                        None => return self.sh_err(ni, &bad(val)),
+                    },
+                    "n" | "q" | "6" => {}
                     f => return self.sh_err(ni, &format!("ping: invalid option -- '{}'\n", f)),
                 }
             } else {
@@ -465,8 +469,8 @@ impl Engine {
                 return self.sh_err(ni, &format!("ping: {}: Address family for hostname not supported\n", d));
             }
             // a name: its AAAA records first (print.rs prints it as a ping over IPv6)
-            let p4 = PingOpts { count: o.count, size: o.size, ttl: o.hops, df: o.no_frag, interval: o.interval, timeout: o.timeout, src: None };
-            self.linux_ping_start(ni, d, p4, Family::V6);
+            let p4 = PingOpts { count: o.count, size: o.size, ttl: o.hops, df: o.no_frag, interval: o.interval, timeout: o.timeout, src: None, deadline: o.deadline };
+            self.linux_ping_start(ni, d, p4, Family::V6, None);
             return Ok(());
         };
         if (a.is_link_local() || (a.is_multicast() && a.mc_scope() <= 2)) && o.oif.is_none() {

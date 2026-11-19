@@ -27,7 +27,8 @@
 //
 // Pipes collect: the left side's output becomes the right side's input when the left side ends
 // (a ping on the left of a pipe prints when it is done); a redirection into a file writes when
-// its command ends (a file that cannot be written is refused before the command runs).  A
+// its command ends (a file that cannot be written is refused before the command runs; "> f"
+// empties f before it, as bash's open does, so "sort f > f" leaves f empty).  A
 // command that runs over time (ping, curl, sleep, jfs ...) holds the line; its exit code comes
 // when it ends.  Ctrl+C ends the command that runs: the rest of its pipeline still filters what
 // was collected, the rest of the line is dropped, $? is 130.
@@ -65,6 +66,9 @@ use crate::scriptsvc::{ScriptCfg, ScriptService, ScriptState};
 
 /// Ev::Cli epochs with this bit wake a background job (the rest is its number)
 pub const BG_WAKE: u32 = 0x8000_0000;
+
+/// JobOut::Wait of "wait" without an argument: every background job (the numbers start at 1)
+pub const WAIT_ALL: u32 = 0;
 
 /// where a command's output goes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +116,9 @@ pub struct Run {
     pub phase: Phase,
     /// what the running command reads (the previous command's output, a file of <)
     pub input: Option<Vec<u8>>,
+    /// the canonical path a < of the running command read (a later > of the same file empties
+    /// it before the command reads: "sort < f > f" sorts nothing, as in bash)
+    pub in_file: Option<String>,
     /// what it writes into the pipe
     pub pipe: Vec<u8>,
     pub out: Sink,
@@ -143,6 +150,7 @@ impl Run {
             stage: 0,
             phase: Phase::Next,
             input: None,
+            in_file: None,
             pipe: Vec::new(),
             out: Sink::Term,
             err: Sink::Term,
@@ -158,7 +166,7 @@ impl Run {
         }
     }
     pub fn footprint(&self) -> usize {
-        let mut b = core::mem::size_of::<Run>() + self.pipe.len() + self.input.as_ref().map_or(0, |i| i.len());
+        let mut b = core::mem::size_of::<Run>() + self.pipe.len() + self.input.as_ref().map_or(0, |i| i.len()) + self.in_file.as_ref().map_or(0, |p| p.len());
         b += self.files.iter().map(|f| f.data.len() + f.path.len() + f.abs.len() + 64).sum::<usize>();
         b += self.items.iter().map(|i| i.text.len() * 2 + 128).sum::<usize>();
         b
@@ -453,6 +461,7 @@ impl Engine {
         run.out = if last { Sink::Term } else { Sink::Pipe };
         run.err = Sink::Term;
         run.cur_err = None;
+        run.in_file = None;
         if let Some(s) = self.sh_mut(ni) {
             s.code = None;
         }
@@ -463,7 +472,8 @@ impl Engine {
             if argv.is_empty()
                 && let Some((n, v)) = sh::assignment(w)
             {
-                let val = self.sh_expand(ni, v).join(" ");
+                // (an assignment's value is neither split nor globbed: sh.rs sh_value)
+                let val = self.sh_value(ni, v);
                 assigns.push((String::from(n), val));
                 continue;
             }
@@ -529,16 +539,17 @@ impl Engine {
         }
         let path = w[0].clone();
         if r.op == ROp::In {
-            let data = if path == "/dev/null" {
-                Ok(Vec::new())
+            let (data, canon) = if path == "/dev/null" {
+                (Ok(Vec::new()), None)
             } else {
                 let abs = self.sh_abs(ni, &path);
-                self.sh_read(ni, &abs)
+                (self.sh_read(ni, &abs), self.store(ni).and_then(|s| s.norm(&abs).ok()))
             };
             return match data {
                 Ok(d) => {
                     if let Some(run) = self.sh_run_mut(ni) {
                         run.input = Some(d);
+                        run.in_file = canon;
                     }
                     Ok(())
                 }
@@ -555,6 +566,12 @@ impl Engine {
             let abs = self.sh_abs(ni, &path);
             if let Err(e) = self.sh_writable(ni, &abs) {
                 self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", path, e));
+                return Err(1);
+            }
+            // ">" empties the file before the command runs, as the shell's open with O_TRUNC
+            // does ("sort f > f" sorts nothing); the command's output comes when it ends
+            if !append && let Err(e) = self.sh_truncate(ni, &abs) {
+                self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", path, e.errno_text()));
                 return Err(1);
             }
             let Some(run) = self.sh_run_mut(ni) else { return Ok(()) };
@@ -600,6 +617,29 @@ impl Engine {
             Some(_) => Err("Not a directory"),
             None => Err("No such file or directory"),
         }
+    }
+
+    /// a ">" of the command that starts empties its file now (a < of the same file before it
+    /// then reads nothing either).  A missing or empty file is left to the command's end, which
+    /// makes it; the made files of /etc are no files: they take what was written when the
+    /// command ends (netsvc.rs etc_write), and so does "> neu/" (sh_write_file refuses it)
+    fn sh_truncate(&mut self, ni: usize, abs: &str) -> Result<(), jfn_model::files::FsErr> {
+        if abs.ends_with('/') {
+            return Ok(());
+        }
+        let Some(p) = self.store(ni).and_then(|s| s.norm(abs).ok()) else { return Ok(()) };
+        if self.cat_etc(ni, &p).is_some() {
+            return Ok(());
+        }
+        if let Some(run) = self.sh_run_mut(ni)
+            && run.in_file.as_deref() == Some(p.as_str())
+        {
+            run.input = Some(Vec::new());
+        }
+        if self.store(ni).and_then(|s| s.stat(&p)).is_none_or(|s| s.dir || s.size == 0) {
+            return Ok(());
+        }
+        self.file_put(ni, &p, &[], false).map(|_| ())
     }
 
     /// the command ended: its files, then the next command, pipeline or and-or list
@@ -741,7 +781,7 @@ impl Engine {
     }
 
     /// the exit status of a console job that ended by itself: ping 0 with a reply, 1
-    /// without, 2 when the name was not found
+    /// without (with -w and -c: fewer replies than asked for), 2 when the name was not found
     fn job_code(&self, j: &CliJob) -> i32 {
         let Some(job) = self.job(j.id) else { return 0 };
         match &job.kind {
@@ -749,10 +789,10 @@ impl Engine {
                 if p.dst.is_unspecified() {
                     2
                 } else {
-                    i32::from(p.received == 0)
+                    i32::from(p.failed())
                 }
             }
-            JobKind::Ping6(p) if matches!(j.out, JobOut::Ping6 { ios: false, .. } | JobOut::LinuxPing { .. }) => i32::from(p.received == 0),
+            JobKind::Ping6(p) if matches!(j.out, JobOut::Ping6 { ios: false, .. } | JobOut::LinuxPing { .. }) => i32::from(p.failed()),
             JobKind::Trace(t) if matches!(j.out, JobOut::LinuxTrace { .. }) && t.dst.is_unspecified() => 2,
             _ => 0,
         }
@@ -761,12 +801,21 @@ impl Engine {
     /// Ctrl+C ended the foreground's console job (cli_interrupt): the rest of the pipeline
     /// filters what was collected, the rest of the line goes
     pub(crate) fn sh_interrupted(&mut self, ni: usize, j: Option<&CliJob>) {
-        // `fg` / `wait`: the job it waited for gets the signal
+        // `fg` / `wait %N`: the job it waited for gets the signal; `wait` alone only stops
+        // waiting (the jobs run on and print their done lines again)
         if let Some(CliJob { out: JobOut::Wait { no }, .. }) = j {
             let no = *no;
-            self.sh_kill_job(ni, no, 2);
-            if let Some(s) = self.sh_mut(ni) {
-                s.bg.retain(|x| x.no != no || x.ended.is_none());
+            if no == WAIT_ALL {
+                if let Some(s) = self.sh_mut(ni) {
+                    for x in s.bg.iter_mut().filter(|x| x.ended.is_none()) {
+                        x.waited = false;
+                    }
+                }
+            } else {
+                self.sh_kill_job(ni, no, 2);
+                if let Some(s) = self.sh_mut(ni) {
+                    s.bg.retain(|x| x.no != no || x.ended.is_none());
+                }
             }
         }
         // the terminal ends the line of the ^C (what the command printed on it went elsewhere)
@@ -872,7 +921,12 @@ impl Engine {
         };
         let Some(s) = self.sh_mut(ni) else { return };
         let mut done_code = None;
-        if let Some(w) = waiting
+        if waiting == Some(WAIT_ALL) {
+            // "wait": done when no job runs any more
+            if s.bg.iter().all(|j| j.ended.is_some()) {
+                done_code = Some(0);
+            }
+        } else if let Some(w) = waiting
             && let Some(j) = s.bg.iter().find(|j| j.no == w && j.ended.is_some())
         {
             done_code = Some(match j.run.killed {
@@ -1046,17 +1100,28 @@ impl Engine {
     }
 
     /// fg [%N] and wait [%N | PID]: the console waits for a background job (its output goes
-    /// to the terminal as before; Ctrl+C ends it)
+    /// to the terminal as before; Ctrl+C ends it); wait without an argument waits for every one
+    /// (status 0, as bash's), Ctrl+C ends only the waiting then
     pub(crate) fn sh_fg(&mut self, ni: usize, args: &[&str], wait: bool) -> Result<(), String> {
         let name = if wait { "wait" } else { "fg" };
         if self.sh_bg_ctx(ni).is_some() {
             return self.sh_err(ni, &format!("jfn-sh: {}: no job control\n", name));
         }
+        if wait && args.is_empty() {
+            let Some(s) = self.sh_mut(ni) else { return Ok(()) };
+            let mut any = false;
+            // (bash forgets the ends of the jobs it waited for: no done lines)
+            for j in s.bg.iter_mut().filter(|j| j.ended.is_none()) {
+                j.waited = true;
+                any = true;
+            }
+            if any {
+                self.sh_wait_for(ni, WAIT_ALL);
+            }
+            return Ok(());
+        }
         let spec = args.first().copied().unwrap_or("%+");
         let Some(no) = self.sh_job_by(ni, spec) else {
-            if wait && args.is_empty() {
-                return Ok(());
-            }
             let what = if spec == "%+" { "current" } else { spec };
             self.sh_set_code(ni, if wait { 127 } else { 1 });
             return self.sh_err(ni, &format!("jfn-sh: {}: {}: no such job\n", name, what));
@@ -1068,13 +1133,18 @@ impl Engine {
         if let Some(j) = self.sh_mut(ni).and_then(|s| s.bg.iter_mut().find(|j| j.no == no)) {
             j.waited = true;
         }
+        self.sh_wait_for(ni, no);
+        Ok(())
+    }
+
+    /// the console waits for background job `no` (WAIT_ALL: for every one)
+    fn sh_wait_for(&mut self, ni: usize, no: u32) {
         self.next_job += 1;
         let id = self.next_job;
         let start = self.now;
         if let Some(c) = self.cdev_mut(ni) {
             c.job = Some(CliJob { id, out: JobOut::Wait { no }, start });
         }
-        Ok(())
     }
 
     /// kill [-SIG | -s SIG | -n N] PID|%N ..., kill -l
@@ -1179,7 +1249,8 @@ impl Engine {
         if d == 0 {
             return Ok(());
         }
-        let until = self.now + d;
+        // (a sleep of centuries ends at the end of time, not at once)
+        let until = self.now.saturating_add(d);
         self.next_job += 1;
         let id = self.next_job;
         let start = self.now;

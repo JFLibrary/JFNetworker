@@ -1228,7 +1228,7 @@ impl SnmpTool {
             self.end(os, 1);
             return;
         }
-        let at = os.now() + self.timeout;
+        let at = os.now().saturating_add(self.timeout);
         os.timer(K_WAIT, at);
     }
 

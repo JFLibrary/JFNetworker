@@ -974,6 +974,11 @@ fn console_linux(t: &mut T) {
     t.eq("linux: ping6 link-local", cli(&mut e, PC2, &["ping6 -c 1 fe80::1"]), s("ping: connect: Invalid argument\n"));
     let o = cli_for(&mut e, PC2, "ping -6 -c 1 fe80::4a:ff:fe00:101%eth0", 2 * SEC);
     t.check("linux: ping with zone", o.starts_with("PING fe80::4a:ff:fe00:101%eth0(fe80::4a:ff:fe00:101%eth0) 56 data bytes\n64 bytes from fe80::4a:ff:fe00:101: icmp_seq=1 ttl=64 time="));
+    // review 2026-11-18: -w over IPv6 as over IPv4, a deadline whatever the count (it was
+    // ignored: the ping ran on)
+    let o = cli_for(&mut e, PC2, "ping -6 -w 2 fe80::4a:ff:fe00:101%eth0 | grep transmitted", 3 * SEC);
+    t.check("linux: ping -6 -w 2", o.starts_with("2 packets transmitted, 2 received, 0% packet loss") && !e.cli_busy(PC2));
+    t.eq("linux: ping -6 -w x", cli(&mut e, PC2, &["ping -6 -w x fe80::1%eth0"]), s("ping: invalid argument: 'x'\n"));
     let o = cli_for(&mut e, PC2, "traceroute -6 -n -q 1 2001:db8:12::2", 5 * SEC);
     t.check("linux: traceroute -6", o.starts_with("traceroute to 2001:db8:12::2 (2001:db8:12::2), 30 hops max, 80 byte packets\n 1  2001:db8:1::1  ") && o.contains("\n 2  2001:db8:12::2  "));
     // read back: the same configuration and the same addresses

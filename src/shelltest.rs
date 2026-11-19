@@ -91,6 +91,7 @@ pub fn run(t: &mut T) {
     tab_t(t);
     jfs_t(t);
     jobs_t(t);
+    wait_ping_t(t);
     ios_t(t);
     project_t(t);
     determinism_t(t);
@@ -149,6 +150,10 @@ fn grammar_t(t: &mut T) {
     t.eq("an empty argument", sh(&mut e, "printf '[%s]' '' x \"\"; echo"), s("[][x][]\n"));
     t.eq("variables", sh(&mut e, "X=5; echo ${X}0 $X $UNSET. \"$X\""), s("50 5 . 5\n"));
     t.eq("splitting of unquoted expansions", sh(&mut e, "A='1  2'; printf '[%s]' $A; echo; printf '[%s]' \"$A\"; echo"), s("[1][2]\n[1  2]\n"));
+    // review 2026-11-18: an assignment's value is neither globbed nor split (bash)
+    t.eq("an assignment is no glob", sh(&mut e, "cd app; AX=*.txt; echo \"$AX\"; cd"), s("*.txt\n"));
+    t.eq("an assignment is not split", sh(&mut e, "AY='a  b'; AZ=$AY; echo \"$AZ\"; AW=$AY env | grep ^AW="), s("a  b\nAW=a  b\n"));
+    t.eq("an assignment still expands ~", sh(&mut e, "AV=~/x; echo $AV"), s("/root/x\n"));
     t.eq("$$ $0 $#", sh(&mut e, "echo $$ $0 $#"), s("100 jfn-sh 0\n"));
     t.eq("an expansion to nothing is no argument", sh(&mut e, "printf '[%s]' $NOTHING; echo"), s("[]\n"));
     t.eq("a comment", sh(&mut e, "echo a # b; echo c"), s("a\n"));
@@ -159,6 +164,10 @@ fn grammar_t(t: &mut T) {
     t.eq("export with a bad name", sh(&mut e, "export 1x=2; echo $?"), s("jfn-sh: export: `1x=2': not a valid identifier\n1\n"));
     t.eq("syntax: a lone ;", sh(&mut e, "; ls"), s("jfn-sh: syntax error near unexpected token `;'\n"));
     t.eq("syntax: && at the end", sh(&mut e, "ls &&"), s("jfn-sh: syntax error: unexpected end of file\n"));
+    // review 2026-11-18: a pipe at the end runs nothing (it printed the file)
+    t.eq("syntax: | at the end", sh(&mut e, "cat notes.txt |"), s("jfn-sh: syntax error: unexpected end of file\n"));
+    t.eq("syntax: | at the end, $? 2", sh(&mut e, "echo $?"), s("2\n"));
+    t.eq("syntax: | before ;", sh(&mut e, "cat notes.txt | ; ls"), s("jfn-sh: syntax error near unexpected token `;'\n"));
     t.eq("syntax: > without a file", sh(&mut e, "echo hi >"), s("jfn-sh: syntax error near unexpected token `newline'\n"));
     t.eq("syntax: || ||", sh(&mut e, "true || || true"), s("jfn-sh: syntax error near unexpected token `||'\n"));
     t.eq("syntax: an open quote", sh(&mut e, "echo \"abc"), s("jfn-sh: unexpected EOF while looking for matching `\"'\n"));
@@ -183,6 +192,12 @@ fn redir_t(t: &mut T) {
     let mut e = tree_engine();
     t.eq("> >> <", sh(&mut e, "echo eins > f; echo zwei >> f; cat < f"), s("eins\nzwei\n"));
     t.eq("> replaces", sh(&mut e, "echo drei > f; cat f"), s("drei\n"));
+    // review 2026-11-18: > empties its file before the command runs, as bash does (the sorted
+    // lines stayed)
+    t.eq("sort f > f leaves f empty", sh(&mut e, "printf 'b\\na\\n' > s.txt; sort s.txt > s.txt; wc -c < s.txt"), s("0\n"));
+    t.eq("sort < f > f too", sh(&mut e, "printf 'b\\na\\n' > s.txt; sort < s.txt > s.txt; wc -c < s.txt"), s("0\n"));
+    t.eq(">> keeps the file", sh(&mut e, "printf 'b\\na\\n' > s.txt; sort s.txt >> s.txt; cat s.txt"), s("b\na\na\nb\n"));
+    t.eq("2> empties its file too", sh(&mut e, "echo alt > e.txt; cat e.txt nope 2> e.txt; cat e.txt"), s("cat: nope: No such file or directory\n"));
     t.eq("2>", sh(&mut e, "cat nope 2> err; echo $?; cat err"), s("1\ncat: nope: No such file or directory\n"));
     t.eq("> f 2>&1", sh(&mut e, "cat f nope > both 2>&1; cat both"), s("drei\ncat: nope: No such file or directory\n"));
     t.eq("2>&1 > f: stderr stays on the terminal", sh(&mut e, "cat f nope 2>&1 > only; cat only"), s("cat: nope: No such file or directory\ndrei\n"));
@@ -200,6 +215,9 @@ fn redir_t(t: &mut T) {
     let _ = sh(&mut e, "echo nameserver 10.0.0.10 > /etc/resolv.conf");
     t.check("resolv.conf", sh(&mut e, "cat /etc/resolv.conf").contains("nameserver 10.0.0.10"));
     t.eq("resolv.conf refuses", sh(&mut e, "echo nameserver nope > /etc/resolv.conf"), s("jfn-sh: /etc/resolv.conf: nope is no address\n"));
+    // the made files of /etc are not emptied before the command: they take what it wrote
+    t.eq("> /etc/hosts", sh(&mut e, "echo '10.0.0.77 neu' > /etc/hosts; grep -c neu /etc/hosts; cat /etc/hosts > h.txt; grep -c neu h.txt"), s("1\n1\n"));
+    t.eq("> /etc/hostname", sh(&mut e, "echo PC9 > /etc/hostname; cat /etc/hostname; echo PC1 > /etc/hostname; hostname"), s("PC9\nPC1\n"));
     // builtins and long-running commands too
     t.eq("pwd into a file", sh(&mut e, "pwd > p; cat p"), s("/root\n"));
     let o = cli(&mut e, PC1, &["ping -c 2 10.0.0.10 > ping.txt"], 3 * SEC);
@@ -563,6 +581,52 @@ fn jobs_t(t: &mut T) {
     let _ = e.take_reports();
     t.eq("power off: a fresh shell, the console free", (e.cli_busy(PC1), sh(&mut e, "jobs; pwd; history"), e.cli_prompt(PC1)), (false, s("/root\n    1  jobs; pwd; history\n"), s("root@PC1:~# ")));
     t.check("the process's service went", e.service_ids(PC1).is_empty());
+}
+
+// review 2026-11-18: wait for every job, sleep and curl times past the end of the clock, ping -w
+// and -I as iputils takes them
+fn wait_ping_t(t: &mut T) {
+    let mut e = engine(&project());
+    // wait without an argument waits for every job (it waited for the youngest), no done lines
+    let _ = sh(&mut e, "sleep 3 &");
+    let _ = sh(&mut e, "sleep 1 &");
+    let o = cli(&mut e, PC1, &["wait; echo alle"], 2 * SEC);
+    t.eq("wait: every job", (o, e.cli_busy(PC1)), (s(""), true));
+    run_for(&mut e, 2 * SEC);
+    t.eq("wait: then the line goes on", (out(&mut e, PC1), e.cli_busy(PC1)), (s("alle\n"), false));
+    t.eq("wait: status 0, no done lines, no jobs", sh(&mut e, "echo $?; jobs"), s("0\n"));
+    t.eq("wait without jobs", sh(&mut e, "wait; echo $?"), s("0\n"));
+    // Ctrl+C ends the waiting only: the job runs on and says when it is done
+    let _ = sh(&mut e, "sleep 2 &");
+    let _ = cli(&mut e, PC1, &["wait"], 500 * MS);
+    let _ = e.cli_interrupt(PC1);
+    t.eq("wait: Ctrl+C", (e.cli_busy(PC1), sh(&mut e, "jobs")), (false, s("[1]+  Running                 sleep 2 &\n")));
+    run_for(&mut e, 2 * SEC);
+    t.eq("wait: the job's done line after Ctrl+C", sh(&mut e, ""), s("[1]+  Done                    sleep 2\n"));
+    // a sleep of centuries does not end at once (now + d wrapped)
+    let _ = cli(&mut e, PC1, &["sleep 18446744073; echo nie"], 5 * SEC);
+    t.check("sleep 18446744073 holds the console", e.cli_busy(PC1));
+    let _ = e.cli_interrupt(PC1);
+    t.eq("past 2^64 ns: refused", sh(&mut e, "sleep 18446744073.9; echo $?"), s("sleep: invalid time interval '18446744073.9'\nTry 'sleep --help' for more information.\n1\n"));
+    t.eq("curl -m past 2^64 ns: refused", sh(&mut e, "curl -m 18446744073.9 http://10.0.0.10/"), s("curl: option -m: expected a proper numerical parameter\ncurl: try 'curl --help' for more information\n"));
+    // ping -w: a deadline whatever the count (it was ignored: the ping ran on)
+    let o = cli(&mut e, PC1, &["ping -w 2 10.0.0.10 > /dev/null; echo $?"], 3 * SEC);
+    t.eq("ping -w 2: ends, 0", (o, e.cli_busy(PC1)), (s("0\n"), false));
+    let o = cli(&mut e, PC1, &["ping -w 3 10.0.0.10 | grep transmitted"], 4 * SEC);
+    t.check("ping -w 3: three probes", o.starts_with("3 packets transmitted, 3 received, 0% packet loss, time 20"));
+    let o = cli(&mut e, PC1, &["ping -c 5 -w 2 10.0.0.10 > /dev/null; echo $?"], 3 * SEC);
+    t.eq("ping -c 5 -w 2: fewer replies than asked for, 1", o, s("1\n"));
+    let o = cli(&mut e, PC1, &["ping -c 2 -w 9 10.0.0.10 | grep transmitted"], 3 * SEC);
+    t.check("ping -c 2 -w 9: done with the second reply", o.starts_with("2 packets transmitted, 2 received, 0% packet loss") && !e.cli_busy(PC1));
+    t.eq("ping -w x", sh(&mut e, "ping -w x 10.0.0.10"), s("ping: invalid argument: 'x'\n"));
+    // ping -I: an address of the device or an interface, in the first line as iputils has it
+    let o = cli(&mut e, PC1, &["ping -c 1 -I 10.0.0.1 10.0.0.10 | head -1"], 2 * SEC);
+    t.eq("ping -I ADDR", o, s("PING 10.0.0.10 (10.0.0.10) from 10.0.0.1 : 56(84) bytes of data.\n"));
+    let o = cli(&mut e, PC1, &["ping -c 1 -I eth0 10.0.0.10; echo $?"], 2 * SEC);
+    t.check("ping -I IF", o.starts_with("PING 10.0.0.10 (10.0.0.10) from 10.0.0.1 eth0: 56(84) bytes of data.\n64 bytes from 10.0.0.10: icmp_seq=1 ") && o.ends_with("\n0\n"));
+    t.eq("ping -I with an address of another device", sh(&mut e, "ping -c 1 -I 10.0.0.99 10.0.0.10; echo $?"), s("ping: bind: Cannot assign requested address\n2\n"));
+    t.eq("ping -I with no such interface", sh(&mut e, "ping -c 1 -I eth9 10.0.0.10; echo $?"), s("ping: SO_BINDTODEVICE eth9: No such device\n2\n"));
+    // (the deadline over IPv6: ipv6test.rs, linux)
 }
 
 // ---------------------------------------------------------------- IOS-like flash: directories

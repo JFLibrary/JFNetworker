@@ -10,7 +10,8 @@
 //                    timeouts " * ", another answering address on a new line
 //   Linux ping       "PING ... 56(84) bytes of data.", a line per reply or error, statistics
 //                    with loss, time, rtt min/avg/max/mdev (iputils' arithmetic in µs); runs
-//                    until Ctrl+C unless -c; without a route "ping: connect: Network is
+//                    until Ctrl+C unless -c or -w (jobs.rs: the deadline); "-I" names its
+//                    source in the first line ("from ADDR IF:"); without a route "ping: connect: Network is
 //                    unreachable"; a name is looked up first (the first line names the end of
 //                    its CNAME chain, as getaddrinfo's canonical name), a failed lookup prints
 //                    glibc's message ("ping: NAME: Name or service not known")
@@ -63,6 +64,8 @@ pub enum JobOut {
         head: bool,
         /// when pinging began (after the lookup)
         t0: Ns,
+        /// "-I": the interface named ("" for an address); the first line shows "from SRC IF:"
+        from: Option<String>,
     },
     IosTrace {
         /// hops and probes printed
@@ -147,7 +150,8 @@ pub enum JobOut {
     Sleep {
         until: Ns,
     },
-    /// fg / wait: the console waits for background job `no` of the shell (cli/shrun.rs)
+    /// fg / wait: the console waits for background job `no` of the shell (cli/shrun.rs;
+    /// shrun::WAIT_ALL: "wait" for every one)
     Wait {
         no: u32,
     },
@@ -256,7 +260,7 @@ impl Engine {
             head.push_str("Fragmentation forbidden (DF bit set)\n");
         }
         self.out(ni, &head);
-        let o = PingOpts { count, size: bytes.saturating_sub(28), ttl: None, df, interval: 0, timeout, src };
+        let o = PingOpts { count, size: bytes.saturating_sub(28), ttl: None, df, interval: 0, timeout, src, deadline: 0 };
         let Ok(id) = self.ping(dev, dst, o) else {
             return;
         };
@@ -282,15 +286,16 @@ impl Engine {
     }
 
     /// iputils "ping" of an address or a name (`opts.count` 0: until Ctrl+C), the name looked
-    /// up for the families of `fam` (an IPv6 address first makes it a ping over IPv6)
-    pub(crate) fn linux_ping_start(&mut self, ni: usize, host: &str, o: PingOpts, fam: Family) {
+    /// up for the families of `fam` (an IPv6 address first makes it a ping over IPv6); `from`:
+    /// what "-I" named (an interface, "" for an address)
+    pub(crate) fn linux_ping_start(&mut self, ni: usize, host: &str, o: PingOpts, fam: Family, from: Option<String>) {
         let dev = self.dev_of(ni);
         let Ok(id) = self.ping_host_fam(dev, host, o, fam, false, None) else {
             return;
         };
         let now = self.now;
         let name = if Ipv4::parse(host).is_some() { None } else { Some(String::from(host)) };
-        self.cli_start_job(ni, id, JobOut::LinuxPing { seen: 0, sent: 0, last_send: now, name, head: false, t0: now });
+        self.cli_start_job(ni, id, JobOut::LinuxPing { seen: 0, sent: 0, last_send: now, name, head: false, t0: now, from });
     }
 
     /// Linux "traceroute" to an address or a name
@@ -380,7 +385,7 @@ impl Engine {
                     text.push_str(&ios_summary(&p.events, p.sent));
                 }
             }
-            (JobOut::LinuxPing { seen, sent, last_send, name, head, t0 }, JobKind::Ping(p)) => {
+            (JobOut::LinuxPing { seen, sent, last_send, name, head, t0, from }, JobKind::Ping(p)) => {
                 if !*head {
                     let no_route = matches!(p.events.first(), Some(PingEv::Error { kind: IcmpKind::NoRoute, .. }));
                     if p.dst.is_unspecified() {
@@ -395,7 +400,9 @@ impl Engine {
                             Some(n) => self.canonical(ni, p.lookup, n),
                             None => format!("{}", p.dst),
                         };
-                        text.push_str(&format!("PING {} ({}) {}({}) bytes of data.\n", shown, p.dst, p.opts.size, p.opts.size as u32 + 28));
+                        // iputils names the source and the interface of "-I"
+                        let via = from.as_ref().map(|f| format!("from {} {}: ", p.src, f)).unwrap_or_default();
+                        text.push_str(&format!("PING {} ({}) {}{}({}) bytes of data.\n", shown, p.dst, via, p.opts.size, p.opts.size as u32 + 28));
                         *name = Some(shown);
                         *head = true;
                         *t0 = now;

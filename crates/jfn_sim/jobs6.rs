@@ -3,7 +3,8 @@
 //   Engine::ping6(dev, dst, Ping6Opts) -> JobId     echo requests, one per interval (0: the
 //                                                   next when the previous is settled, as IOS);
 //                                                   a group destination counts the first
-//                                                   answer of each probe
+//                                                   answer of each probe; a deadline ends it
+//                                                   as iputils -w does
 //   Engine::traceroute6(dev, dst, TraceOpts, oif) -> JobId   UDP to port 33434 + n with hop
 //                                                   limit 1, 2, ...: Time Exceeded names the
 //                                                   hops, Port Unreachable the target
@@ -89,11 +90,13 @@ pub struct Ping6Opts {
     pub src: Option<Ipv6>,
     /// the interface ("-I eth0", "fe80::1%eth0", IOS "Output Interface")
     pub oif: Option<u16>,
+    /// iputils -w, as PingOpts::deadline (0: none)
+    pub deadline: Ns,
 }
 
 impl Default for Ping6Opts {
     fn default() -> Ping6Opts {
-        Ping6Opts { count: 4, size: 56, hops: None, no_frag: false, interval: SEC, timeout: 2 * SEC, src: None, oif: None }
+        Ping6Opts { count: 4, size: 56, hops: None, no_frag: false, interval: SEC, timeout: 2 * SEC, src: None, oif: None, deadline: 0 }
     }
 }
 
@@ -123,10 +126,27 @@ pub struct Ping6Job {
     pub rtt_max: Ns,
     pub rtt_sum: Ns,
     next_send: Ns,
+    /// the end of a deadline (Ping6Opts::deadline), from the first probe on
+    until: Ns,
     /// the name it was started with (a ping by name whose address is IPv6: ping_becomes6)
     pub host: Option<String>,
     /// the lookup of the device's resolver for the name
     pub lookup: Option<u32>,
+}
+
+impl Ping6Job {
+    /// probes still to send (PingJob::more)
+    fn more(&self) -> bool {
+        self.opts.deadline > 0 || self.opts.count == 0 || self.sent < self.opts.count
+    }
+    /// a deadline is over (PingJob::over)
+    fn over(&self, now: Ns) -> bool {
+        self.opts.deadline > 0 && (now >= self.until || self.errors > 0 || (self.opts.count > 0 && self.received >= self.opts.count))
+    }
+    /// it failed as iputils' exit status counts (PingJob::failed)
+    pub fn failed(&self) -> bool {
+        self.received == 0 || (self.opts.deadline > 0 && self.received < self.opts.count)
+    }
 }
 
 /// one probe of a hop: who answered and how fast (None: no answer, "*")
@@ -199,7 +219,7 @@ impl Engine {
         let src = o.src.or_else(|| self.ip6_source(ni, dst, o.oif)).unwrap_or(Ipv6::UNSPECIFIED);
         let routed = dst.is_multicast() || self.ip6_route(ni, dst, o.oif).is_some() || self.v6(ni).is_some_and(|v| v.find(dst).is_some());
         let now = self.now;
-        let job = Ping6Job { dst, src, opts: o, ident, next_seq: 1, sent: 0, received: 0, errors: 0, out: BTreeMap::new(), events: Vec::new(), rtt_min: 0, rtt_max: 0, rtt_sum: 0, next_send: now, host: None, lookup: None };
+        let job = Ping6Job { dst, src, opts: o, ident, next_seq: 1, sent: 0, received: 0, errors: 0, out: BTreeMap::new(), events: Vec::new(), rtt_min: 0, rtt_max: 0, rtt_sum: 0, next_send: now, until: Ns::MAX, host: None, lookup: None };
         let id = self.new_job6(ni, JobKind::Ping6(job));
         if src.is_unspecified() || !routed {
             // no route: the probe never leaves
@@ -229,9 +249,12 @@ impl Engine {
         };
         let seq = p.next_seq;
         p.next_seq = p.next_seq.wrapping_add(1);
+        if p.sent == 0 && p.opts.deadline > 0 {
+            p.until = now.saturating_add(p.opts.deadline);
+        }
         p.sent += 1;
         p.out.insert(seq, now);
-        p.next_send = now + p.opts.interval;
+        p.next_send = now.saturating_add(p.opts.interval);
         let (src, dst, ident, size, hops, oif) = (p.src, p.dst, p.ident, p.opts.size, p.opts.hops, p.opts.oif);
         let data: Vec<u8> = (0..size as usize).map(|i| (i & 0xFF) as u8).collect();
         let out_if = oif.or_else(|| self.ip6_route(ni, dst, None).map(|nh| nh.iface));
@@ -252,10 +275,13 @@ impl Engine {
         let JobKind::Ping6(p) = &j.kind else {
             return;
         };
-        let more = p.opts.count == 0 || p.sent < p.opts.count;
-        let mut at = p.out.values().map(|t| t + probe_wait(p.opts.timeout)).min();
+        let more = p.more();
+        let mut at = p.out.values().map(|t| t.saturating_add(probe_wait(p.opts.timeout))).min();
         if more && p.opts.interval > 0 {
             at = Some(at.map_or(p.next_send, |a| a.min(p.next_send)));
+        }
+        if p.opts.deadline > 0 {
+            at = Some(at.map_or(p.until, |a| a.min(p.until)));
         }
         if let Some(t) = at {
             self.job6_tick_at(id, t);
@@ -270,8 +296,8 @@ impl Engine {
         let JobKind::Ping6(p) = &mut j.kind else {
             return;
         };
-        let more = p.opts.count == 0 || p.sent < p.opts.count;
-        if !more && p.out.is_empty() {
+        let more = p.more();
+        if p.over(now) || (!more && p.out.is_empty()) {
             j.done = true;
             j.epoch = j.epoch.wrapping_add(1);
             self.cli_job(id);
@@ -290,7 +316,7 @@ impl Engine {
         if let Some(j) = self.jobs.get_mut(&id)
             && let JobKind::Ping6(p) = &mut j.kind
         {
-            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + probe_wait(p.opts.timeout) <= now).map(|(s, _)| *s).collect();
+            let late: Vec<u16> = p.out.iter().filter(|(_, t)| t.saturating_add(probe_wait(p.opts.timeout)) <= now).map(|(s, _)| *s).collect();
             for s in late {
                 p.out.remove(&s);
                 p.events.push(Ping6Ev::Timeout { seq: s });
@@ -454,7 +480,7 @@ impl Engine {
         UdpHdr::new(sport, dport).push_v6(&mut pk, src, dst);
         Ipv6Hdr::new(src, dst, NH_UDP, ttl).push_onto(&mut pk);
         self.ip6_output(ni, pk.into_vec(), oif, Origin::Local { job: Some((id, dport)) }, None);
-        self.job6_tick_at(id, now + probe_wait(timeout));
+        self.job6_tick_at(id, now.saturating_add(probe_wait(timeout)));
     }
 
     fn trace6_next(&mut self, id: JobId) {
@@ -503,11 +529,11 @@ impl Engine {
         let JobKind::Ping(p) = &j.kind else {
             return;
         };
-        let o = Ping6Opts { count: p.opts.count, size: p.size6.unwrap_or(p.opts.size), hops: p.opts.ttl, no_frag: p.opts.df, interval: p.opts.interval, timeout: p.opts.timeout, src: None, oif: None };
+        let o = Ping6Opts { count: p.opts.count, size: p.size6.unwrap_or(p.opts.size), hops: p.opts.ttl, no_frag: p.opts.df, interval: p.opts.interval, timeout: p.opts.timeout, src: None, oif: None, deadline: p.opts.deadline };
         let (ident, host, lookup) = (p.ident, p.host.clone(), p.lookup);
         let src = self.ip6_source(ni, dst, None).unwrap_or(Ipv6::UNSPECIFIED);
         let routed = dst.is_multicast() || self.ip6_route(ni, dst, None).is_some() || self.v6(ni).is_some_and(|v| v.find(dst).is_some());
-        let job = Ping6Job { dst, src, opts: o, ident, next_seq: 1, sent: 0, received: 0, errors: 0, out: BTreeMap::new(), events: Vec::new(), rtt_min: 0, rtt_max: 0, rtt_sum: 0, next_send: now, host, lookup };
+        let job = Ping6Job { dst, src, opts: o, ident, next_seq: 1, sent: 0, received: 0, errors: 0, out: BTreeMap::new(), events: Vec::new(), rtt_min: 0, rtt_max: 0, rtt_sum: 0, next_send: now, until: Ns::MAX, host, lookup };
         let Some(j) = self.jobs.get_mut(&id) else {
             return;
         };

@@ -478,7 +478,7 @@ impl Engine {
             head.push_str(&format!("Output interface: {}\n", n));
         }
         self.out(ni, &head);
-        let o = Ping6Opts { count, size: bytes - 48, hops: None, no_frag: false, interval: 0, timeout, src, oif };
+        let o = Ping6Opts { count, size: bytes - 48, hops: None, no_frag: false, interval: 0, timeout, src, oif, deadline: 0 };
         let Ok(id) = self.ping6(dev, dst, o) else {
             return Ok(());
         };

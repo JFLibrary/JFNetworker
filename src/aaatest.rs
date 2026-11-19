@@ -118,6 +118,7 @@ pub(crate) fn run(t: &mut T) {
     local_login(t);
     enable_levels(t);
     config_roundtrip(t);
+    banners(t);
     submodes(t);
     bad_methods(t);
     radius_login(t);
@@ -217,6 +218,60 @@ fn config_roundtrip(t: &mut T) {
     let _ = cli(&mut e2, R1, &["admin"], 0);
     let _ = cli(&mut e2, R1, &["adminpw"], 0);
     t.eq("reload: login still works", e2.cli_prompt(R1), s("R1#"));
+}
+
+/// "banner motd" as IOS reads it (review 2026-11-18): ^C or another delimiter, # and ^ in the
+/// text, the text over several lines; the running configuration (^C ... ^C) boots it back
+/// byte for byte, the lines of a long one with "!", "#" and "end" in them too
+fn banners(t: &mut T) {
+    let boot = |cfg: &str| {
+        let mut p = project("hostname R1\n!\nend\n", None);
+        if let Some(d) = p.device_mut(R1) {
+            d.startup_config = String::from(cfg);
+        }
+        let mut e = engine(&p);
+        run_for(&mut e, SEC);
+        e
+    };
+    let mut e = engine(&project("hostname R1\n!\nend\n", None));
+    run_for(&mut e, SEC);
+    let _ = cli(&mut e, R1, &["enable", "configure terminal"], 0);
+    // # and ^ in the text between ^C (it was cut at the first ^ when the configuration loaded)
+    let _ = cli(&mut e, R1, &["banner motd ^CNur # und ^ hier^C"], 0);
+    let run = e.running_config(R1);
+    t.check("^C: # and ^ in the text", run.contains("\nbanner motd ^CNur # und ^ hier^C\n!\n"));
+    t.eq("^C: it boots back", boot(&run).running_config(R1), run);
+    // the first character as the delimiter; what follows the second one is left out
+    let _ = cli(&mut e, R1, &["banner motd #Hallo# Rest"], 0);
+    t.check("#...#", e.running_config(R1).contains("\nbanner motd ^CHallo^C\n"));
+    let _ = cli(&mut e, R1, &["banner motd #a^Cb#"], 0);
+    let run = e.running_config(R1);
+    t.check("a text with ^C in it keeps another delimiter", run.contains("\nbanner motd #a^Cb#\n"));
+    t.eq("... and boots back", boot(&run).running_config(R1), run);
+    // several lines: "banner motd #" and Enter, the lines up to the delimiter (it deleted the
+    // banner, the lines were "% Invalid input")
+    let o = cli(&mut e, R1, &["banner motd #"], 0);
+    t.eq("several lines: the console says how they end", (o, e.cli_prompt(R1)), (s("The banner text follows, line by line; it ends at the character '#'.\n"), s("")));
+    t.eq("several lines: no help in the text", e.cli_help(R1, "sh"), s(""));
+    let o = cli(&mut e, R1, &["Zeile 1", "  ^ und ! und end", "bis hier# nicht mehr"], 0);
+    t.eq("several lines: text, not commands", (o, e.cli_prompt(R1)), (s(""), s("R1(config)#")));
+    let run = e.running_config(R1);
+    t.check("several lines: written between ^C", run.contains("\nbanner motd ^C\nZeile 1\n  ^ und ! und end\nbis hier^C\n!\n"));
+    t.eq("several lines: they boot back", boot(&run).running_config(R1), run);
+    // a text with lines a startup configuration skips or ends at
+    let _ = cli(&mut e, R1, &["banner motd ^C", "! kein Kommentar", "# auch keiner", "", "end", "^C"], 0);
+    let run = e.running_config(R1);
+    t.check("!, #, a blank line and end in the text", run.contains("\nbanner motd ^C\n! kein Kommentar\n# auch keiner\n\nend\n^C\n!\n"));
+    let e2 = boot(&run);
+    t.eq("... boot back", e2.running_config(R1), run.clone());
+    t.check("... and the configuration after the banner is read", e2.running_config(R1).contains("line con 0") && e2.boot_errors(R1).is_empty());
+    // a banner without its end takes the rest of the file; the console is free after the boot
+    let e3 = boot("hostname R1\nbanner motd #\nalles Text\nhostname R9\n");
+    t.eq("no closing delimiter", (e3.cli_prompt(R1), e3.running_config(R1).contains("\nbanner motd ^C\nalles Text\nhostname R9\n^C\n")), (s("R1>"), true));
+    // the banner before the login
+    let _ = cli(&mut e, R1, &["banner motd ^C", "Willkommen", "  bei R1", "^C", "username u privilege 15 secret p", "line con 0", "login local", "end"], 0);
+    let o = cli(&mut e, R1, &["exit"], 0);
+    t.check("shown at the login", o.contains("\nWillkommen\n  bei R1\n"));
 }
 
 /// the submodes of the servers: exit goes back one level, end leaves the configuration, do runs

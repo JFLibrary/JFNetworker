@@ -1258,7 +1258,8 @@ impl Agent {
         self.next += 1;
         let id = self.next;
         let now = os.now();
-        let timer = if req.timeout > 0 { Some(self.wheel.add(now + req.timeout, ATimer::Req(id))) } else { None };
+        // (curl -m of centuries: the end of time, never a wrap to now)
+        let timer = if req.timeout > 0 { Some(self.wheel.add(now.saturating_add(req.timeout), ATimer::Req(id))) } else { None };
         // an address of the URL (of a family the agent may use); else a name to look up
         let literal = IpAddr::parse(&req.url.host).filter(|a| match self.family {
             Family::Any => true,
@@ -1479,7 +1480,7 @@ impl Agent {
                 self.next_conn += 1;
                 self.stats.connects += 1;
                 let local = os.tcp_info(s).map(|r| r.local);
-                let timer = if ct > 0 { Some(self.wheel.add(os.now() + ct, ATimer::Connect(s))) } else { None };
+                let timer = if ct > 0 { Some(self.wheel.add(os.now().saturating_add(ct), ATimer::Connect(s))) } else { None };
                 let mut parser = Parser::responses();
                 parser.max_body = u64::MAX;
                 let mut q = VecDeque::new();

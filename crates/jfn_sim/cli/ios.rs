@@ -1368,6 +1368,7 @@ impl Engine {
             AskKind::Ping6Out { dst, count, bytes, timeout } => self.ios_ping6_answer(ni, dst, count, bytes, timeout, line),
             AskKind::ClearOspf => self.ios_ospf_clear(ni, line),
             AskKind::Files => self.files_answer(ni, line),
+            AskKind::Banner { delim } => self.banner_line(ni, delim, line),
         }
     }
 

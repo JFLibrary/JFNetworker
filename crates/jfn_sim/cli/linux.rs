@@ -7,7 +7,8 @@
 //                    (a route is one prefix at one metric: add refuses a second, replace
 //                    takes its place, del removes the first that matches)
 //   ip neigh [show] | add ADDR lladdr MAC dev IF | del ADDR dev IF | flush all|dev IF
-//   ping [-c N] [-i S] [-s N] [-t TTL] [-W S] [-M do|dont|want] DEST
+//   ping [-c N] [-i S] [-s N] [-t TTL] [-W S] [-w S] [-I IF|ADDR] [-M do|dont|want] DEST
+//        (-w: a deadline as iputils', -I: from that address or the interface's address)
 //   traceroute [-n] [-m MAX] [-q N] [-w S] DEST       (DEST: an address or a name)
 //   hostname [NAME], sysctl [-w] net.ipv4.ip_forward[=0|1], echo, clear, true, false
 //   curl, nc, ss, top, printf and "echo|printf ... | nc|cat ..." (tools.rs)
@@ -98,7 +99,7 @@ pub(super) fn is(w: &str, full: &str) -> bool {
     !w.is_empty() && full.starts_with(w)
 }
 
-/// "0.2" seconds -> ns (at most microseconds)
+/// "0.2" seconds -> ns (at most microseconds); None past 2^64 ns (584 years)
 pub(super) fn secs(s: &str) -> Option<Ns> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
     if (i.is_empty() && f.is_empty()) || !i.bytes().all(|b| b.is_ascii_digit()) || !f.bytes().all(|b| b.is_ascii_digit()) {
@@ -107,9 +108,16 @@ pub(super) fn secs(s: &str) -> Option<Ns> {
     let mut ns = if i.is_empty() { 0 } else { i.parse::<u64>().ok()?.checked_mul(SEC)? };
     let f = &f[..f.len().min(6)];
     if !f.is_empty() {
-        ns += f.parse::<u64>().ok()? * 10u64.pow(6 - f.len() as u32) * 1000;
+        // (the fraction may carry it past the end: "18446744073.9")
+        ns = ns.checked_add(f.parse::<u64>().ok()? * 10u64.pow(6 - f.len() as u32) * 1000)?;
     }
     Some(ns)
+}
+
+/// the value of ping -w: whole seconds up to INT_MAX as iputils takes them (0: no deadline)
+pub(super) fn deadline_of(v: Option<&str>) -> Option<Ns> {
+    let s = v?.parse::<u32>().ok().filter(|&s| s <= i32::MAX as u32)?;
+    Some(s as Ns * SEC)
 }
 
 const IP_USAGE: &str = "Usage: ip [-4] [-br] OBJECT [COMMAND ...]\n  OBJECT   address, link, neighbour or route (a unique prefix is enough)\n  COMMAND  show (the default), add, del and more: ip OBJECT help\n";
@@ -955,8 +963,10 @@ impl Engine {
         if args.contains(&"-6") || args.iter().any(|a| !a.starts_with('-') && a.contains(':')) {
             return self.sh_ping6(ni, args);
         }
-        let mut o = PingOpts { count: 0, size: 56, ttl: None, df: false, interval: SEC, timeout: 10 * SEC, src: None };
+        let mut o = PingOpts { count: 0, size: 56, ttl: None, df: false, interval: SEC, timeout: 10 * SEC, src: None, deadline: 0 };
         let mut dst: Option<&str> = None;
+        // -I: an address or an interface
+        let mut from: Option<&str> = None;
         // "-4": a name is looked up for IPv4 only; else for what the device can use
         // (getaddrinfo: an IPv6 address first makes it a ping over IPv6)
         let mut fam = Family::Any;
@@ -1002,7 +1012,14 @@ impl Engine {
                     },
                     "4" => fam = Family::V4,
                     "n" | "q" => {}
-                    "w" | "I" => {}
+                    "w" => match deadline_of(val) {
+                        Some(d) => o.deadline = d,
+                        None => return self.sh_err(ni, &bad(val)),
+                    },
+                    "I" => match val.filter(|v| !v.is_empty()) {
+                        Some(v) => from = Some(v),
+                        None => return self.sh_err(ni, &bad(val)),
+                    },
                     f => return self.sh_err(ni, &format!("ping: invalid option -- '{}'\n", f)),
                 }
             } else {
@@ -1013,8 +1030,36 @@ impl Engine {
         let Some(d) = dst else {
             return self.sh_err(ni, "ping: usage error: Destination address required\n");
         };
+        // -I as iputils takes it: an address of the device is the source ("from ADDR :" in the
+        // first line); an interface sends from its address ("from ADDR IF:"; the route still
+        // picks the way out); one without an IPv4 address leaves the source to the route, with
+        // iputils' warning
+        let shown = match from {
+            None => None,
+            Some(v) => match Ipv4::parse(v) {
+                Some(a) => {
+                    if !self.stack(ni).is_some_and(|st| st.is_mine(a)) {
+                        self.sh_set_code(ni, 2);
+                        return self.sh_err(ni, "ping: bind: Cannot assign requested address\n");
+                    }
+                    o.src = Some(a);
+                    Some(String::new())
+                }
+                None => {
+                    let Some(i) = self.sh_iface(ni, v) else {
+                        self.sh_set_code(ni, 2);
+                        return self.sh_err(ni, &format!("ping: SO_BINDTODEVICE {}: No such device\n", v));
+                    };
+                    o.src = self.stack(ni).and_then(|st| st.ifaces.get(i as usize)).and_then(|f| f.primary());
+                    if o.src.is_none() {
+                        self.err_out(ni, &format!("ping: Warning: source address might be selected on device other than: {}\n", v));
+                    }
+                    Some(String::from(v))
+                }
+            },
+        };
         // a name goes to the device's resolver first (print.rs)
-        self.linux_ping_start(ni, d, o, fam);
+        self.linux_ping_start(ni, d, o, fam, shown);
         Ok(())
     }
 
