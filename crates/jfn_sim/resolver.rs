@@ -263,6 +263,11 @@ impl Lookup {
     fn missing(&self) -> Vec<u16> {
         self.types().into_iter().filter(|t| !self.got.iter().any(|g| g.qtype == *t)).collect()
     }
+    /// the local port its queries go from (0 before the first): a DNS server of the same
+    /// device knows its own forwarding coming back
+    pub fn sock_port(&self) -> u16 {
+        self.port
+    }
     /// the query id of a type
     fn qid_of(&self, t: u16) -> u16 {
         if Some(t) == self.qtype2 && t != self.qtype { self.qid2 } else { self.qid }

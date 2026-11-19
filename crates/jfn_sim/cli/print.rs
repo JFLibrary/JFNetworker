@@ -265,7 +265,7 @@ impl Engine {
         let out = if no_route { JobOut::IosPing { col: 0, seen: 1, fake: count, count, timeout } } else { JobOut::IosPing { col: 0, seen: 0, fake: 0, count, timeout } };
         self.cli_start_job(ni, id, out);
         if no_route {
-            let at = self.now + timeout;
+            let at = self.now + crate::jobs::probe_wait(timeout);
             self.cli_wake_at(ni, at);
         }
     }
@@ -551,7 +551,7 @@ impl Engine {
                 let no_route = job.done && matches!(p.events.first(), Some(PingEv::Error { kind: IcmpKind::NoRoute, .. }));
                 self.out(ni, &head);
                 if no_route {
-                    let at = now + timeout;
+                    let at = now + crate::jobs::probe_wait(timeout);
                     self.cli_wake_at(ni, at);
                     JobOut::IosPing { col: 0, seen: 1, fake: count, count, timeout }
                 } else {
@@ -666,7 +666,7 @@ impl Engine {
         if left == 0 {
             self.cli_job_done(ni);
         } else {
-            let at = self.now + timeout;
+            let at = self.now + crate::jobs::probe_wait(timeout);
             self.cli_wake_at(ni, at);
         }
     }

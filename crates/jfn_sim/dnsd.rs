@@ -21,8 +21,11 @@
 // the name exists (as an empty non-terminal too) or NXDOMAIN, both with the SOA in the
 // authority section, its TTL the smaller of SOA TTL and minimum (RFC 2308).  Names outside
 // every zone: REFUSED, or, with forwarding on and recursion desired, the device's resolver
-// looks them up (RA set).  Over UDP an answer is cut at 512 bytes (TC) unless the query offers
-// more with EDNS: then at most 1232 bytes, and an OPT record goes back.  The answer comes
+// looks them up (RA set); a question already on its way waits for that lookup, and the
+// resolver's own question coming back (the device names itself as its server) gets SERVFAIL,
+// so forwarding to itself or back and forth ends.  Over UDP an answer is cut at 512 bytes
+// (TC) unless the query offers more with EDNS: then at most 1232 bytes, and an OPT record
+// goes back.  The answer comes
 // from the address the query was sent to.  The server takes questions over IPv4 and IPv6 on
 // one socket (port 53 on ::, which takes both families when the device runs IPv6) and answers
 // in the family they came in.
@@ -407,11 +410,23 @@ impl DnsServer {
                 r.header.rcode = dns::RCODE_REFUSED;
                 os.note(Note::DnsRefused { name: qq.name.clone() });
             }
+            // the device's resolver asks this server for what it forwards (resolv.conf or "ip
+            // name-server" on its own address): no answer would ever come but its own question
+            // again, in the same instant (dnsmasq leaves its own address out as a server)
+            Outcome::Forward if os.is_mine(d.src) && self.pending.iter().any(|f| os.lookup(f.lookup).is_some_and(|l| l.sock_port() == d.sport)) => {
+                self.servfail.inc();
+                r.header.rcode = dns::RCODE_SERVFAIL;
+            }
             Outcome::Forward => {
                 self.forwarded.inc();
                 os.note(Note::DnsForward { name: qq.name.clone() });
-                let abs = format!("{}.", qq.name.trim_end_matches('.'));
-                let lookup = os.resolve(&abs, qq.qtype);
+                // the same question already on its way: this one waits for that answer (two
+                // servers forwarding to each other ask each other only once)
+                let same = self.pending.iter().find(|f| f.query.questions.first().is_some_and(|x| x.qtype == qq.qtype && dns::name_eq(&x.name, &qq.name))).map(|f| f.lookup);
+                let lookup = match same {
+                    Some(l) => l,
+                    None => os.resolve(&format!("{}.", qq.name.trim_end_matches('.')), qq.qtype),
+                };
                 let hop = os.cause.unwrap_or(0);
                 self.pending.push(Fwd { lookup, query: q, to, from, edns, hop });
                 return;
@@ -439,25 +454,27 @@ impl DnsServer {
         }
     }
 
+    /// the lookup is done: every question that waited for it gets the answer
     fn on_resolved(&mut self, os: &mut OsApi, id: u32) {
-        let Some(i) = self.pending.iter().position(|f| f.lookup == id) else {
-            return;
-        };
-        let f = self.pending.remove(i);
-        let mut r = Message::reply_to(&f.query);
-        r.header.ra = true;
-        match os.lookup(id).and_then(|l| l.result.clone()) {
-            Some(Ok(a)) => r.answers = a.records,
-            Some(Err(LookupErr::NotFound)) => r.header.rcode = dns::RCODE_NXDOMAIN,
-            Some(Err(LookupErr::NoData)) => {}
-            _ => {
-                self.servfail.inc();
-                r.header.rcode = dns::RCODE_SERVFAIL;
+        let (done, rest): (Vec<Fwd>, Vec<Fwd>) = core::mem::take(&mut self.pending).into_iter().partition(|f| f.lookup == id);
+        self.pending = rest;
+        let result = os.lookup(id).and_then(|l| l.result.clone());
+        for f in done {
+            let mut r = Message::reply_to(&f.query);
+            r.header.ra = true;
+            match &result {
+                Some(Ok(a)) => r.answers = a.records.clone(),
+                Some(Err(LookupErr::NotFound)) => r.header.rcode = dns::RCODE_NXDOMAIN,
+                Some(Err(LookupErr::NoData)) => {}
+                _ => {
+                    self.servfail.inc();
+                    r.header.rcode = dns::RCODE_SERVFAIL;
+                }
             }
+            os.cause = if f.hop == 0 { None } else { Some(f.hop) };
+            DnsServer::send(os, &r, f.edns, f.to, f.from);
+            os.cause = None;
         }
-        os.cause = if f.hop == 0 { None } else { Some(f.hop) };
-        DnsServer::send(os, &r, f.edns, f.to, f.from);
-        os.cause = None;
     }
 }
 

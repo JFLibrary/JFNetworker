@@ -1804,46 +1804,68 @@ impl Lb {
         self.drained(os, b);
     }
 
-    /// moves what can go: client bytes to the backend, backend bytes to the client, FINs
+    /// moves what can go: client bytes to the backend, backend bytes to the client, FINs.
+    /// Round after round while anything moves: a socket tells of new data only after it was
+    /// read empty, so a full buffer that left bytes in the socket reads them once it has room
+    /// again (the other side's TcpWritable comes back here).  A FIN goes on only when its
+    /// socket is read empty: before, what was still in it was cut off
     fn pump(&mut self, os: &mut OsApi, id: u32) {
         let Some(p) = self.pipes.get_mut(&id) else {
             return;
         };
         let b = p.b;
         let (mut to_back, mut to_client) = (0u64, 0u64);
-        if !p.c_closed && p.up.len() < PIPE_BUF {
-            let d = os.tcp_recv(p.client, PIPE_BUF - p.up.len());
-            p.up.extend_from_slice(&d);
-        }
-        if p.connected && !p.b_closed {
-            if let Some(s) = p.back
-                && p.down.len() < PIPE_BUF
-            {
-                let d = os.tcp_recv(s, PIPE_BUF - p.down.len());
-                p.down.extend_from_slice(&d);
+        // the socket gave less than asked: nothing more is in it
+        let (mut c_dry, mut b_dry) = (false, false);
+        loop {
+            let mut moved = false;
+            if !p.c_closed && p.up.len() < PIPE_BUF {
+                let want = PIPE_BUF - p.up.len();
+                let d = os.tcp_recv(p.client, want);
+                c_dry = d.len() < want;
+                moved |= !d.is_empty();
+                p.up.extend_from_slice(&d);
             }
-            if let Some(s) = p.back
-                && !p.up.is_empty()
-            {
-                let n = os.tcp_send(s, &p.up);
-                p.up.drain(..n);
-                to_back = n as u64;
+            if p.connected && !p.b_closed {
+                if let Some(s) = p.back
+                    && p.down.len() < PIPE_BUF
+                {
+                    let want = PIPE_BUF - p.down.len();
+                    let d = os.tcp_recv(s, want);
+                    b_dry = d.len() < want;
+                    moved |= !d.is_empty();
+                    p.down.extend_from_slice(&d);
+                }
+                if let Some(s) = p.back
+                    && !p.up.is_empty()
+                {
+                    let n = os.tcp_send(s, &p.up);
+                    p.up.drain(..n);
+                    to_back += n as u64;
+                    moved |= n > 0;
+                }
+                if p.up.is_empty()
+                    && p.c_eof
+                    && (c_dry || p.c_closed)
+                    && !p.b_shut
+                    && let Some(s) = p.back
+                {
+                    p.b_shut = true;
+                    os.tcp_shutdown(s);
+                }
             }
-            if p.up.is_empty()
-                && p.c_eof
-                && !p.b_shut
-                && let Some(s) = p.back
-            {
-                p.b_shut = true;
-                os.tcp_shutdown(s);
+            if !p.c_closed && !p.down.is_empty() {
+                let n = os.tcp_send(p.client, &p.down);
+                p.down.drain(..n);
+                to_client += n as u64;
+                moved |= n > 0;
+            }
+            if !moved {
+                break;
             }
         }
-        if !p.c_closed && !p.down.is_empty() {
-            let n = os.tcp_send(p.client, &p.down);
-            p.down.drain(..n);
-            to_client = n as u64;
-        }
-        if p.down.is_empty() && p.b_eof && !p.c_shut && !p.c_closed {
+        // b_closed: pipe_closed read the rest of the socket already
+        if p.down.is_empty() && p.b_eof && (b_dry || p.b_closed) && !p.c_shut && !p.c_closed {
             p.c_shut = true;
             os.tcp_shutdown(p.client);
         }

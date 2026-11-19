@@ -40,10 +40,17 @@ use netpkt::{be16, IpAddr, Ipv4};
 
 use crate::action::ActErr;
 use crate::ip::Origin;
-use crate::kernel::{Engine, Ev, Ns, SEC};
+use crate::kernel::{Engine, Ev, Ns, MS, SEC};
 use crate::resolver::Family;
 
 pub type JobId = u32;
+
+/// how long a probe waits for its answer: at least 1 ms, as Linux ping -W.  IOS takes "timeout
+/// 0"; a probe timed out in the same instant would send the next one in it again, and the clock
+/// would stand while up to 2^31 probes go
+pub(crate) fn probe_wait(timeout: Ns) -> Ns {
+    timeout.max(MS)
+}
 
 /// why a probe failed
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -486,7 +493,7 @@ impl Engine {
             return;
         };
         let more = p.opts.count == 0 || p.sent < p.opts.count;
-        let mut at = p.out.values().map(|t| t + p.opts.timeout).min();
+        let mut at = p.out.values().map(|t| t + probe_wait(p.opts.timeout)).min();
         if more && p.opts.interval > 0 {
             at = Some(at.map_or(p.next_send, |a| a.min(p.next_send)));
         }
@@ -524,7 +531,7 @@ impl Engine {
         if let Some(j) = self.jobs.get_mut(&id)
             && let JobKind::Ping(p) = &mut j.kind
         {
-            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + p.opts.timeout <= now).map(|(s, _)| *s).collect();
+            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + probe_wait(p.opts.timeout) <= now).map(|(s, _)| *s).collect();
             for s in late {
                 p.out.remove(&s);
                 p.events.push(PingEv::Timeout { seq: s });
@@ -763,7 +770,7 @@ impl Engine {
         h.id = ipid;
         h.push_onto(&mut pk);
         self.ip_output(ni, pk.into_vec(), Origin::Local { job: Some((id, dport)) }, None);
-        self.job_tick_at(id, now + timeout);
+        self.job_tick_at(id, now + probe_wait(timeout));
     }
 
     /// the probe is settled: the next probe of this hop, the next hop, or the end

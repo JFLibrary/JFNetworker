@@ -321,6 +321,21 @@ fn ios_ping(t: &mut T) {
     e.run_until(t0 + 11 * SEC, BUDGET);
     t.eq("no route", out(&mut e, r1), String::from("Ctrl+Shift+6 stops the ping.\nPinging 192.0.2.1 with 5 echo requests of 100 bytes, 2 s timeout each:\n.....\nSuccess rate is 0 percent (0/5)\n"));
     t.check("done after 10 s", !e.cli_busy(r1));
+    // timeout 0: each probe waits 1 ms (as Linux ping -W), so the clock goes on; once up to
+    // 2^31 probes went in the same instant, with and without a route
+    for (dst, what) in [("10.0.2.99", "timeout 0"), ("192.0.2.1", "timeout 0 without a route")] {
+        let _ = e.take_reports();
+        let _ = e.cli_line(r1, &format!("ping {} repeat 2147483647 timeout 0", dst));
+        let t0 = e.now();
+        e.run_until(t0 + 50 * MS, BUDGET);
+        t.check(&format!("{}: the clock goes on", what), e.now() == t0 + 50 * MS && e.cli_busy(r1));
+        let _ = e.cli_interrupt(r1);
+        e.run_until(e.now() + SEC, BUDGET);
+        let o = out(&mut e, r1);
+        let dots = o.chars().filter(|&c| c == '.').count();
+        t.check(&format!("{}: about one probe per ms ({})", what, dots), (45..=55).contains(&dots) && o.contains("0 s timeout each:\n"));
+        t.check(&format!("{}: idle again", what), !e.cli_busy(r1));
+    }
     t.eq("unknown host", cli(&mut e, r1, "ping nowhere"), String::from("Resolving \"nowhere\" via DNS (255.255.255.255) ...\n% Unrecognized host or address, or protocol not running.\n\n"));
     // Ctrl+Shift+6 stops it; what was typed meanwhile is dropped
     let _ = e.take_reports();

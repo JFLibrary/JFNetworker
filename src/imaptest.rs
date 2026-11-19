@@ -330,6 +330,10 @@ fn folders(t: &mut T) {
     t.check("the delimiter", c.line(&mut e, "a3 LIST \"\" \"\"").contains("* LIST (\\Noselect) \"/\" \"\""));
     t.check("a pattern", c.line(&mut e, "a4 LIST \"\" \"T%\"").contains("Trash"));
     t.check("a pattern out", !c.line(&mut e, "a5 LIST \"\" \"T%\"").contains("INBOX"));
+    t.check("stars between letters", c.line(&mut e, "a7 LIST \"\" \"*R*s*\"").contains("Trash"));
+    // many stars: one pass over the pattern (backtracking took billions of steps)
+    let o = c.line(&mut e, &format!("a8 LIST \"\" \"{}q\"", "*".repeat(400)));
+    t.check("many stars", o.contains("a8 OK") && !o.contains("* LIST"));
     t.check("LSUB", c.line(&mut e, "a6 LSUB \"\" \"*\"").contains("* LSUB (\\HasNoChildren) \"/\" INBOX"));
     t.check("CREATE", c.line(&mut e, "b1 CREATE Projekte").contains("b1 OK"));
     t.check("it is on the disk", e.file_store(MAIL).is_some_and(|st| st.is_dir("/var/mail/anna/.Projekte/cur")));

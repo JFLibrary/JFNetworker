@@ -1,9 +1,10 @@
 // labtest -- checks of the distributed-systems lab (part of --selftest, group "lab"): load
 // balancing (round robin, weighted, least connections, consistent hashing against an own
 // ring), health checks that take a backend down and up at exact virtual times, draining, the
-// TCP mode with a refused backend and a drain that runs out; the KV store (strong quorums,
-// failure detection by heartbeats at exact times, eventual writes and reads, forwarding to
-// the leader, a stale read and its read repair, a full disk, a slow disk to the nanosecond);
+// TCP mode with a refused backend, a drain that runs out and big transfers both ways;
+// the KV store (strong quorums, failure detection by heartbeats at exact times, eventual
+// writes and reads, forwarding to the leader, a stale read and its read repair, a full disk,
+// a slow disk to the nanosecond);
 // web servers with the store behind them and the client's failover; the cache (hits at an
 // exact time, misses, expiry, collapsed misses, invalidation); the queue (redelivery after
 // exactly the visibility timeout, nack, dead letters, the durable publish); every kind of
@@ -258,6 +259,7 @@ pub fn run(t: &mut T) {
     lb_health(t);
     lb_drain(t);
     lb_tcp(t);
+    lb_tcp_big(t);
     kv_quorum(t);
     kv_repair(t);
     kv_disk(t);
@@ -488,6 +490,40 @@ fn lb_tcp(t: &mut T) {
     run_to(&mut e, 4 * SEC);
     t.eq("tcp: 200 kB echoed", (metric(&e, h[4], "big", "received"), metric(&e, h[4], "big", "done")), (200_000, 1));
     t.eq("tcp: nothing left open", metric(&e, h[0], "lb", "active"), 0);
+}
+
+// big answers through the TCP pipe: a socket that holds more than the pipe's buffer is read
+// again once there is room, and the backend's FIN goes on only after its last byte (a 2 MB
+// answer once stood still, with Connection: close it came cut off)
+fn lb_tcp_big(t: &mut T) {
+    let (mut e, h) = net(3);
+    let lb = "{\"mode\": \"tcp\", \"port\": 80, \"backends\": [{\"name\": \"w1\", \"addr\": \"10.0.0.2\"}], \"health\": {\"type\": \"none\"}}";
+    let mut ok = add(&mut e, h[0], "lb", "lb", lb);
+    ok &= add(&mut e, h[1], "http-server", "web", "{\"routes\": [{\"path\": \"/big\", \"size\": 2000000}]}");
+    let mut close = req("GET", "http://10.0.0.1/big", "");
+    close.headers.add("Connection", "close");
+    ok &= probe(&mut e, h[2], vec![(10 * MS, req("GET", "http://10.0.0.1/big", "")), (2 * SEC, close)]);
+    t.check("tcp big: set up", ok);
+    run_to(&mut e, 4 * SEC);
+    let g = got(&e, h[2]);
+    t.eq("tcp big: both answers whole", g.iter().map(|x| (x.status, x.body.len())).collect::<Vec<_>>(), vec![(200, 2_000_000), (200, 2_000_000)]);
+    t.eq("tcp big: nothing left open", metric(&e, h[0], "lb", "active"), 0);
+    // uploads to a backend that reads only after 50 ms (less than an RTO: its window stays
+    // large): every buffer on the way fills, then the backend's socket takes the pipe's 64 kB
+    // at once; what still waits in the client's socket must follow (1 MB once stood still),
+    // and the client's FIN only after its last byte (of 400 kB the backend once got 375 056
+    // while the client saw an orderly end)
+    for n in [400_000i64, 1_000_000] {
+        let (mut e, h) = net(3);
+        let lb = "{\"mode\": \"tcp\", \"port\": 9, \"backends\": [{\"name\": \"d1\", \"addr\": \"10.0.0.2\"}], \"health\": {\"type\": \"none\"}}";
+        let mut ok = add(&mut e, h[0], "lb", "lb", lb);
+        ok &= add(&mut e, h[1], "tcp-discard", "discard", "{\"read_after_ms\": 50}");
+        ok &= add(&mut e, h[2], "tcp-client", "up", &format!("{{\"server\": \"10.0.0.1\", \"port\": 9, \"bytes\": {}}}", n));
+        t.check(&format!("tcp upload {}: set up", n), ok);
+        run_to(&mut e, 3 * SEC);
+        t.eq(&format!("tcp upload {}: every byte at the backend, an orderly end", n), (metric(&e, h[1], "discard", "bytes"), metric(&e, h[2], "up", "done")), (n, 1));
+        t.eq(&format!("tcp upload {}: nothing left open", n), metric(&e, h[0], "lb", "active"), 0);
+    }
 }
 
 // ---------------------------------------------------------------- the KV store

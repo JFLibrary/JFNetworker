@@ -174,18 +174,35 @@ fn matches_key(k: &SearchKey, f: &Facts) -> bool {
     }
 }
 
-/// a LIST pattern: * any characters, % any but the delimiter
+/// a LIST pattern: * any characters, % any but the delimiter.  One pass over the pattern with
+/// a row over the name (pattern x name steps, no recursion): backtracking took exponential
+/// time on "a LIST "" "*****...*x"" and stack in the pattern's length
 fn list_match(pat: &str, name: &str) -> bool {
-    let (p, n) = (pat.as_bytes(), name.as_bytes());
-    fn go(p: &[u8], n: &[u8]) -> bool {
-        match p.first() {
-            None => n.is_empty(),
-            Some(b'*') => (0..=n.len()).any(|i| go(&p[1..], &n[i..])),
-            Some(b'%') => (0..=n.len()).take_while(|&i| i == 0 || n[i - 1] != b'/').any(|i| go(&p[1..], &n[i..])),
-            Some(c) => n.first().is_some_and(|x| x.eq_ignore_ascii_case(c)) && go(&p[1..], &n[1..]),
+    let n = name.as_bytes();
+    // ok[j]: the pattern so far matches the first j bytes of the name
+    let mut ok = alloc::vec![false; n.len() + 1];
+    ok[0] = true;
+    for &c in pat.as_bytes() {
+        match c {
+            b'*' => {
+                for j in 1..=n.len() {
+                    ok[j] |= ok[j - 1];
+                }
+            }
+            b'%' => {
+                for j in 1..=n.len() {
+                    ok[j] |= ok[j - 1] && n[j - 1] != b'/';
+                }
+            }
+            _ => {
+                for j in (1..=n.len()).rev() {
+                    ok[j] = ok[j - 1] && n[j - 1].eq_ignore_ascii_case(&c);
+                }
+                ok[0] = false;
+            }
         }
     }
-    go(p, n)
+    ok[n.len()]
 }
 
 /// a folder name we keep: no path characters

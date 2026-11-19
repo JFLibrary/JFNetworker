@@ -28,7 +28,7 @@ use netpkt::{be16, Ipv6};
 
 use crate::action::ActErr;
 use crate::ip::Origin;
-use crate::jobs::{Job, JobId, JobKind, TraceOpts};
+use crate::jobs::{probe_wait, Job, JobId, JobKind, TraceOpts};
 use crate::kernel::{Engine, Ev, Ns, SEC};
 
 /// why a probe failed
@@ -253,7 +253,7 @@ impl Engine {
             return;
         };
         let more = p.opts.count == 0 || p.sent < p.opts.count;
-        let mut at = p.out.values().map(|t| t + p.opts.timeout).min();
+        let mut at = p.out.values().map(|t| t + probe_wait(p.opts.timeout)).min();
         if more && p.opts.interval > 0 {
             at = Some(at.map_or(p.next_send, |a| a.min(p.next_send)));
         }
@@ -290,7 +290,7 @@ impl Engine {
         if let Some(j) = self.jobs.get_mut(&id)
             && let JobKind::Ping6(p) = &mut j.kind
         {
-            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + p.opts.timeout <= now).map(|(s, _)| *s).collect();
+            let late: Vec<u16> = p.out.iter().filter(|(_, t)| **t + probe_wait(p.opts.timeout) <= now).map(|(s, _)| *s).collect();
             for s in late {
                 p.out.remove(&s);
                 p.events.push(Ping6Ev::Timeout { seq: s });
@@ -454,7 +454,7 @@ impl Engine {
         UdpHdr::new(sport, dport).push_v6(&mut pk, src, dst);
         Ipv6Hdr::new(src, dst, NH_UDP, ttl).push_onto(&mut pk);
         self.ip6_output(ni, pk.into_vec(), oif, Origin::Local { job: Some((id, dport)) }, None);
-        self.job6_tick_at(id, now + timeout);
+        self.job6_tick_at(id, now + probe_wait(timeout));
     }
 
     fn trace6_next(&mut self, id: JobId) {

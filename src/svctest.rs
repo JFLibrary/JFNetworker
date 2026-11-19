@@ -6,7 +6,8 @@
 // the server's ping and by the client's ARP probe (DECLINE); renewal, rebinding, expiry,
 // release (the address goes 10 ms after the RELEASE) and INIT-REBOOT; the DNS server and the
 // resolver (CNAME, NXDOMAIN, NODATA, MX, PTR, referral, search order, glibc's choice of the
-// error, cache and TTL, failover after the timeout, forwarding, host table, the latency window);
+// error, cache and TTL, failover after the timeout, forwarding, also to itself and back and
+// forth, host table, the latency window);
 // syslog from IOS and Linux; NTP stepping (with the error an asymmetric path brings), slewing
 // and correcting the drift; service views, project definitions, cloning and determinism
 //
@@ -521,6 +522,26 @@ fn dns_server(t: &mut T) {
     t.check("forward noted", notes(&e, r1).contains(&Note::DnsForward { name: String::from("mail.lab") }));
     t.eq("forwarder cached it", e.resolver_cache(r1).iter().map(|c| (c.name.clone(), c.qtype, c.negative)).collect::<Vec<_>>(), vec![(String::from("mail.lab"), dns::TYPE_A, false)]);
     t.eq("forwarder counts", e.metric(r1, "dns-server", "forwarded"), Some(1));
+    // R1 names itself as its server: its forwarding comes back to it and gets SERVFAIL at once
+    // (it once asked itself without end in the same instant); PC1's two attempts fail
+    let _ = e.apply(Action::Resolver { dev: r1, servers: Some(vec![ip("10.0.0.1")]), search: None });
+    let (own, took) = look(&mut e, pc1, "web.lab.", dns::TYPE_A);
+    t.eq("forward to itself fails", addrs_of(&own), Some(Err(LookupErr::ServFail)));
+    t.check("forward to itself: at once", took < MS);
+    t.eq("forward to itself: one forward per attempt", e.metric(r1, "dns-server", "forwarded"), Some(3));
+    // NS and R1 forward to each other: a question already on its way waits for that lookup
+    // instead of asking again (once a storm); the timeouts end it
+    let fw2 = [
+        e.apply(Action::DnsForward { dev: ns, on: true }),
+        e.apply(Action::Resolver { dev: ns, servers: Some(vec![ip("10.0.0.1")]), search: None }),
+        e.apply(Action::Resolver { dev: r1, servers: Some(vec![ip("10.0.0.53")]), search: None }),
+    ];
+    t.check("forward loop set-up", fw2.iter().all(|r| r.is_ok()));
+    let (looped, _) = look(&mut e, pc1, "example.com.", dns::TYPE_A);
+    let fwd = |e: &Engine, d: u32, svc: &str| e.metric(d, svc, "forwarded").unwrap_or(-1);
+    let (n1, n2) = (fwd(&e, r1, "dns-server") - 3, fwd(&e, ns, "named"));
+    t.check("forward loop fails", matches!(addrs_of(&looped), Some(Err(LookupErr::ServFail | LookupErr::Timeout))));
+    t.check(&format!("forward loop: few forwards (R1 {}, NS {})", n1, n2), (1..=6).contains(&n1) && (1..=4).contains(&n2));
 }
 
 fn resolver(t: &mut T) {
