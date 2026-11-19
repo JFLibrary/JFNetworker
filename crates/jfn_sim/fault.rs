@@ -157,6 +157,10 @@ impl Faults {
     pub fn link(&self, li: usize) -> Option<LinkOver> {
         self.links.get(&li).copied()
     }
+    /// a link slot is free for another link (action.rs remove_link): nothing of this one stays
+    pub(crate) fn forget_link(&mut self, li: usize) {
+        self.links.remove(&li);
+    }
     pub fn any_partition(&self) -> bool {
         !self.parts.is_empty()
     }

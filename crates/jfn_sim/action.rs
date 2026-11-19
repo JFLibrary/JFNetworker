@@ -1138,12 +1138,20 @@ impl Engine {
             l.down = true;
         }
         self.refresh_link(li);
+        let mut epoch = 0;
         if let Some(Some(l)) = self.links.get(li) {
+            epoch = l.epoch;
             for (n, p) in l.ends {
                 if let Some(Some(node)) = self.nodes.get_mut(n) {
                     node.ports[p as usize].link = None;
                 }
             }
+        }
+        // the slot of an association that ended takes a later one (wlan.rs assoc_make), with an
+        // epoch none of the frames still on their way carries
+        if crate::wlan::is_assoc_id(id) && !self.wlan.assocs.contains_key(&id) {
+            self.faults.forget_link(li);
+            self.free_links.push((li, epoch.wrapping_add(1)));
         }
         self.links[li] = None;
         self.link_idx.remove(&id);

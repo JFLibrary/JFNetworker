@@ -82,6 +82,10 @@ pub struct Engine {
     free: Vec<u32>,
     pub(crate) nodes: Vec<Option<Node>>,
     pub(crate) links: Vec<Option<LinkRt>>,
+    /// slots of `links` that WLAN associations left, with the epoch the next link there starts
+    /// at, so that a frame still on its way to the old one is lost (action.rs remove_link,
+    /// wlan.rs assoc_make)
+    pub(crate) free_links: Vec<(usize, u32)>,
     pub(crate) dev_idx: BTreeMap<u32, usize>,
     pub(crate) link_idx: BTreeMap<u32, usize>,
     pub trace: Trace,
@@ -120,6 +124,7 @@ impl Engine {
             free: Vec::new(),
             nodes: Vec::new(),
             links: Vec::new(),
+            free_links: Vec::new(),
             dev_idx: BTreeMap::new(),
             link_idx: BTreeMap::new(),
             trace: Trace::new(),

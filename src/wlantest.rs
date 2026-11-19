@@ -2,7 +2,8 @@
 // wlantrace, cli/wlan.rs, doc/wlan.rs): the radio facts (signal, rate, loss, channels, ranges),
 // the keys of WPA2 and WPA3 against independently computed values, scanning and the choice of an
 // access point and band, open, WPA2 and WPA3 networks with exact virtual times of every step and
-// their real EAPOL frames checked from outside, a wrong passphrase with its repetitions, back-off
+// their real EAPOL frames checked from outside (an ended association leaves its link slot to the
+// next), a wrong passphrase with its repetitions, back-off
 // and giving up, DHCP and ping over WLAN, roaming while a ping runs, the edge of the range and
 // leaving it, an access point switched off, reconfigured or with its radio shut down, client
 // isolation and guest networks (also on the home router), the radio cables of older projects
@@ -388,6 +389,24 @@ fn open(t: &mut T) {
     // the radio of the network sends without a cable, the 2.4 GHz one has nothing to send
     t.eq("leds", (e.port_led(ap, 2), e.port_led(ap, 1), e.port_led(nb, 0)), (Led::Up, Led::Down, Led::Up));
     t.eq("the stations of the AP", e.wlan_stations_of(ap).iter().map(|a| a.sta).collect::<Vec<_>>(), vec![nb]);
+    // the station leaves and joins five times: each association is a link of the engine, and
+    // one that ended leaves its slot to the next (the engine's links do not grow)
+    let cables = |e: &Engine| jfn_sim::Footprint::of(e).cables;
+    let before = cables(&e);
+    for _ in 0..5 {
+        let t0 = e.now();
+        t.check("again: wlan0 down", e.apply(Action::PortAdmin { dev: nb, port: s("wlan0"), up: false }).is_ok());
+        run_to(&mut e, t0 + 500 * MS);
+        t.check("again: wlan0 up", e.apply(Action::PortAdmin { dev: nb, port: s("wlan0"), up: true }).is_ok());
+        run_to(&mut e, t0 + 2 * SEC);
+    }
+    t.eq("again: the sixth association", e.wlan_assocs().into_iter().map(|a| (a.id, a.authorized)).collect::<Vec<_>>(), vec![(ASSOC_ID0 + 5, true)]);
+    t.eq("again: the links of the engine as before", cables(&e), before);
+    // what the station sends now arrives over the slot used again
+    let t1 = e.now();
+    let _ = ping(&mut e, nb, "10.0.0.1", 1);
+    run_to(&mut e, t1 + SEC);
+    t.check("again: frames over the slot used again", e.trace.hops().any(|h| h.link == ASSOC_ID0 + 5 && h.from.0 == nb && h.t_tx >= t1 && h.drop.is_none()));
 }
 
 fn wpa2(t: &mut T) {

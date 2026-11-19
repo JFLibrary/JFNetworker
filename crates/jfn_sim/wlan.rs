@@ -1224,8 +1224,17 @@ impl Engine {
             dir: [Dir::default(), Dir::default()],
             rng: Pcg32::derive(self.seed ^ 0x5241_4449, id as u64),
         };
-        self.links.push(Some(rt));
-        let li = self.links.len() - 1;
+        // the slot an ended association left, else a new one (kernel.rs free_links)
+        let li = match self.free_links.pop() {
+            Some((li, epoch)) if self.links.get(li).is_some_and(|l| l.is_none()) => {
+                self.links[li] = Some(LinkRt { epoch, ..rt });
+                li
+            }
+            _ => {
+                self.links.push(Some(rt));
+                self.links.len() - 1
+            }
+        };
         self.link_idx.insert(id, li);
         if let Some(Some(n)) = self.nodes.get_mut(sni) {
             n.ports[sport as usize].link = Some(li);
