@@ -225,6 +225,22 @@ fn redir_t(t: &mut T) {
     let o = sh(&mut e, "head -2 ping.txt; tail -1 ping.txt");
     t.check("the file has its lines", o.starts_with("PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.\n64 bytes from 10.0.0.10: icmp_seq=1 ttl=64 time=") && o.contains("\nrtt min/avg/max/mdev = "));
     t.check("the file is a step of the project", e.files(PC1).iter().any(|f| f.path == "/root/ping.txt"));
+    // review 2026-11-18: a > of a command that never ends (power off) leaves its file empty,
+    // and the project hears of it (the write at a command's end reports it otherwise, once)
+    let _ = sh(&mut e, "echo alt > g.txt");
+    let _ = cli(&mut e, PC1, &["sleep 100 > g.txt"], SEC);
+    t.eq("> empties the file while its command runs", e.file_store(PC1).and_then(|s| s.read("/root/g.txt").ok().map(<[u8]>::len)), Some(0));
+    let _ = e.take_reports();
+    let _ = e.apply(jfn_sim::Action::Power { dev: PC1, on: false });
+    let rep = e.take_reports().iter().any(|r| matches!(r, Report::Files { path, files, .. } if path == "/root/g.txt" && files.iter().any(|f| f.path == "/root/g.txt" && f.data.is_empty())));
+    let _ = e.apply(jfn_sim::Action::Power { dev: PC1, on: true });
+    run_for(&mut e, SEC);
+    t.check("power off: the emptied file reaches the project", rep);
+    let _ = e.cli_line(PC1, "echo alt > g.txt");
+    let _ = e.take_reports();
+    let _ = e.cli_line(PC1, "echo neu > g.txt");
+    let n = e.take_reports().iter().filter(|r| matches!(r, Report::Files { path, .. } if path == "/root/g.txt")).count();
+    t.eq("echo > a file with text: one report, as before", n, 1);
 }
 
 // ---------------------------------------------------------------- pipes

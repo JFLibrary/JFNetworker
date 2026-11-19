@@ -91,6 +91,9 @@ pub struct OutFile {
     pub abs: String,
     pub append: bool,
     pub data: Vec<u8>,
+    /// ">" emptied the file in the store before the command ran, without a report: the write
+    /// at its end reports it (one step, as before), else the end that never comes (sh_abort)
+    pub emptied: bool,
 }
 
 /// where a run is
@@ -570,12 +573,19 @@ impl Engine {
             }
             // ">" empties the file before the command runs, as the shell's open with O_TRUNC
             // does ("sort f > f" sorts nothing); the command's output comes when it ends
-            if !append && let Err(e) = self.sh_truncate(ni, &abs) {
-                self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", path, e.errno_text()));
-                return Err(1);
-            }
+            let emptied = if append {
+                false
+            } else {
+                match self.sh_truncate(ni, &abs) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", path, e.errno_text()));
+                        return Err(1);
+                    }
+                }
+            };
             let Some(run) = self.sh_run_mut(ni) else { return Ok(()) };
-            run.files.push(OutFile { path, abs, append, data: Vec::new() });
+            run.files.push(OutFile { path, abs, append, data: Vec::new(), emptied });
             Sink::File(run.files.len() - 1)
         };
         let Some(run) = self.sh_run_mut(ni) else { return Ok(()) };
@@ -620,16 +630,18 @@ impl Engine {
     }
 
     /// a ">" of the command that starts empties its file now (a < of the same file before it
-    /// then reads nothing either).  A missing or empty file is left to the command's end, which
-    /// makes it; the made files of /etc are no files: they take what was written when the
-    /// command ends (netsvc.rs etc_write), and so does "> neu/" (sh_write_file refuses it)
-    fn sh_truncate(&mut self, ni: usize, abs: &str) -> Result<(), jfn_model::files::FsErr> {
+    /// then reads nothing either); true when it did.  The store changes without a report: the
+    /// write at the command's end reports the file once, as before (OutFile::emptied).  A
+    /// missing or empty file is left to that write, which makes it; the made files of /etc are
+    /// no files: they take what was written when the command ends (netsvc.rs etc_write), and
+    /// so does "> neu/" (sh_write_file refuses it)
+    fn sh_truncate(&mut self, ni: usize, abs: &str) -> Result<bool, jfn_model::files::FsErr> {
         if abs.ends_with('/') {
-            return Ok(());
+            return Ok(false);
         }
-        let Some(p) = self.store(ni).and_then(|s| s.norm(abs).ok()) else { return Ok(()) };
+        let Some(p) = self.store(ni).and_then(|s| s.norm(abs).ok()) else { return Ok(false) };
         if self.cat_etc(ni, &p).is_some() {
-            return Ok(());
+            return Ok(false);
         }
         if let Some(run) = self.sh_run_mut(ni)
             && run.in_file.as_deref() == Some(p.as_str())
@@ -637,9 +649,22 @@ impl Engine {
             run.input = Some(Vec::new());
         }
         if self.store(ni).and_then(|s| s.stat(&p)).is_none_or(|s| s.dir || s.size == 0) {
-            return Ok(());
+            return Ok(false);
         }
-        self.file_put(ni, &p, &[], false).map(|_| ())
+        let t = self.file_time(ni);
+        let Some(os) = self.os_mut(ni) else { return Ok(false) };
+        os.files.write(&p, &[], t)?;
+        Ok(true)
+    }
+
+    /// files a ">" emptied whose command never got to write them (the run went: sh_abort) or
+    /// whose write failed: the project learns of the emptied file
+    fn sh_report_emptied(&mut self, ni: usize, files: &[OutFile]) {
+        for f in files.iter().filter(|f| f.emptied) {
+            if let Some(p) = self.store(ni).and_then(|s| s.norm(&f.abs).ok()) {
+                self.files_changed(ni, &p);
+            }
+        }
     }
 
     /// the command ended: its files, then the next command, pipeline or and-or list
@@ -732,6 +757,8 @@ impl Engine {
         }
         if let Err(e) = self.file_put(ni, &f.abs, &f.data, f.append) {
             self.sh_fail(ni, &format!("jfn-sh: {}: {}\n", f.path, e.errno_text()));
+            // (the file stays empty, as after bash's failed write)
+            self.sh_report_emptied(ni, core::slice::from_ref(&f));
             return false;
         }
         true
@@ -830,15 +857,25 @@ impl Engine {
         self.sh_go(ni);
     }
 
-    /// the startup configuration's line is over: whatever still waits goes
+    /// the startup configuration's line is over (also power off, a session's end): whatever
+    /// still waits goes; a file its ">" emptied stays empty and the project learns of it
     pub(crate) fn sh_abort(&mut self, ni: usize) {
+        let mut emptied: Vec<OutFile> = Vec::new();
         let jobs: Vec<CliJob> = match self.sh_mut(ni) {
             Some(s) => {
-                s.fg = None;
-                s.bg.drain(..).filter_map(|j| j.cj).collect()
+                if let Some(r) = s.fg.take() {
+                    emptied.extend(r.files);
+                }
+                s.bg.drain(..)
+                    .filter_map(|j| {
+                        emptied.extend(j.run.files);
+                        j.cj
+                    })
+                    .collect()
             }
             None => Vec::new(),
         };
+        self.sh_report_emptied(ni, &emptied);
         for j in jobs {
             self.cancel_job(j.id);
             self.cli.jobs.remove(&j.id);
