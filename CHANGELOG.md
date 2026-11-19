@@ -8,6 +8,8 @@ prepare X.Y.Z` turns `[Unreleased]` into a release and raises the version in `PA
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-19
+
 The first release of JFNetworker, a network simulator and a lab for distributed systems.
 
 ### Added
