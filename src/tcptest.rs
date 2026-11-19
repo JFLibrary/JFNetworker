@@ -1155,6 +1155,26 @@ fn loopback(t: &mut T) {
     t.eq("nothing on the cable", e.trace.hops().filter(|h| h.mask & decode::P_TCP != 0).count(), 0);
     t.eq("echoed to itself", [("cli", "received"), ("cli", "done"), ("lo", "received"), ("lo", "done")].map(|(s, m)| metric(&e, pc1, s, m)), [200_000, 1, 1000, 1]);
     t.eq("time-wait pairs", e.tcp_conns(pc1).iter().filter(|r| r.state == TcpState::TimeWait).map(|r| r.mss).collect::<Vec<_>>(), vec![65495, 65495]);
+    wrap(t);
+}
+
+/// 2^32 - 1 bytes to the device itself, in writes of 65535 every 50 ms (each acknowledged before
+/// the next: the delayed ACK waits 40 ms at most), so that SND.UNA stands at the ISS again, then
+/// one more write: the SYN counts once, every byte leaves the send buffer (once the first ACK
+/// after that took one byte too few)
+fn wrap(t: &mut T) {
+    const TOTAL: u64 = (1 << 32) - 1 + 65535;
+    let (mut e, pc1, _, _) = lan();
+    e.trace.set_quiet();
+    let ok = [
+        e.apply(Action::Service { dev: pc1, def: def("tcp-discard", "sink", "{}") }),
+        e.apply(Action::Service { dev: pc1, def: def("tcp-client", "big", &format!(r#"{{"server": "127.0.0.1", "port": 9, "bytes": {}, "chunk": 65535, "interval_ms": 50, "sndbuf": 131072, "close": "keep"}}"#, TOTAL)) }),
+    ];
+    t.check("wrap: set-up", ok.iter().all(|r| r.is_ok()));
+    e.run_until(65540 * 50 * MS, 20_000_000);
+    let row = e.tcp_conns(pc1).into_iter().find(|r| r.owner.as_deref() == Some("big"));
+    t.eq("wrap: all sent, all acknowledged, nothing left (sent, bytes_acked, send_q)", row.map(|r| (metric(&e, pc1, "big", "sent"), r.counters.bytes_acked, r.send_q)), Some((TOTAL as i64, TOTAL, 0)));
+    t.eq("wrap: the discard server has every byte", metric(&e, pc1, "sink", "bytes"), TOTAL as i64);
 }
 
 // ---------------------------------------------------------------- views

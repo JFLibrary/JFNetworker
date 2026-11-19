@@ -612,6 +612,8 @@ pub struct Tcb {
     pub snd_una: u32,
     pub snd_nxt: u32,
     pub snd_max: u32,
+    /// the peer acknowledged our SYN (snd_una == iss says so only until 2^32 - 1 bytes went)
+    syn_acked: bool,
     pub snd_wnd: u32,
     snd_wl1: u32,
     snd_wl2: u32,
@@ -815,6 +817,7 @@ impl Tcb {
             snd_una: iss,
             snd_nxt: iss,
             snd_max: iss,
+            syn_acked: false,
             snd_wnd: 0,
             snd_wl1: 0,
             snd_wl2: 0,
@@ -1512,6 +1515,7 @@ impl Tcb {
         if has_ack {
             // our SYN is acknowledged
             self.snd_una = s.ack;
+            self.syn_acked = true;
             if let Some(r) = self.rtt_sample(s.ack, cx.now) {
                 self.rtt_update(r, cx.cfg);
             }
@@ -1565,7 +1569,9 @@ impl Tcb {
         if seq_gt(ack, self.snd_una) {
             self.probe_byte = false;
             let mut n = ack.wrapping_sub(self.snd_una);
-            if self.snd_una == self.iss {
+            // the SYN takes a sequence number but no byte of the buffer
+            if !self.syn_acked {
+                self.syn_acked = true;
                 n -= 1;
             }
             let fin_now = self.fin_queued && seq_gt(ack, self.data_end());
