@@ -8,7 +8,39 @@ prepare X.Y.Z` turns `[Unreleased]` into a release and raises the version in `PA
 
 ## [Unreleased]
 
+### Changed
+
+- RIP without `version` sends version 1 and accepts 1 and 2, as IOS does, and routes show IOS's
+  hop counts (`[120/1]` for a network one hop away).
+- `switchport mode dynamic auto` (the default) and `dynamic desirable` negotiate a trunk as IOS's
+  DTP does: a port left at its default facing `switchport mode trunk` becomes a trunk.
+- The running configuration writes banners as `banner motd ^C...^C`, as IOS does.
+- A scenario's own `pcap FILE` and `series FILE` steps write only below the scenario's folder;
+  other places need `--pcap` or `--series`.
+- A project file with a number above 2147483647 or with the same device, cable or note number
+  twice is refused when it is opened.
+- "Jetzt installieren" first shows how many courses and how many bytes it would install; more than
+  1 GiB at once is refused.
+- Delete also removes a selected background picture.
+
 ### Fixed
+
+- Linux shell: `>` empties its file before the command runs (`sort f > f`), a line ending in `|`
+  is a syntax error, assignments are neither globbed nor split, `sleep` with a huge number no
+  longer ends at once, `wait` waits for every background job, and `ping -w` and `ping -I` work.
+- IOS banners with `#` or `^` in them, or over several lines, survive a reload.
+- A queue's error rate counts rejected messages, a key-value store's no longer counts replica
+  writes, TCP stays exact after 4 GiB, and experiments show page-ins and OOM kills as means over
+  the seeds like the other figures.
+- A script service takes at most 256 MiB of heap, all script services of a project 1 GiB.
+- Wi-Fi reassociations no longer leave unused cable slots behind.
+- A complex PDU is sent from the device chosen in its dialog, and the frame links of the packet
+  panel no longer collide with its other controls from the 40th frame on.
+- An unreadable `progress.json` of the Akademie is kept as a `.bak` copy instead of being
+  overwritten, the installer checks a course with the same file limits as the app, and its
+  clean-up waits for a running installation.
+- A file larger than a project file may be is refused before it is read into memory.
+- Closed device windows keep at most 8 desktops.
 
 - An experiment with many long axes is refused at once instead of building every configuration
   (six axes of 50 values froze the Experiments panel).
