@@ -90,6 +90,7 @@ pub(crate) fn run(t: &mut T) {
     history(t);
     resume(t);
     window(t);
+    resume_metered(t);
 }
 
 // ---------------------------------------------------------------- snapshot and restore
@@ -362,6 +363,28 @@ fn resume(t: &mut T) {
 }
 
 // ---------------------------------------------------------------- the window's side
+
+// "Hardware simulieren" alone is something the engine was told: on at 2 s, off at 4 s, back to
+// 3 s and on from there, the engine follows the project (off); once it kept simulating hardware
+fn resume_metered(t: &mut T) {
+    let mut doc = Doc::new();
+    doc.replace(campus(), None);
+    let _ = doc.sim.send(Cmd::Simulation);
+    let _ = doc.sim.send(Cmd::RunFor(2 * SEC));
+    if let Some(e) = edits::metered(&doc.proj, true) {
+        doc.apply(e);
+    }
+    let _ = doc.sim.send(Cmd::RunFor(2 * SEC));
+    if let Some(e) = edits::metered(&doc.proj, false) {
+        doc.apply(e);
+    }
+    let _ = doc.sim.send(Cmd::RunFor(SEC));
+    t.check("metered: off at 5 s", !doc.sim.engine().metered && !doc.proj.metered);
+    let _ = doc.sim.send(Cmd::Seek(3 * SEC));
+    t.check("metered: on at 3 s then", doc.sim.state().metered);
+    t.check("metered: resume at 3 s", doc.sim.resume(&doc.proj));
+    t.check("metered: the engine follows the project", !doc.sim.engine().metered);
+}
 
 fn window(t: &mut T) {
     let p = campus();

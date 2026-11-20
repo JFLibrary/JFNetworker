@@ -2,7 +2,7 @@
 # the shot matrix of the main views (U5): the topology, a console, the simulation mode with its
 # events, the Paket tab and a device window, each light and dark at 100 and 150 %
 # (build/jfnetworker/shots_<view>_<theme>_<scale>.png) on the campus of the acceptance;
-# english.uis takes the same views in English.  Ids: 38912 the event list, 26624 the first
+# english.uis takes the same views in English.  Ids: 16777216 the event list, 26624 the first
 # device window.
 size 1280 800
 theme light
@@ -62,7 +62,7 @@ theme light
 shot build/jfnetworker/shots_simulation_light_150.png
 scale 100
 # ---- the Paket tab: the last event of the list
-focus #38912
+focus #16777216
 key end
 wait 100
 click tab:"Paket"

@@ -4,7 +4,7 @@
 # last line at or before it -- the protocol chips, "Nur Auswahl", real time (the playhead at
 # the live end, the list at its end); shots light, dark and at 150 %.
 # A ping PC1 -> PC2 records 17 decisions: 1-4 the links (at 0), 5-12 ARP (0 .. 2888), 13-17
-# ICMP (3914 .. 6992 ns).  Line i of the list is #38913+i, the list #38912, the timeline
+# ICMP (3914 .. 6992 ns).  Line i of the list is #16777217+i, the list #16777216, the timeline
 # #32808, the chip ARP #32785, "Nur Auswahl" #32794.
 theme light
 click tab:"Simulation"
@@ -22,15 +22,15 @@ expect text:"17 von 17" exists
 expect text:"17 Ereignisse" exists
 expect text:"fertig: 1 gesendet, alle beantwortet" exists
 # the last line is chosen, the playhead stands at the present
-expect #38929 selected
+expect #16777233 selected
 shot build/jfnetworker/events_light.png
 # lines -> view and playhead: Home shows the first moment, Down the next lines
-focus #38912
+focus #16777216
 key home
-expect #38913 selected
+expect #16777217 selected
 expect text:"Ansicht bei t = 0,000 000 000 s" exists
 key down down down down down
-expect #38918 selected
+expect #16777222 selected
 expect text:"Ansicht bei t = 0,000 000 722 s" exists
 expect text:"t = 0,000 000 722 s (Aufzeichnung)" exists
 # playhead -> view and line: Right goes to the next tick (1444: the ARP reply leaves PC2), the
@@ -38,13 +38,13 @@ expect text:"t = 0,000 000 722 s (Aufzeichnung)" exists
 focus #32808
 key right
 expect text:"Ansicht bei t = 0,000 001 444 s" exists
-expect #38921 selected
+expect #16777225 selected
 key right right
 expect text:"Ansicht bei t = 0,000 002 888 s" exists
-expect #38924 selected
+expect #16777228 selected
 key left
 expect text:"Ansicht bei t = 0,000 002 166 s" exists
-expect #38923 selected
+expect #16777227 selected
 shot build/jfnetworker/events_sync.png
 # the chips: without ARP 9 of the 17 lines, no ARP lane
 click #32785

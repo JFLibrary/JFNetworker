@@ -67,7 +67,7 @@ click tab:"Events"
 expect "Protocols" exists
 expect button:"Only selection" exists
 expect text:"ARP reply on Vlan10: 10.10.10.1 is 02:4a:00:00:02:00." exists
-focus #38912
+focus #16777216
 key end
 wait 100
 click tab:"Packet"

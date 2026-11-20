@@ -651,7 +651,13 @@ impl Worker {
     }
 
     fn ask(&mut self, os: &mut OsApi, slot: usize) {
-        if slot >= self.concurrency as usize || slot >= self.slots.len() {
+        if slot >= self.slots.len() {
+            return;
+        }
+        // a slot past a lowered concurrency stops after its message: idle, so that raising it
+        // again starts it (it stayed acknowledging for good, "4 von 2 beschäftigt")
+        if slot >= self.concurrency as usize {
+            self.slots[slot] = SlotState::Idle;
             return;
         }
         self.polls += 1;

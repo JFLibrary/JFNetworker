@@ -213,14 +213,18 @@ pub(crate) const ID_SIM_LIVE: u32 = 0x8008;
 /// the dock panel of the user's PDUs (right, below Eigenschaften)
 pub(crate) const P_PDUS: u32 = 8;
 /// Ereignisse: the protocol chips (+ k for the first ten, ID_EV_CHIP10 + k - 10 for the six
-/// after them), "Nur Auswahl", the split, the timeline; the grid last (its rows + 1 + i go past
-/// the range, up to the trace's 400 000 events)
+/// after them), "Nur Auswahl", the split, the timeline; the grid in a block of its own
+/// (0x0100_0000 .. 0x0106_FFFF: its rows are + 1 + i, up to the trace's 400 000 events -- at
+/// 0x9800 the 2 560th line once took the ids of panels drawn beside it, line 18 431 the toolbar's
+/// Logisch | Physisch)
 pub(crate) const ID_EV_CHIP0: u32 = 0x8010;
 pub(crate) const ID_EV_ONLY_SEL: u32 = 0x801A;
 pub(crate) const ID_EV_CHIP10: u32 = 0x801B;
 pub(crate) const ID_EV_TL_SPLIT: u32 = 0x8021;
 pub(crate) const ID_EV_TIMELINE: u32 = 0x8028;
-pub(crate) const ID_EV_GRID: u32 = 0x9800;
+pub(crate) const ID_EV_GRID: u32 = 0x0100_0000;
+/// the most lines the grid's block holds (the trace keeps at most 400 000 events)
+pub(crate) const EV_ROWS_MAX: u32 = 0x7_0000 - 1;
 /// Paket: the splits, the device's step (a scroll view), the hex view, the layer tree (rows +
 /// 1 + i)
 pub(crate) const ID_PK_SPLIT: u32 = 0x8040;

@@ -25,6 +25,12 @@ prepare X.Y.Z` turns `[Unreleased]` into a release and raises the version in `PA
 
 ### Fixed
 
+- A worker whose concurrency was lowered and raised again takes messages on all its slots
+  again; slots above the lower number stayed busy for good.
+- From the 2 560th line on, the event list no longer clicks other controls of the window (such
+  as the Logisch | Physisch switch).
+- "Von hier fortsetzen" after switching "Hardware simulieren" on or off restores the setting the
+  project has; the simulation could go on simulating hardware that was switched off.
 - Linux shell: `>` empties its file before the command runs (`sort f > f`), a line ending in `|`
   is a syntax error, assignments are neither globbed nor split, `sleep` with a huge number no
   longer ends at once, `wait` waits for every background job, and `ping -w` and `ping -I` work.

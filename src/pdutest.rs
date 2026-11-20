@@ -78,6 +78,7 @@ pub fn run(t: &mut T) {
     seek(t);
     dialog_source(t);
     frame_links(t);
+    event_rows(t);
 }
 
 // UDP with a TTL and a size: three datagrams, PC2 answers each with port unreachable
@@ -226,4 +227,14 @@ fn frame_links(t: &mut T) {
     t.check("frame links: one id each", ids.len() == 512 && uniq.len() == 512);
     t.check("frame links: none of the simulation panels' ids", ids.iter().all(|&i| !(0x8000..=0x9FFF).contains(&i)) && [ID_PK_HEX, ID_PK_TREE, ID_PDU_SIMPLE, ID_PDU_ACT0].iter().all(|x| !ids.contains(x)));
     t.eq("frame links past the block: plain text", pdu_link_id(PK_LINKS), None);
+}
+
+// the lines of the event list (grid + 1 + i) have a block of their own: at 0x9800 the 2 560th line
+// took the ids of panels drawn beside it, line 18 431 the toolbar's Logisch | Physisch
+fn event_rows(t: &mut T) {
+    use crate::app::constants::{EV_ROWS_MAX, ID_EV_GRID, ID_FILES_DLG, ID_TB_VIEW};
+    let last = ID_EV_GRID + 1 + EV_ROWS_MAX;
+    t.check("event rows: as many as the trace keeps", jfn_sim::trace::Trace::new().max_events as u32 <= EV_ROWS_MAX);
+    t.check("event rows: below the hashed ids", last < ui::ID_HASH_BASE);
+    t.check("event rows: above the ids written by hand", ID_EV_GRID > ID_FILES_DLG + 0x1_0000 && ID_EV_GRID > ID_TB_VIEW);
 }

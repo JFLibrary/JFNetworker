@@ -266,6 +266,7 @@ pub fn run(t: &mut T) {
     web_kv(t);
     cache_t(t);
     queue_t(t);
+    queue_slots(t);
     faults_t(t);
     partition_t(t);
     scenario_t(t);
@@ -777,6 +778,28 @@ fn queue_t(t: &mut T) {
     t.eq("mq: published after the disk", pub1, 100 * MS + 2888 + 672 + 2500 + 120 * US);
     t.eq("mq: every delivery", notes_of(&e, h[0], |n| matches!(n, Note::MqDeliver { .. })).iter().map(|x| x.0).collect::<Vec<_>>(), vec![100 * MS + 126_060, SEC + 122_500, 1100 * MS + 122_484, 1110 * MS + 138_524, 1120 * MS + 151_916, 2 * SEC + 122_500]);
     t.check("mq: more workers", e.apply(Action::WorkerSet { dev: h[1], svc: String::from("worker"), concurrency: Some(3), time_ns: None, error_ppm: None }).is_ok() && e.worker_view(h[1], "worker").is_some_and(|v| v.concurrency == 3 && v.slots.len() == 3));
+}
+
+// fewer slots stop after their message and start again when the number goes back up (they
+// stayed acknowledging for good: "4 von 2 beschäftigt", and never took a message again)
+fn queue_slots(t: &mut T) {
+    use jfn_sim::{SlotState, Worker};
+    let (mut e, h) = net(3);
+    let mut ok = add(&mut e, h[0], "mq", "mq", "{}");
+    ok &= add(&mut e, h[1], "worker", "worker", "{\"queue\": \"http://10.0.0.1:9000/\", \"topic\": \"jobs\", \"time_ms\": 500, \"concurrency\": 4}");
+    let plan: Vec<(u64, Req)> = (0..12).map(|k| (100 * MS, req("POST", "http://10.0.0.1:9000/topics/jobs", &format!("m{}", k)))).collect();
+    t.check("mq slots: set up", ok && probe(&mut e, h[2], plan));
+    let busy = |e: &Engine| e.service::<Worker>(h[1], "worker").map_or(0, |w| w.busy());
+    let set = |e: &mut Engine, n: u32| e.apply(Action::WorkerSet { dev: h[1], svc: String::from("worker"), concurrency: Some(n), time_ns: None, error_ppm: None }).is_ok();
+    run_to(&mut e, 300 * MS);
+    t.eq("mq slots: four at work", busy(&e), 4);
+    t.check("mq slots: down to two", set(&mut e, 2));
+    run_to(&mut e, 1500 * MS);
+    t.eq("mq slots: two at work after their messages", busy(&e), 2);
+    t.check("mq slots: up to four", set(&mut e, 4));
+    run_to(&mut e, 1550 * MS);
+    let all = e.worker_view(h[1], "worker").map(|v| v.slots.iter().filter(|s| matches!(s, SlotState::Working { .. })).count());
+    t.eq("mq slots: all four take messages again", all, Some(4));
 }
 
 // ---------------------------------------------------------------- faults

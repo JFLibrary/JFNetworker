@@ -1135,9 +1135,11 @@ impl Sim {
         true
     }
 
-    // what the engine was told, when it changed (resume goes back to it)
+    // what the engine was told, when it changed (resume goes back to it; "Hardware simulieren"
+    // alone is a change too: once a resume past such a switch kept the engine simulating
+    // hardware the project had switched off)
     fn note_told(&mut self) {
-        if self.told.last().is_some_and(|(_, t)| t.devs == self.devs && t.links == self.links && t.stash == self.stash && t.scale == self.scale && t.strict == self.strict) {
+        if self.told.last().is_some_and(|(_, t)| t.devs == self.devs && t.links == self.links && t.stash == self.stash && t.scale == self.scale && t.strict == self.strict && t.metered == self.metered) {
             return;
         }
         let k = self.drv.pos().inputs;

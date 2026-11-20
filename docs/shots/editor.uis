@@ -52,7 +52,7 @@ shot docs/images/simulation.png
 # a step back: the echo has reached MLS1; its routing step and checksums in the Packet tab
 key shift+f7
 wait 1200
-focus #38912
+focus #16777216
 key end
 wait 100
 click tab:"Packet"
